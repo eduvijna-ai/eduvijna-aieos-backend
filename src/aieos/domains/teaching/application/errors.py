@@ -189,6 +189,14 @@ class InvalidTeacherMemoryRequest(TeachingApplicationError):
     """A Teacher Memory create/update request failed application validation."""
 
 
+class InvalidTeacherAssistantRequest(TeachingApplicationError):
+    """Assistant request failed application validation (message/history bounds)."""
+
+
+class AssistantServiceUnavailable(TeachingApplicationError):
+    """Assistant composition is not available in this runtime."""
+
+
 class TeachingExecutionForbidden(TeachingApplicationError):
     """The principal does not own the target TeachingExecution."""
 

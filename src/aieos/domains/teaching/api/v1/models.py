@@ -407,3 +407,36 @@ class TeacherMemoryResponse(BaseModel):
     aggregate_revision: int
     created_at: datetime
     updated_at: datetime
+
+
+class TeacherOsAssistantHistoryTurn(BaseModel):
+    """Conversation material only — never business authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class TeacherOsAssistantRequest(BaseModel):
+    """Bounded Assistant turn request. No client context snapshots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[TeacherOsAssistantHistoryTurn] = Field(default_factory=list, max_length=12)
+    teaching_work_id: UUID | None = None
+    mission_date: date | None = None
+
+
+class TeacherOsAssistantResponse(BaseModel):
+    """READ / REASON / SUGGEST response. Suggestions do not execute commands."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str
+    suggested_questions: list[str]
+    suggested_next_step: str | None
+    teaching_work_id: UUID | None
+    context_summary: str
+    generated_at: datetime

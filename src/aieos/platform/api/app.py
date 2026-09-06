@@ -99,6 +99,10 @@ from aieos.domains.teaching.application.generate import GenerateTeachingWorkServ
 from aieos.domains.teaching.application.memory_create import CreateTeacherMemoryService
 from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
 from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
+from aieos.domains.teaching.application.assistant import TeacherOsAssistantService
+from aieos.domains.teaching.application.assistant_context import (
+    ComposeTeacherOsAssistantContextService,
+)
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.owner_resolution import (
     HumanPrincipalClassificationGate,
@@ -498,6 +502,23 @@ def create_app(
         app.state.record_classroom_assessment_service = None
         app.state.correct_classroom_assessment_service = None
         app.state.void_classroom_assessment_service = None
+
+    app.state.compose_teacher_os_assistant_context_service = (
+        ComposeTeacherOsAssistantContextService(
+            teaching_uow_factory=teaching_uow_factory,
+            principal_classification=classification,
+            mission_service=app.state.teacher_os_today_mission_service,
+            get_work_service=app.state.get_teaching_work_service,
+            get_memory_service=app.state.get_teacher_memory_service,
+            list_artifacts_service=app.state.list_teaching_work_artifacts_service,
+            list_assessments_service=app.state.list_classroom_assessments_service,
+        )
+    )
+    app.state.teacher_os_assistant_service = TeacherOsAssistantService(
+        context_composer=app.state.compose_teacher_os_assistant_context_service,
+        model_gateway=model_gateway,
+    )
+
     def _openapi() -> dict:
         if app.openapi_schema is None:
             app.openapi_schema = build_openapi(app)

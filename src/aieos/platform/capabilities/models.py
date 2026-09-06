@@ -79,6 +79,7 @@ class CapabilityDescriptor:
 
 CAPABILITY_EDUCATION_GENERATE_WORKSHEET = "education.generate_worksheet"
 CAPABILITY_EDUCATION_GENERATE_PREPARATION_KIT = "education.generate_preparation_kit"
+CAPABILITY_TEACHER_OS_ASSISTANT_RESPOND = "teacher_os.assistant_respond"
 
 GENERATE_WORKSHEET_V1 = CapabilityDescriptor(
     capability_id=CAPABILITY_EDUCATION_GENERATE_WORKSHEET,

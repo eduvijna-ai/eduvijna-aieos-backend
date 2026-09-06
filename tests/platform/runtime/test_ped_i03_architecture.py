@@ -91,7 +91,11 @@ def _minimal_app() -> FastAPI:
 def test_frozen_mutation_inventory_matches_discovered_writes() -> None:
     app = _minimal_app()
     discovered = discover_write_operation_ids(app)
-    assert discovered == FROZEN_API_MUTATION_OPERATION_IDS
+    from aieos.platform.runtime.activation import NON_MUTATING_WRITE_OPERATION_IDS
+
+    assert discovered == (
+        FROZEN_API_MUTATION_OPERATION_IDS | NON_MUTATING_WRITE_OPERATION_IDS
+    )
     assert_mutation_route_classification(app)
     install_mutation_activation_interlock(app, _DisabledGate())
     assert app.state.mutation_operation_ids == FROZEN_API_MUTATION_OPERATION_IDS
