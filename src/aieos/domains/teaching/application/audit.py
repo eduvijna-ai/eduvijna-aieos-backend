@@ -20,6 +20,7 @@ RESOURCE_TEACHING_ASSIGNMENT = "teaching.assignment"
 RESOURCE_TEACHING_EXECUTION = "teaching.execution"
 RESOURCE_TEACHING_EXECUTION_OBSERVATION = "teaching.execution.observation"
 RESOURCE_TEACHING_WORK = "teaching.work"
+RESOURCE_TEACHING_MEMORY = "teaching.memory"
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,10 @@ def assignment_primary_ref(assignment_id: UUID, revision_after: int) -> Resource
 
 def work_primary_ref(work_id: UUID, revision_after: int) -> ResourceRef:
     return ResourceRef(RESOURCE_TEACHING_WORK, work_id, revision_after)
+
+
+def memory_primary_ref(memory_id: UUID, revision_after: int) -> ResourceRef:
+    return ResourceRef(RESOURCE_TEACHING_MEMORY, memory_id, revision_after)
 
 
 def execution_primary_ref(execution_id: UUID, revision_after: int) -> ResourceRef:
@@ -129,6 +134,7 @@ __all__ = [
     "RESOURCE_TEACHING_ASSIGNMENT",
     "RESOURCE_TEACHING_EXECUTION",
     "RESOURCE_TEACHING_EXECUTION_OBSERVATION",
+    "RESOURCE_TEACHING_MEMORY",
     "RESOURCE_TEACHING_WORK",
     "api_mutation_audit_provenance",
     "assignment_primary_ref",
@@ -136,6 +142,7 @@ __all__ = [
     "execution_primary_ref",
     "insert_required_teaching_audit",
     "insert_required_teaching_execution_audit",
+    "memory_primary_ref",
     "observation_primary_ref",
     "source_work_ref",
     "work_primary_ref",

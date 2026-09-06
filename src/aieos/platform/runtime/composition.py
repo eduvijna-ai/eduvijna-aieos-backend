@@ -21,6 +21,9 @@ from aieos.domains.teaching.application.ports import (
     TeachingUnitOfWorkFactory,
     TeachingWorkAuthorization,
 )
+from aieos.domains.teaching.application.owner_resolution import (
+    HumanPrincipalClassificationGate,
+)
 from aieos.domains.assessment.application.ports import (
     AssessmentUnitOfWorkFactory,
     ClassroomAssessmentAuthorization,
@@ -60,6 +63,7 @@ class ApiRuntimeDependencies:
     asset_current_governance: AssetCurrentGovernancePort
     readiness_probe: ApiReadinessProbe
     mutation_activation_gate: ApiMutationActivationGate
+    principal_classification_authority: HumanPrincipalClassificationGate
     teaching_authorization: TeachingWorkAuthorization | None = None
 
 
@@ -91,6 +95,9 @@ def compose_api_application(
         publication_governance=dependencies.publication_governance,
         asset_reference_validation=dependencies.asset_reference_validation,
         asset_current_governance=dependencies.asset_current_governance,
+        principal_classification_authority=(
+            dependencies.principal_classification_authority
+        ),
     )
     app.state.release_identity = ReleaseIdentity(
         application_version=config.release_identity.application_version,

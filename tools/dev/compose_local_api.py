@@ -39,6 +39,9 @@ from aieos.platform.runtime.readiness import SqlAlchemyApiReadinessProbe
 from aieos.platform.runtime.remediation_assessment_source import (
     SqlAlchemyRemediationAssessmentSource,
 )
+from aieos.platform.security.authorization import (
+    CurrentPrincipalClassificationAuthority,
+)
 from tools.dev.local_auth import (
     LocalDevelopmentBearerAuthenticator,
     LocalDevelopmentTenantSecurityResolver,
@@ -86,5 +89,8 @@ def compose_local_api_runtime_dependencies(
         readiness_probe=SqlAlchemyApiReadinessProbe(engine, config),
         mutation_activation_gate=load_api_mutation_activation_gate_from_process_environment(
             config.release_identity
+        ),
+        principal_classification_authority=CurrentPrincipalClassificationAuthority(
+            engine
         ),
     )

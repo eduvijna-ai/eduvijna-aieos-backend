@@ -69,17 +69,17 @@ def _remediation_pair(*, tenant_id: uuid.UUID, teacher_id: uuid.UUID):
 
 class TestMigrationHeadAndShape:
     def test_alembic_head_tosd090001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "pedi090002"
-        assert EXPECTED_MIGRATION_HEAD == "pedi090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "pedi090002"
+                == "tosd100001"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )
-        assert versions[-1].startswith("tosd090002_")
+        assert versions[-1].startswith("tosd100001_")
 
     def test_intent_type_check_accepts_both(self, bootstrap_engine: Engine) -> None:
         with bootstrap_engine.connect() as conn:

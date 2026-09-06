@@ -17,8 +17,10 @@ from aieos.domains.teaching.api.v1.dependencies import (
     create_teaching_assignment_service,
     create_teaching_execution_observation_service,
     create_remediation_teaching_work_service,
+    create_teacher_memory_service,
     create_teaching_work_service,
     generate_teaching_work_service,
+    get_teacher_memory_service,
     get_teaching_assignment_service,
     get_teaching_execution_service,
     get_teaching_work_service,
@@ -33,6 +35,7 @@ from aieos.domains.teaching.api.v1.dependencies import (
     start_teaching_execution_service,
     teacher_os_teach_context_service,
     teacher_os_today_mission_service,
+    update_teacher_memory_service,
     update_teaching_assignment_due_service,
 )
 from aieos.domains.teaching.api.v1.models import (
@@ -49,6 +52,10 @@ from aieos.domains.teaching.api.v1.models import (
     SchoolContextClassesResponse,
     TeacherOsMissionResponse,
     TeacherOsTeachContextResponse,
+    TeacherMemoryCreateRequest,
+    TeacherMemoryPreferencesBody,
+    TeacherMemoryResponse,
+    TeacherMemoryUpdateRequest,
     TeachingWorkArtifactsResponse,
     TeachingWorkCreateRequest,
     RemediationTeachingWorkCreateRequest,
@@ -111,6 +118,14 @@ from aieos.domains.teaching.application.generate import (
     GenerateTeachingWorkResult,
     GenerateTeachingWorkService,
 )
+from aieos.domains.teaching.application.memory_create import CreateTeacherMemoryService
+from aieos.domains.teaching.application.memory_models import (
+    CreateTeacherMemoryCommand,
+    TeacherMemoryReadModel,
+    UpdateTeacherMemoryCommand,
+)
+from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
+from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.mission_models import TeacherOsMission
 from aieos.domains.teaching.application.audit import api_mutation_audit_provenance
@@ -149,6 +164,7 @@ from aieos.domains.teaching.application.teach_composition import (
     GetTeacherOsTeachContextService,
     TeacherOsTeachContextReadModel,
 )
+from aieos.domains.teaching.domain.preferences import TeacherMemoryPreferences
 from aieos.domains.education.schema import PREPARATION_ARTIFACT_KINDS
 from aieos.domains.teaching.domain.errors import InvalidTeachingIdentityError
 from aieos.domains.teaching.domain.identities import (
@@ -208,6 +224,11 @@ _OBSERVATION_CREATE_RESPONSES = _problem_responses(
     400, 401, 403, 404, 409, 422, 500, 503
 )
 _OBSERVATION_CORRECT_RESPONSES = _problem_responses(
+    400, 401, 403, 404, 409, 412, 422, 428, 500, 503
+)
+_MEMORY_CREATE_RESPONSES = _problem_responses(400, 401, 403, 409, 422, 500, 503)
+_MEMORY_GET_RESPONSES = _problem_responses(400, 401, 403, 404, 422, 500, 503)
+_MEMORY_UPDATE_RESPONSES = _problem_responses(
     400, 401, 403, 404, 409, 412, 422, 428, 500, 503
 )
 
@@ -994,6 +1015,109 @@ def teacher_os_school_context_classes_list(
             for item in items
         ]
     )
+
+
+def _preferences_body(
+    preferences: TeacherMemoryPreferences,
+) -> TeacherMemoryPreferencesBody:
+    return TeacherMemoryPreferencesBody.model_validate(preferences.model_dump())
+
+
+def _to_memory_response(model: TeacherMemoryReadModel) -> TeacherMemoryResponse:
+    return TeacherMemoryResponse(
+        memory_id=model.memory_id,
+        schema_version=model.schema_version,
+        preferences=_preferences_body(model.preferences),
+        aggregate_revision=model.aggregate_revision,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+@router.get(
+    "/teacher-os/memory",
+    response_model=TeacherMemoryResponse,
+    operation_id="teacher_os_memory_get",
+    responses=_MEMORY_GET_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_memory_get(
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[GetTeacherMemoryService, Depends(get_teacher_memory_service)],
+) -> TeacherMemoryResponse:
+    """Read the authenticated teacher's Memory profile. Never creates."""
+    model = service.get(context.tenant_id, context.principal_id)
+    response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
+    return _to_memory_response(model)
+
+
+@router.post(
+    "/teacher-os/memory",
+    status_code=201,
+    response_model=TeacherMemoryResponse,
+    operation_id="teacher_os_memory_create",
+    responses=_MEMORY_CREATE_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_memory_create(
+    body: TeacherMemoryCreateRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        CreateTeacherMemoryService, Depends(create_teacher_memory_service)
+    ],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> TeacherMemoryResponse:
+    """Create the authenticated teacher's Memory. Ownership is never client-supplied."""
+    key = parse_idempotency_key(idempotency_key)
+    model = service.create(
+        context.tenant_id,
+        context.principal_id,
+        CreateTeacherMemoryCommand(preferences=body.preferences.to_domain()),
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, context),
+        audit_provenance=api_mutation_audit_provenance(context.principal_id),
+    )
+    response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
+    return _to_memory_response(model)
+
+
+@router.put(
+    "/teacher-os/memory",
+    response_model=TeacherMemoryResponse,
+    operation_id="teacher_os_memory_update",
+    responses=_MEMORY_UPDATE_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_memory_update(
+    body: TeacherMemoryUpdateRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        UpdateTeacherMemoryService, Depends(update_teacher_memory_service)
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> TeacherMemoryResponse:
+    """Replace preferences for the authenticated teacher's Memory."""
+    key = parse_idempotency_key(idempotency_key)
+    expected = AggregateRevision(parse_if_match(if_match))
+    model = service.update(
+        context.tenant_id,
+        context.principal_id,
+        expected_aggregate_revision=expected,
+        command=UpdateTeacherMemoryCommand(
+            preferences=body.preferences.to_domain()
+        ),
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, context),
+        audit_provenance=api_mutation_audit_provenance(context.principal_id),
+    )
+    response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
+    return _to_memory_response(model)
 
 
 @router.post(

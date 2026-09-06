@@ -16,12 +16,13 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
+    Integer,
     PrimaryKeyConstraint,
     Table,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from aieos.domains.teaching.infrastructure.persistence.metadata import teaching_metadata
 
@@ -419,6 +420,53 @@ work_remediation_origins_table = Table(
         "ix_teaching_work_remediation_origins_tenant_source_assessment",
         "tenant_id",
         "source_assessment_id",
+    ),
+    schema="teaching",
+)
+
+
+teacher_memories_table = Table(
+    "teacher_memories",
+    teaching_metadata,
+    Column("memory_id", UUID(as_uuid=True), nullable=False),
+    Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    Column("teacher_principal_id", UUID(as_uuid=True), nullable=False),
+    Column("schema_version", Integer, nullable=False),
+    Column("preferences", JSONB, nullable=False),
+    Column("aggregate_revision", BigInteger, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("memory_id", name="pk_teaching_teacher_memories"),
+    UniqueConstraint(
+        "tenant_id",
+        "teacher_principal_id",
+        name="uq_teaching_teacher_memories_tenant_teacher",
+    ),
+    UniqueConstraint(
+        "tenant_id",
+        "memory_id",
+        name="uq_teaching_teacher_memories_tenant_memory",
+    ),
+    CheckConstraint(
+        "aggregate_revision >= 0",
+        name="ck_teaching_teacher_memories_aggregate_revision_nonnegative",
+    ),
+    CheckConstraint(
+        "schema_version = 1",
+        name="ck_teaching_teacher_memories_schema_version",
+    ),
+    CheckConstraint(
+        "jsonb_typeof(preferences) = 'object'",
+        name="ck_teaching_teacher_memories_preferences_object",
+    ),
+    CheckConstraint(
+        "updated_at >= created_at",
+        name="ck_teaching_teacher_memories_updated_after_created",
+    ),
+    Index(
+        "ix_teaching_teacher_memories_tenant_teacher",
+        "tenant_id",
+        "teacher_principal_id",
     ),
     schema="teaching",
 )

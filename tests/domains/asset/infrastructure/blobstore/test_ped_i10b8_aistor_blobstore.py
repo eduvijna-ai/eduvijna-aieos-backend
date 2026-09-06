@@ -44,7 +44,7 @@ BLOBSTORE = ASSET_ROOT / "infrastructure" / "blobstore"
 COMPOSITION = REPO_ROOT / "src" / "aieos" / "platform" / "runtime" / "composition.py"
 OPENAPI = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 EXPECTED_OPENAPI_SHA256 = (
-    "81C2EC1BC0C14E3F97A5FEECD3A5768BFAC55982BBF0E1EF4E8654138525CE87"
+    "ECA7264BAD37D235967D6E4895749777D7D4F9B19FB0D79D79726430D8C57DFB"
 )
 MIGRATIONS = REPO_ROOT / "migrations" / "versions"
 DOC = REPO_ROOT / "docs" / "PED-I10B8-AISTOR-BLOBSTORE-ADAPTER.md"
@@ -638,7 +638,7 @@ class TestBoundaries:
 
     def test_no_http_openapi_migration_composition_or_pedi03(self) -> None:
         assert not (ASSET_ROOT / "api").exists()
-        assert EXPECTED_ALEMBIC_HEAD == "pedi090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
         assert not any(p.name.startswith("pedi10b8") for p in MIGRATIONS.glob("*.py"))
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256

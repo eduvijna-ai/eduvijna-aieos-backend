@@ -69,6 +69,11 @@ class _ExportAssetCurrentGovernance:
         return None
 
 
+class _ExportPrincipalClassification:
+    def require_current_human_principal(self, principal_id):
+        raise AssertionError("OpenAPI export must not classify principals")
+
+
 def main() -> None:
     app = create_app(
         uow_factory=_UnusedUowFactory(),
@@ -87,6 +92,7 @@ def main() -> None:
         publication_governance=_ExportPublicationGovernance(),
         asset_reference_validation=_ExportAssetReferenceValidation(),
         asset_current_governance=_ExportAssetCurrentGovernance(),
+        principal_classification_authority=_ExportPrincipalClassification(),
     )
     SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
     SNAPSHOT.write_text(

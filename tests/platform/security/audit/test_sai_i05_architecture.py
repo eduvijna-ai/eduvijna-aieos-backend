@@ -48,7 +48,7 @@ BOUNDARY_DOC = REPO_ROOT / "docs" / "GCI-I04-NON-PRODUCTION-MUTATION-BOUNDARY.md
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 SNAPSHOT = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 EXPECTED_OPENAPI_SHA256 = (
-    "81C2EC1BC0C14E3F97A5FEECD3A5768BFAC55982BBF0E1EF4E8654138525CE87"
+    "ECA7264BAD37D235967D6E4895749777D7D4F9B19FB0D79D79726430D8C57DFB"
 )
 
 _EXPECTED_MIGRATIONS = [
@@ -78,7 +78,8 @@ _EXPECTED_MIGRATIONS = [
     "tosd080001_classroom_assessments.py",
     "tosd080002_classroom_assessment_audit.py",
     "tosd090001_remediation_work_origin.py",
-    "tosd090002_teaching_work_remediation_audit.py"
+    "tosd090002_teaching_work_remediation_audit.py",
+    "tosd100001_teacher_memory.py",
 ]
 
 # Frozen SAI-I05 mutation inventory classification.
@@ -283,6 +284,8 @@ class TestMutationInventory:
             "teaching.execution.observation.create",
             "teaching.execution.observation.correct",
             "teaching.work.remediation.create",
+            "teaching.memory.create",
+            "teaching.memory.update",
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",

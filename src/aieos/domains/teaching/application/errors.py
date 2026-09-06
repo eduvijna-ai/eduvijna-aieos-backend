@@ -181,6 +181,14 @@ class TeachingExecutionNotFound(TeachingApplicationError):
     """Target TeachingExecution is not visible in the execution tenant."""
 
 
+class TeacherMemoryNotFound(TeachingApplicationError):
+    """Target Teacher Memory is not visible for the authenticated teacher."""
+
+
+class InvalidTeacherMemoryRequest(TeachingApplicationError):
+    """A Teacher Memory create/update request failed application validation."""
+
+
 class TeachingExecutionForbidden(TeachingApplicationError):
     """The principal does not own the target TeachingExecution."""
 

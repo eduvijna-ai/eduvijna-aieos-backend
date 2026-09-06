@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -362,3 +363,47 @@ class TeacherOsTeachContextResponse(BaseModel):
     artifacts: list[WorkArtifactItemResponse]
     assignments: list[TeachingAssignmentResponse]
     executions: list[TeachingExecutionResponse]
+
+
+class TeacherMemoryPreferencesBody(BaseModel):
+    """Closed Teacher Memory preference vocabulary (schema_version = 1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    teaching_style: Literal[
+        "balanced", "direct_instruction", "inquiry_led", "collaborative"
+    ] = "balanced"
+    preferred_difficulty: Literal["supportive", "standard", "challenging"] = "standard"
+    preparation_detail: Literal["concise", "balanced", "detailed"] = "balanced"
+    output_format: Literal["structured", "print_friendly"] = "structured"
+    include_differentiation: bool = False
+
+    def to_domain(self):
+        from aieos.domains.teaching.domain.preferences import TeacherMemoryPreferences
+
+        return TeacherMemoryPreferences.model_validate(self.model_dump())
+
+
+class TeacherMemoryCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferences: TeacherMemoryPreferencesBody = Field(
+        default_factory=TeacherMemoryPreferencesBody
+    )
+
+
+class TeacherMemoryUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferences: TeacherMemoryPreferencesBody
+
+
+class TeacherMemoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    schema_version: int
+    preferences: TeacherMemoryPreferencesBody
+    aggregate_revision: int
+    created_at: datetime
+    updated_at: datetime

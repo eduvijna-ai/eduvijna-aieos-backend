@@ -501,6 +501,31 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                         f"FROM {RUNTIME_USER}"
                     )
                 )
+            # TOS-DEV10-I03 Teacher Memory may be absent on older heads.
+            has_teacher_memories = conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'teaching'
+                          AND table_name = 'teacher_memories'
+                    )
+                    """
+                )
+            ).scalar_one()
+            if has_teacher_memories:
+                conn.execute(
+                    text(
+                        f"GRANT SELECT, INSERT, UPDATE ON teaching.teacher_memories "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"REVOKE DELETE ON teaching.teacher_memories "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
             conn.execute(
                 text(
                     f"GRANT EXECUTE ON FUNCTION teaching.current_tenant_id() "

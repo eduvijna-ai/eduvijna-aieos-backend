@@ -42,10 +42,8 @@ class TestMigrationHeadAndSchema:
     def test_alembic_head_is_pedi090002(self, bootstrap_engine) -> None:
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(
-                    text("SELECT version_num FROM alembic_version")
-                ).scalar_one()
-                == "pedi090002"
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "tosd100001"
             )
             assert (
                 conn.execute(
@@ -90,10 +88,8 @@ class TestMigrationHeadAndSchema:
         provision_runtime_grants(bootstrap_engine)
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(
-                    text("SELECT version_num FROM alembic_version")
-                ).scalar_one()
-                == "pedi090002"
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "tosd100001"
             )
 
 

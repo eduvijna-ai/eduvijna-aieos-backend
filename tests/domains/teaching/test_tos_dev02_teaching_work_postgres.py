@@ -536,6 +536,7 @@ class TestNoTeachingIntentSystemOfRecord:
             "execution_content_bindings",
             "execution_observations",
             "work_remediation_origins",
+            "teacher_memories",
         }
         assert "teaching_intents" not in tables
         assert not any(name == "intents" or name.endswith("_intents") for name in tables)

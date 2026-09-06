@@ -37,15 +37,15 @@ def _py_files(root: Path) -> list[Path]:
 
 class TestI01ArchitectureGuards:
     def test_current_alembic_head_tosd090001(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "pedi090002"
-        assert EXPECTED_MIGRATION_HEAD == "pedi090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd090001"' in text
         assert 'down_revision: str | None = "tosd080002"' in text
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )
-        assert versions[-1] == "tosd090002_teaching_work_remediation_audit.py"
+        assert versions[-1] == "tosd100001_teacher_memory.py"
 
     def test_no_learner_mastery_memory_note_observation_fields(self) -> None:
         sql = _sql_literals(MIGRATION).lower()
@@ -112,7 +112,7 @@ class TestI01ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-            "81C2EC1BC0C14E3F97A5FEECD3A5768BFAC55982BBF0E1EF4E8654138525CE87"
+            "ECA7264BAD37D235967D6E4895749777D7D4F9B19FB0D79D79726430D8C57DFB"
         )
 
     def test_generic_create_guards_remediate_class(self) -> None:

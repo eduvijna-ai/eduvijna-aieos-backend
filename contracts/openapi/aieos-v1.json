@@ -1630,6 +1630,123 @@
         "title": "TeacherLibraryVersionResponse",
         "type": "object"
       },
+      "TeacherMemoryCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/TeacherMemoryPreferencesBody"
+          }
+        },
+        "title": "TeacherMemoryCreateRequest",
+        "type": "object"
+      },
+      "TeacherMemoryPreferencesBody": {
+        "additionalProperties": false,
+        "description": "Closed Teacher Memory preference vocabulary (schema_version = 1).",
+        "properties": {
+          "include_differentiation": {
+            "default": false,
+            "title": "Include Differentiation",
+            "type": "boolean"
+          },
+          "output_format": {
+            "default": "structured",
+            "enum": [
+              "structured",
+              "print_friendly"
+            ],
+            "title": "Output Format",
+            "type": "string"
+          },
+          "preferred_difficulty": {
+            "default": "standard",
+            "enum": [
+              "supportive",
+              "standard",
+              "challenging"
+            ],
+            "title": "Preferred Difficulty",
+            "type": "string"
+          },
+          "preparation_detail": {
+            "default": "balanced",
+            "enum": [
+              "concise",
+              "balanced",
+              "detailed"
+            ],
+            "title": "Preparation Detail",
+            "type": "string"
+          },
+          "teaching_style": {
+            "default": "balanced",
+            "enum": [
+              "balanced",
+              "direct_instruction",
+              "inquiry_led",
+              "collaborative"
+            ],
+            "title": "Teaching Style",
+            "type": "string"
+          }
+        },
+        "title": "TeacherMemoryPreferencesBody",
+        "type": "object"
+      },
+      "TeacherMemoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregate_revision": {
+            "title": "Aggregate Revision",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/TeacherMemoryPreferencesBody"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "schema_version",
+          "preferences",
+          "aggregate_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TeacherMemoryResponse",
+        "type": "object"
+      },
+      "TeacherMemoryUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/TeacherMemoryPreferencesBody"
+          }
+        },
+        "required": [
+          "preferences"
+        ],
+        "title": "TeacherMemoryUpdateRequest",
+        "type": "object"
+      },
       "TeacherOsMissionResponse": {
         "additionalProperties": false,
         "description": "Derived projection. No mission row exists behind this response.",
@@ -8890,6 +9007,931 @@
         "summary": "Teacher Os Library Version Get",
         "tags": [
           "contents",
+          "teacher-os"
+        ]
+      }
+    },
+    "/api/v1/teacher-os/memory": {
+      "get": {
+        "description": "Read the authenticated teacher's Memory profile. Never creates.",
+        "operationId": "teacher_os_memory_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherMemoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Opaque aggregate revision validator",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Teacher Os Memory Get",
+        "tags": [
+          "teaching",
+          "teacher-os"
+        ]
+      },
+      "post": {
+        "description": "Create the authenticated teacher's Memory. Ownership is never client-supplied.",
+        "operationId": "teacher_os_memory_create",
+        "parameters": [
+          {
+            "description": "Required retry key. Bounded, not stored in PostgreSQL.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeacherMemoryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherMemoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Opaque aggregate revision validator",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Teacher Os Memory Create",
+        "tags": [
+          "teaching",
+          "teacher-os"
+        ]
+      },
+      "put": {
+        "description": "Replace preferences for the authenticated teacher's Memory.",
+        "operationId": "teacher_os_memory_update",
+        "parameters": [
+          {
+            "description": "Required strong aggregate revision validator, e.g. \"r0\".",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "Required retry key. Bounded, not stored in PostgreSQL.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeacherMemoryUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherMemoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Opaque aggregate revision validator",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "428": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Teacher Os Memory Update",
+        "tags": [
+          "teaching",
           "teacher-os"
         ]
       }

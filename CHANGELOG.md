@@ -9,6 +9,13 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- TOS-DEV10-I03 — Teacher Memory v1: durable teacher preference profile SoR
+  (`teaching.teacher_memories`, Alembic `tosd100001`), teacher-os GET/POST/PUT
+  `/api/v1/teacher-os/memory` with idempotency, ETag/If-Match concurrency, and
+  security audit `teaching.memory.create|update`. Ownership is authenticated
+  principal only; Continuous Context / chat / learner / inference deferred.
+  Prepare may later read Memory as UI defaults only — MEMORY → GENERATION
+  CONTEXT DEFERRED (no ADR-052 prompt binding in this increment).
 - TOS-DEV10-I03S1 — Principal kind security substrate: nullable
   `security.principals.principal_kind` (`HUMAN` | `WORKLOAD`) via Alembic
   `pedi090002` (down_revision `tosd090002`), typed `PrincipalKind`,
