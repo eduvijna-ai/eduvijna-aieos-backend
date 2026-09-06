@@ -130,6 +130,30 @@ def test_migration_revision_chain() -> None:
     assert "position('*' in capability) = 0" in mig
     assert "CREATE SCHEMA security" not in mig
 
+    kind_mig = (MIGRATIONS / "pedi090002_principal_kind.py").read_text(encoding="utf-8")
+    assert 'revision: str = "pedi090002"' in kind_mig
+    assert 'down_revision: str | None = "tosd090002"' in kind_mig
+    assert "principal_kind" in kind_mig
+    assert "ck_security_principals_principal_kind" in kind_mig
+    assert "UPDATE security.principals" not in kind_mig
+    assert "SET principal_kind" not in kind_mig
+
+
+def test_principal_kind_export_and_identity_unchanged() -> None:
+    from aieos.platform.security.authorization import (
+        CurrentPrincipalClassificationAuthority,
+        PrincipalKind,
+    )
+
+    assert set(PrincipalKind) == {PrincipalKind.HUMAN, PrincipalKind.WORKLOAD}
+    assert hasattr(
+        CurrentPrincipalClassificationAuthority, "resolve_current_principal_kind"
+    )
+    assert hasattr(
+        CurrentPrincipalClassificationAuthority, "require_current_human_principal"
+    )
+    assert set(TrustedRequestIdentity.__dataclass_fields__) == {"principal_id"}
+
 
 def test_content_capability_vocabulary_owned_by_ports_not_decisions() -> None:
     """Ownership gate: generic decisions.py must not redefine Content constants."""
@@ -236,10 +260,10 @@ def test_no_jwt_business_authority_mapping_in_kernel() -> None:
         assert "PyJWK" not in text
         lower = text.lower()
         # Decision code must not map token claims into ALLOW.
-        assert "claims.get(\"roles\")" not in lower
+        assert 'claims.get("roles")' not in lower
         assert "claims.get('roles')" not in lower
-        assert "claims.get(\"permissions\")" not in lower
-        assert "claims.get(\"scope\")" not in lower
+        assert 'claims.get("permissions")' not in lower
+        assert 'claims.get("scope")' not in lower
 
 
 def test_no_wildcard_admin_bypass_delegation_cache_impl() -> None:
@@ -250,7 +274,10 @@ def test_no_wildcard_admin_bypass_delegation_cache_impl() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name in _FORBIDDEN_SRC_SYMBOLS:
                 hits.append(f"{path.name}:class {node.name}")
-            if isinstance(node, ast.FunctionDef) and node.name in _FORBIDDEN_SRC_SYMBOLS:
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name in _FORBIDDEN_SRC_SYMBOLS
+            ):
                 hits.append(f"{path.name}:def {node.name}")
         # No decision cache dicts at module level.
         for node in tree.body:
@@ -271,9 +298,9 @@ def test_no_wildcard_admin_bypass_delegation_cache_impl() -> None:
 
 
 def test_no_control_plane_crud_routes() -> None:
-    routes = (
-        SRC_ROOT / "domains" / "content" / "api" / "v1" / "routes.py"
-    ).read_text(encoding="utf-8")
+    routes = (SRC_ROOT / "domains" / "content" / "api" / "v1" / "routes.py").read_text(
+        encoding="utf-8"
+    )
     for needle in (
         "/principals",
         "/memberships",

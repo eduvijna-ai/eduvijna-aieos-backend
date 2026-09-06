@@ -16,6 +16,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
   principal only; Continuous Context / chat / learner / inference deferred.
   Prepare may later read Memory as UI defaults only — MEMORY → GENERATION
   CONTEXT DEFERRED (no ADR-052 prompt binding in this increment).
+- TOS-DEV10-I03S1 — Principal kind security substrate: nullable
+  `security.principals.principal_kind` (`HUMAN` | `WORKLOAD`) via Alembic
+  `pedi090002` (down_revision `tosd090002`), typed `PrincipalKind`,
+  `CurrentPrincipalClassificationAuthority` fail-closed SoR revalidation.
+  JWT/headers remain `principal_id`-only; no blanket HUMAN backfill.
+  **PRODUCTION-HARDENING CARRY-FORWARD:** before Production Readiness,
+  classify all active Principals and make `principal_kind` NOT NULL after an
+  explicit inventory/backfill/reconciliation gate. OpenAPI unchanged;
+  Alembic head `pedi090002`.
 
 ### Fixed
 
