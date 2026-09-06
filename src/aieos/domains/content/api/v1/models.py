@@ -176,3 +176,69 @@ class TeacherReviewQueueListResponse(BaseModel):
 
     items: list[TeacherReviewQueueItemResponse]
     next_cursor: str | None
+
+
+class TeacherLibraryReviewNavigation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_id: UUID
+    version_id: UUID
+
+
+class TeacherLibraryItemResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_id: UUID
+    content_type: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    stewardship_state: str
+    current_version_id: UUID | None
+    published_version_id: UUID | None
+    teaching_work_id: UUID | None
+    review_navigation: TeacherLibraryReviewNavigation | None
+
+
+class TeacherLibraryDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_id: UUID
+    content_type: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    stewardship_state: str
+    current_version_id: UUID | None
+    published_version_id: UUID | None
+    teaching_work_id: UUID | None
+    review_navigation: TeacherLibraryReviewNavigation | None
+    aggregate_revision: int
+
+
+class TeacherLibraryVersionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_id: UUID
+    version_id: UUID
+    version_number: int
+    content_type: str
+    title: str
+    stewardship_state: str
+    schema_id: str
+    schema_version: int
+    payload: dict[str, object]
+    payload_sha256: str
+    origin: str
+    created_at: datetime
+    published_version_id: UUID | None
+    current_version_id: UUID | None
+    teaching_work_id: UUID | None
+    aggregate_revision: int
+
+
+class TeacherLibraryListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[TeacherLibraryItemResponse]
+    next_cursor: str | None

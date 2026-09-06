@@ -29,7 +29,7 @@ COMPOSITION = REPO_ROOT / "src" / "aieos" / "platform" / "runtime" / "compositio
 OPENAPI = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 _APPROVED_BLOBSTORE_REL = "src/aieos/domains/asset/infrastructure/blobstore"
 EXPECTED_OPENAPI_SHA256 = (
-    "9B36BD1BF21BA4935A8ACA031176F9C57A06EB2E54E3ACA2261A7D7B6C3EDA69"
+    "ECA7264BAD37D235967D6E4895749777D7D4F9B19FB0D79D79726430D8C57DFB"
 )
 CONTENT_ROOT = REPO_ROOT / "src" / "aieos" / "domains" / "content"
 

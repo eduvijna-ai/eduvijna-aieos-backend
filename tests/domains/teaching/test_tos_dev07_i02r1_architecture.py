@@ -36,7 +36,7 @@ def test_head_constants_and_chain() -> None:
     assert EXPECTED_MIGRATION_HEAD == "tosd100001"
     assert DEV_EXPECTED_ALEMBIC_HEAD == "tosd100001"
     assert EXPECTED_OPENAPI_SHA256 == (
-        "9B36BD1BF21BA4935A8ACA031176F9C57A06EB2E54E3ACA2261A7D7B6C3EDA69"
+        "ECA7264BAD37D235967D6E4895749777D7D4F9B19FB0D79D79726430D8C57DFB"
     )
     text_002 = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd070002"' in text_002

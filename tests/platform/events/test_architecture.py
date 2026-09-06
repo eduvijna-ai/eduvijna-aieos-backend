@@ -142,6 +142,7 @@ def test_no_gci_i13_archive_routes() -> None:
     routes = (API_ROOT / "v1" / "routes.py").read_text(encoding="utf-8")
     assert "/actions/publish" in routes
     assert "/teacher-os/review-queue" in routes
+    assert "/teacher-os/library" in routes
     for needle in ("/archive", "/reviews", "version_asset_refs", "/generate"):
         assert needle not in routes
 

@@ -12,6 +12,11 @@ from aieos.domains.content.application.ai_generation_bindings import (
     ContentVersionAIGenerationBinding,
 )
 from aieos.domains.content.application.models import LockedContentHead
+from aieos.domains.content.application.library_models import (
+    TeacherLibraryDetail,
+    TeacherLibraryItem,
+    TeacherLibraryVersion,
+)
 from aieos.domains.content.application.review_queue_models import (
     TeacherReviewQueueDetail,
     TeacherReviewQueueItem,
@@ -249,6 +254,37 @@ class ReviewQueueReadRepository(Protocol):
     ) -> TeacherReviewQueueDetail | None: ...
 
 
+class LibraryReadRepository(Protocol):
+    """Read-only Teacher OS Library projection. No Library aggregate/lifecycle."""
+
+    def list_page(
+        self,
+        *,
+        owner_principal_id: UUID,
+        limit: int,
+        content_type: str | None,
+        stewardship_state: str | None,
+        published_only: bool,
+        after_updated_at: datetime | None,
+        after_content_id: ContentId | None,
+    ) -> list[TeacherLibraryItem]: ...
+
+    def get_item(
+        self,
+        content_id: ContentId,
+        *,
+        owner_principal_id: UUID,
+    ) -> TeacherLibraryDetail | None: ...
+
+    def get_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        owner_principal_id: UUID,
+    ) -> TeacherLibraryVersion | None: ...
+
+
 class PublicationRepository(Protocol):
     """INSERT/READ persistence for immutable Publication rows."""
 
@@ -318,6 +354,7 @@ class ContentUnitOfWork(Protocol):
     publications: PublicationRepository
     version_asset_refs: VersionAssetRefRepository
     review_queue: ReviewQueueReadRepository
+    library: LibraryReadRepository
     migration_imports: MigrationImportRecordRepository
     idempotency: IdempotencyRepository
     workflow_intents: WorkflowIntentRepository
