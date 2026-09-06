@@ -28,10 +28,14 @@ from aieos.platform.security.authorization.decisions import (
     AuthorityDecision,
     GrantStatus,
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
 from aieos.platform.security.authorization.kernel import AuthorizationKernel
+from aieos.platform.security.authorization.principal_classification import (
+    CurrentPrincipalClassificationAuthority,
+)
 from aieos.platform.security.authorization.repository import (
     SqlAlchemySecurityAuthorityRepository,
 )
@@ -55,6 +59,7 @@ __all__ = [
     "CONTENT_VERSION_CREATE",
     "AuthorityDecision",
     "AuthorizationKernel",
+    "CurrentPrincipalClassificationAuthority",
     "GrantStatus",
     "KernelAIGenerationAuthorization",
     "KernelAssetMutationAuthorization",
@@ -65,6 +70,7 @@ __all__ = [
     "KernelReviewAuthorization",
     "KernelTeachingWorkAuthorization",
     "MembershipStatus",
+    "PrincipalKind",
     "PrincipalStatus",
     "SqlAlchemySecurityAuthorityRepository",
     "TenantStatus",

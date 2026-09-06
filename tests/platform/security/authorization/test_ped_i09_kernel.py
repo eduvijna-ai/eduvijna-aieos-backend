@@ -35,6 +35,7 @@ from aieos.platform.security.authorization import (
 from aieos.platform.security.authorization.decisions import (
     GrantStatus,
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -61,13 +62,14 @@ def _kernel(engine) -> AuthorizationKernel:
 
 
 class TestTenantAccess:
-    def test_allow_active_membership(
-        self, bootstrap_engine, runtime_engine
-    ) -> None:
+    def test_allow_active_membership(self, bootstrap_engine, runtime_engine) -> None:
         tenant = uuid.uuid7()
         principal = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         assert (
             _kernel(runtime_engine).decide_tenant_access(
@@ -94,48 +96,54 @@ class TestTenantAccess:
             "expired_membership",
         ],
     )
-    def test_deny_matrix(
-        self, bootstrap_engine, runtime_engine, setup: str
-    ) -> None:
+    def test_deny_matrix(self, bootstrap_engine, runtime_engine, setup: str) -> None:
         tenant = uuid.uuid7()
         principal = uuid.uuid7()
         if setup == "unknown_principal":
             seed_tenant(bootstrap_engine, tenant)
         elif setup == "suspended_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.SUSPENDED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.SUSPENDED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "disabled_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.DISABLED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.DISABLED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "unknown_tenant":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
         elif setup == "suspended_tenant":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant, status=TenantStatus.SUSPENDED)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "disabled_tenant":
-            seed_principal(bootstrap_engine, principal)
-            seed_tenant(bootstrap_engine, tenant, status=TenantStatus.DISABLED)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
             )
+            seed_tenant(bootstrap_engine, tenant, status=TenantStatus.DISABLED)
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "missing_membership":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
         elif setup == "suspended_membership":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
             seed_membership(
                 bootstrap_engine,
@@ -144,7 +152,9 @@ class TestTenantAccess:
                 status=MembershipStatus.SUSPENDED,
             )
         elif setup == "revoked_membership":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
             seed_membership(
                 bootstrap_engine,
@@ -154,7 +164,9 @@ class TestTenantAccess:
                 revoked_at=datetime.now(UTC),
             )
         elif setup == "expired_membership":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
             seed_membership(
                 bootstrap_engine,
@@ -181,6 +193,7 @@ class TestCapability:
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(CONTENT_PUBLISH,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         assert (
             _kernel(runtime_engine).decide_capability(
@@ -204,14 +217,15 @@ class TestCapability:
             "invalid_membership",
         ],
     )
-    def test_deny_matrix(
-        self, bootstrap_engine, runtime_engine, setup: str
-    ) -> None:
+    def test_deny_matrix(self, bootstrap_engine, runtime_engine, setup: str) -> None:
         tenant = uuid.uuid7()
         principal = uuid.uuid7()
         if setup == "unknown_capability":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             capability = "content.unknown.capability"
         elif setup == "wrong_capability":
@@ -220,16 +234,23 @@ class TestCapability:
                 tenant_id=tenant,
                 principal_id=principal,
                 capabilities=(CONTENT_PUBLISH,),
+                principal_kind=PrincipalKind.HUMAN,
             )
             capability = CONTENT_REVIEW_DECIDE
         elif setup == "missing_grant":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             capability = CONTENT_PUBLISH
         elif setup == "revoked_grant":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_grant(
                 bootstrap_engine,
@@ -242,7 +263,10 @@ class TestCapability:
             capability = CONTENT_PUBLISH
         elif setup == "expired_grant":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_grant(
                 bootstrap_engine,
@@ -254,12 +278,13 @@ class TestCapability:
             capability = CONTENT_PUBLISH
         elif setup == "inactive_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.SUSPENDED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.SUSPENDED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
             seed_grant(
                 bootstrap_engine,
                 tenant_id=tenant,
@@ -268,11 +293,11 @@ class TestCapability:
             )
             capability = CONTENT_PUBLISH
         elif setup == "inactive_tenant":
-            seed_principal(bootstrap_engine, principal)
-            seed_tenant(bootstrap_engine, tenant, status=TenantStatus.DISABLED)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
             )
+            seed_tenant(bootstrap_engine, tenant, status=TenantStatus.DISABLED)
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
             seed_grant(
                 bootstrap_engine,
                 tenant_id=tenant,
@@ -281,7 +306,9 @@ class TestCapability:
             )
             capability = CONTENT_PUBLISH
         else:  # invalid_membership
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
             seed_membership(
                 bootstrap_engine,
@@ -316,6 +343,7 @@ class TestCapability:
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(CONTENT_PUBLISH,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         assert (
             _kernel(runtime_engine).decide_capability(
@@ -334,16 +362,17 @@ class TestCurrentAuthorityNoCache:
         tenant = uuid.uuid7()
         principal = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         assert (
             kernel.decide_tenant_access(principal_id=principal, tenant_id=tenant)
             is AuthorityDecision.ALLOW
         )
-        revoke_membership(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
-        )
+        revoke_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         assert (
             kernel.decide_tenant_access(principal_id=principal, tenant_id=tenant)
             is AuthorityDecision.DENY
@@ -359,6 +388,7 @@ class TestCurrentAuthorityNoCache:
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(CONTENT_PUBLISH,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         assert (
@@ -410,7 +440,10 @@ class TestWildcardFailClosed:
         tenant = uuid.uuid7()
         principal = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         assert (
@@ -455,7 +488,7 @@ class TestCorruptAuthorityState:
         pid = uuid.uuid7()
         tid = uuid.uuid7()
         with pytest.raises(AuthorizationUnavailableError):
-            PrincipalAuthorityRow(principal_id=pid, status="CORRUPT")  # type: ignore[arg-type]
+            PrincipalAuthorityRow(principal_id=pid, status="CORRUPT", principal_kind=None)  # type: ignore[arg-type]
         with pytest.raises(AuthorizationUnavailableError):
             TenantAuthorityRow(tenant_id=tid, status="BOGUS")  # type: ignore[arg-type]
         with pytest.raises(AuthorizationUnavailableError):
@@ -494,7 +527,9 @@ class TestCorruptAuthorityState:
             def load_tenant_access_bundle(self, *, principal_id, tenant_id):
                 return TenantAccessBundle(
                     principal=PrincipalAuthorityRow(
-                        principal_id=principal_id, status="CORRUPT"  # type: ignore[arg-type]
+                        principal_id=principal_id,
+                        status="CORRUPT",  # type: ignore[arg-type]
+                        principal_kind=None,
                     ),
                     tenant=TenantAuthorityRow(
                         tenant_id=tenant_id, status=TenantStatus.ACTIVE
@@ -542,7 +577,9 @@ class TestCorruptAuthorityState:
             def load_capability_bundle(self, *, principal_id, tenant_id, capability):
                 return CapabilityBundle(
                     principal=PrincipalAuthorityRow(
-                        principal_id=principal_id, status=PrincipalStatus.ACTIVE
+                        principal_id=principal_id,
+                        status=PrincipalStatus.ACTIVE,
+                        principal_kind=None,
                     ),
                     tenant=TenantAuthorityRow(
                         tenant_id=tenant_id, status=TenantStatus.ACTIVE
@@ -614,6 +651,7 @@ class TestContentAdapters:
                 CONTENT_VERSION_CREATE,
                 CONTENT_MIGRATE_IMPORT,
             ),
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         content_id = ContentId(uuid.uuid7())

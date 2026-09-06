@@ -109,11 +109,9 @@ def _insert_action(
     )
 
 
-def test_current_database_head_is_tosd090002(bootstrap_engine: Engine) -> None:
+def test_current_database_head_is_pedi090002(bootstrap_engine: Engine) -> None:
     with bootstrap_engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "tosd090002"
-        )
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == ("pedi090002")
 
 
 def test_valid_remediation_create_audit_row_inserts(

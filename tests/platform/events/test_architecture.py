@@ -119,6 +119,7 @@ def test_migration_chain_and_forbidden_tables() -> None:
         "gcii110001_ai_provenance.py",
         "gcii130001_migration_import.py",
         "pedi090001_security_authority.py",
+        "pedi090002_principal_kind.py",
         "pedi10b2001_asset_authority_sor.py",
         "pedi10b6001_asset_security_audit.py",
         "saii020001_security_audit_ledger.py",
@@ -133,7 +134,7 @@ def test_migration_chain_and_forbidden_tables() -> None:
     "tosd080001_classroom_assessments.py",
     "tosd080002_classroom_assessment_audit.py",
     "tosd090001_remediation_work_origin.py",
-    "tosd090002_teaching_work_remediation_audit.py",
+    "tosd090002_teaching_work_remediation_audit.py"
     ]
 
 

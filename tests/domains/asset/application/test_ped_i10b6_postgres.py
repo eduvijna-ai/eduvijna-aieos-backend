@@ -36,6 +36,7 @@ from aieos.platform.security.authorization import (
 )
 from aieos.platform.security.authorization.decisions import (
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -79,7 +80,9 @@ def _service(runtime_engine: Engine, blobs=None, auth=None) -> AssetMutationServ
 
 
 def _prepared(blobs: InMemoryBlobStore) -> PreparedBlob:
-    info = blobs.create(storage_key=uuid7().hex, source=BytesIO(PAYLOAD), byte_size=len(PAYLOAD))
+    info = blobs.create(
+        storage_key=uuid7().hex, source=BytesIO(PAYLOAD), byte_size=len(PAYLOAD)
+    )
     return PreparedBlob(
         storage_key=info.storage_key,
         byte_size=info.byte_size,
@@ -101,9 +104,7 @@ def _count_revisions(bootstrap_engine, asset_id: UUID) -> int:
     with bootstrap_engine.connect() as conn:
         return int(
             conn.execute(
-                text(
-                    "SELECT count(*) FROM asset.asset_revisions WHERE asset_id = :id"
-                ),
+                text("SELECT count(*) FROM asset.asset_revisions WHERE asset_id = :id"),
                 {"id": asset_id},
             ).scalar_one()
         )
@@ -158,8 +159,7 @@ def _insert_raw(conn, **overrides):
     }
     base.update(overrides)
     conn.execute(
-        text(
-            """
+        text("""
             INSERT INTO security.audit_records (
                 audit_record_id, tenant_id, action,
                 primary_resource_type, primary_resource_id, primary_resource_revision,
@@ -177,8 +177,7 @@ def _insert_raw(conn, **overrides):
                 :delegation_id, :execution_channel,
                 :correlation_id, :causation_id, :trace_id, :occurred_at
             )
-            """
-        ),
+            """),
         {
             **base,
             "related_resource_refs": json.dumps(base["related_resource_refs"]),
@@ -240,8 +239,10 @@ class TestMigrationHeadAndContentCompatibility:
     def test_alembic_head_is_tosd060001(self, bootstrap_engine) -> None:
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "tosd090002"
+                conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+                == "pedi090002"
             )
 
     def test_existing_content_audit_row_still_accepted(self, bootstrap_engine) -> None:
@@ -455,15 +456,14 @@ class TestImmutabilityAndRls:
 
 
 class TestKernelAuthorityMatrix:
-    def test_exact_grant_allows_create(
-        self, bootstrap_engine, runtime_engine
-    ) -> None:
+    def test_exact_grant_allows_create(self, bootstrap_engine, runtime_engine) -> None:
         tenant, principal = uuid7(), uuid7()
         seed_active_authority(
             bootstrap_engine,
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(ASSET_CREATE,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         auth = KernelAssetMutationAuthorization(_kernel(runtime_engine))
         service = _service(runtime_engine, auth=auth)
@@ -484,7 +484,10 @@ class TestKernelAuthorityMatrix:
     ) -> None:
         tenant, principal = uuid7(), uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         auth = KernelAssetMutationAuthorization(_kernel(runtime_engine))
         service = _service(runtime_engine, auth=auth)
@@ -535,12 +538,13 @@ class TestKernelAuthorityMatrix:
         now = datetime.now(UTC)
         if setup == "suspended_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.SUSPENDED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.SUSPENDED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
             seed_grant(
                 bootstrap_engine,
                 tenant_id=tenant,
@@ -548,13 +552,11 @@ class TestKernelAuthorityMatrix:
                 capability=ASSET_CREATE,
             )
         elif setup == "suspended_tenant":
-            seed_principal(bootstrap_engine, principal)
-            seed_tenant(
-                bootstrap_engine, tenant, status=TenantStatus.SUSPENDED
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
             )
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_tenant(bootstrap_engine, tenant, status=TenantStatus.SUSPENDED)
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
             seed_grant(
                 bootstrap_engine,
                 tenant_id=tenant,
@@ -567,6 +569,7 @@ class TestKernelAuthorityMatrix:
                 tenant_id=tenant,
                 principal_id=principal,
                 capabilities=(ASSET_CREATE,),
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_membership(
                 bootstrap_engine,
@@ -580,13 +583,17 @@ class TestKernelAuthorityMatrix:
                 tenant_id=tenant,
                 principal_id=principal,
                 capabilities=(ASSET_CREATE,),
+                principal_kind=PrincipalKind.HUMAN,
             )
             revoke_membership(
                 bootstrap_engine, tenant_id=tenant, principal_id=principal
             )
         elif setup == "expired_grant":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_grant(
                 bootstrap_engine,
@@ -601,6 +608,7 @@ class TestKernelAuthorityMatrix:
                 tenant_id=tenant,
                 principal_id=principal,
                 capabilities=(ASSET_CREATE,),
+                principal_kind=PrincipalKind.HUMAN,
             )
             revoke_grant(
                 bootstrap_engine,
@@ -625,9 +633,7 @@ class TestKernelAuthorityMatrix:
         assert _count_asset_audits(bootstrap_engine, asset_id.value) == 0
         assert probe.calls == []
 
-    def test_repository_unavailable_is_not_allow(
-        self, runtime_engine
-    ) -> None:
+    def test_repository_unavailable_is_not_allow(self, runtime_engine) -> None:
         from sqlalchemy import create_engine
 
         engine = create_engine(
@@ -637,9 +643,7 @@ class TestKernelAuthorityMatrix:
         )
         auth = KernelAssetMutationAuthorization(_kernel(engine))
         factory = SqlAlchemyAssetUnitOfWorkFactory(runtime_engine)
-        service = AssetMutationService(
-            factory, InMemoryBlobStore(), auth, clock=_clock
-        )
+        service = AssetMutationService(factory, InMemoryBlobStore(), auth, clock=_clock)
         tenant, principal, asset_id = uuid7(), uuid7(), AssetId.generate()
         with pytest.raises(AuthorizationUnavailableError):
             service.create_asset(
@@ -792,8 +796,7 @@ class TestAuditInsertFailureRollsBackPostgres:
                 **asset_audit_kwargs(principal),
             )
         assert (
-            _count_asset_audits(bootstrap_engine, asset.asset_id.value)
-            == before_safety
+            _count_asset_audits(bootstrap_engine, asset.asset_id.value) == before_safety
         )
 
         ok.mark_safety_passed(
@@ -868,15 +871,19 @@ class TestDowngradeGuard:
         command.downgrade(cfg, "pedi10b2001")
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
                 == "pedi10b2001"
             )
         command.upgrade(cfg, "head")
         provision_runtime_grants(bootstrap_engine)
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "tosd090002"
+                conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+                == "pedi090002"
             )
         evidence_id = uuid7()
         with bootstrap_engine.connect() as conn:
@@ -891,8 +898,10 @@ class TestDowngradeGuard:
         assert "Asset security audit evidence" in message
         with bootstrap_engine.connect() as conn:
             assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "tosd090002"
+                conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+                == "pedi090002"
             )
             assert (
                 conn.execute(

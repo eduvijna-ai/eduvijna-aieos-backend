@@ -38,8 +38,8 @@ EXECUTION_READ_OPS = (
 
 class TestI02ArchitectureGuards:
     def test_alembic_head_still_tosd070002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "pedi090002"
+        assert EXPECTED_MIGRATION_HEAD == "pedi090002"
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )

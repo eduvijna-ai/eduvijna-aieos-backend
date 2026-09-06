@@ -37,8 +37,8 @@ def _py_files(root: Path) -> list[Path]:
 
 class TestI01ArchitectureGuards:
     def test_current_alembic_head_tosd090001(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "pedi090002"
+        assert EXPECTED_MIGRATION_HEAD == "pedi090002"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd090001"' in text
         assert 'down_revision: str | None = "tosd080002"' in text
