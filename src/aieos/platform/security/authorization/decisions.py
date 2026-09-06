@@ -23,6 +23,17 @@ class PrincipalStatus(StrEnum):
     DISABLED = "DISABLED"
 
 
+class PrincipalKind(StrEnum):
+    """Authoritative principal classification (ADR-AIEOS-023R1 / A23R1-INV-03).
+
+    Stored on ``security.principals.principal_kind``. JWT/headers never supply
+    kind — current SoR revalidation is the only authority.
+    """
+
+    HUMAN = "HUMAN"
+    WORKLOAD = "WORKLOAD"
+
+
 class TenantStatus(StrEnum):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"

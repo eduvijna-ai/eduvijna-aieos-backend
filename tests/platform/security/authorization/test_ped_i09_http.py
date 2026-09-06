@@ -43,6 +43,7 @@ from aieos.platform.security.authorization import (
 )
 from aieos.platform.security.authorization.decisions import (
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -244,7 +245,10 @@ class TestTenantAuthorityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         authority = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
         factory = RecordingUowFactory()
@@ -278,51 +282,58 @@ class TestTenantAuthorityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         if setup == "missing_membership":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant)
         elif setup == "revoked_membership":
             seed_active_authority(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
+                bootstrap_engine,
+                tenant_id=tenant,
+                principal_id=principal,
+                principal_kind=PrincipalKind.HUMAN,
             )
             revoke_membership(
                 bootstrap_engine, tenant_id=tenant, principal_id=principal
             )
         elif setup == "suspended_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.SUSPENDED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.SUSPENDED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
             from tests.platform.security.authorization.helpers import seed_membership
 
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "disabled_principal":
             seed_principal(
-                bootstrap_engine, principal, status=PrincipalStatus.DISABLED
+                bootstrap_engine,
+                principal,
+                status=PrincipalStatus.DISABLED,
+                principal_kind=PrincipalKind.HUMAN,
             )
             seed_tenant(bootstrap_engine, tenant)
             from tests.platform.security.authorization.helpers import seed_membership
 
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         elif setup == "suspended_tenant":
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant, status=TenantStatus.SUSPENDED)
             from tests.platform.security.authorization.helpers import seed_membership
 
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         else:
-            seed_principal(bootstrap_engine, principal)
+            seed_principal(
+                bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN
+            )
             seed_tenant(bootstrap_engine, tenant, status=TenantStatus.DISABLED)
             from tests.platform.security.authorization.helpers import seed_membership
 
-            seed_membership(
-                bootstrap_engine, tenant_id=tenant, principal_id=principal
-            )
+            seed_membership(bootstrap_engine, tenant_id=tenant, principal_id=principal)
         authority = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
         factory = RecordingUowFactory()
         app, factory = _app(
@@ -380,7 +391,9 @@ class TestCorruptAuthorityHttp:
             def load_tenant_access_bundle(self, *, principal_id, tenant_id):
                 return TenantAccessBundle(
                     principal=PrincipalAuthorityRow(
-                        principal_id=principal_id, status="CORRUPT"  # type: ignore[arg-type]
+                        principal_id=principal_id,
+                        status="CORRUPT",  # type: ignore[arg-type]
+                        principal_kind=None,
                     ),
                     tenant=TenantAuthorityRow(
                         tenant_id=tenant_id, status=TenantStatus.ACTIVE
@@ -413,9 +426,7 @@ class TestCorruptAuthorityHttp:
         client = TestClient(app, raise_server_exceptions=False)
         token = _mint(private_key, principal_id=principal)
         response = client.get("/api/v1/contents", headers=_headers(tenant, token))
-        body = _assert_problem(
-            response, status=503, code="authorization_unavailable"
-        )
+        body = _assert_problem(response, status=503, code="authorization_unavailable")
         blob = json.dumps(body).lower()
         assert "corrupt" not in blob
         assert "bogus" not in blob
@@ -442,7 +453,10 @@ class TestCorruptAuthorityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         now = datetime.now(UTC)
         good_tenant = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
@@ -454,7 +468,9 @@ class TestCorruptAuthorityHttp:
             def load_capability_bundle(self, *, principal_id, tenant_id, capability):
                 return CapabilityBundle(
                     principal=PrincipalAuthorityRow(
-                        principal_id=principal_id, status=_PS.ACTIVE
+                        principal_id=principal_id,
+                        status=_PS.ACTIVE,
+                        principal_kind=None,
                     ),
                     tenant=TenantAuthorityRow(
                         tenant_id=tenant_id, status=TenantStatus.ACTIVE
@@ -499,9 +515,7 @@ class TestCorruptAuthorityHttp:
             "actions/submit-for-review",
             headers=headers,
         )
-        body = _assert_problem(
-            response, status=503, code="authorization_unavailable"
-        )
+        body = _assert_problem(response, status=503, code="authorization_unavailable")
         assert "corrupt" not in json.dumps(body).lower()
         assert factory.calls == 0
 
@@ -514,7 +528,10 @@ class TestCapabilityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         factory = RecordingUowFactory()
@@ -544,7 +561,10 @@ class TestCapabilityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         factory = RecordingUowFactory()
@@ -574,11 +594,12 @@ class TestCapabilityHttp:
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine, tenant_id=tenant, principal_id=principal
+            bootstrap_engine,
+            tenant_id=tenant,
+            principal_id=principal,
+            principal_kind=PrincipalKind.HUMAN,
         )
-        good_authority = KernelCurrentTenantAccessAuthority(
-            _kernel(runtime_engine)
-        )
+        good_authority = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
         bad = create_engine(
             "postgresql+psycopg://nobody:bad@127.0.0.1:1/none",
             connect_args={"connect_timeout": 1},
@@ -614,6 +635,7 @@ class TestCapabilityHttp:
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(CONTENT_REVIEW_SUBMIT,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         factory = RecordingUowFactory()
@@ -647,6 +669,7 @@ class TestCapabilityHttp:
             tenant_id=tenant,
             principal_id=principal,
             capabilities=(CONTENT_PUBLISH,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         kernel = _kernel(runtime_engine)
         factory = RecordingUowFactory()
@@ -692,7 +715,7 @@ class TestSpoofingAndJwtClaimsIgnored:
         principal = uuid.uuid7()
         other = uuid.uuid7()
         tenant = uuid.uuid7()
-        seed_principal(bootstrap_engine, principal)
+        seed_principal(bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN)
         seed_tenant(bootstrap_engine, tenant)
         authority = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
         factory = RecordingUowFactory()
@@ -729,7 +752,7 @@ class TestSpoofingAndJwtClaimsIgnored:
         private_key, public_jwk = rsa_material
         principal = uuid.uuid7()
         tenant = uuid.uuid7()
-        seed_principal(bootstrap_engine, principal)
+        seed_principal(bootstrap_engine, principal, principal_kind=PrincipalKind.HUMAN)
         seed_tenant(bootstrap_engine, tenant)
         authority = KernelCurrentTenantAccessAuthority(_kernel(runtime_engine))
         factory = RecordingUowFactory()

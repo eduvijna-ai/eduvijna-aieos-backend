@@ -15,6 +15,7 @@ principals_table = Table(
     authority_metadata,
     Column("principal_id", UUID(as_uuid=True), primary_key=True, nullable=False),
     Column("status", Text, nullable=False),
+    Column("principal_kind", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )

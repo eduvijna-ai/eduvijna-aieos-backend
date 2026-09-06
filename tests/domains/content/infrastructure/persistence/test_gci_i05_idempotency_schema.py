@@ -150,7 +150,7 @@ class TestAlembicCycle:
         command.upgrade(cfg, "head")
         provision_runtime_grants(bootstrap_engine)
         with bootstrap_engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == ("tosd090002")
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == ("pedi090002")
             api_tables = {
                 row[0]
                 for row in conn.execute(
@@ -175,6 +175,7 @@ class TestAlembicCycle:
             "gcii110001_ai_provenance.py",
             "gcii130001_migration_import.py",
             "pedi090001_security_authority.py",
+            "pedi090002_principal_kind.py",
             "pedi10b2001_asset_authority_sor.py",
             "pedi10b6001_asset_security_audit.py",
             "saii020001_security_audit_ledger.py",
@@ -189,5 +190,5 @@ class TestAlembicCycle:
     "tosd080001_classroom_assessments.py",
     "tosd080002_classroom_assessment_audit.py",
     "tosd090001_remediation_work_origin.py",
-    "tosd090002_teaching_work_remediation_audit.py",
+    "tosd090002_teaching_work_remediation_audit.py"
         ]

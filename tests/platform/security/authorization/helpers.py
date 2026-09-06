@@ -11,6 +11,7 @@ from sqlalchemy.engine import Connection, Engine
 from aieos.platform.security.authorization.decisions import (
     GrantStatus,
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -20,11 +21,19 @@ def seed_principal(
     engine: Engine,
     principal_id: UUID,
     *,
+    principal_kind: PrincipalKind | None,
     status: str = PrincipalStatus.ACTIVE,
     now: datetime | None = None,
 ) -> None:
+    """Upsert a principal. ``principal_kind`` is required (None = unclassified)."""
     with engine.begin() as conn:
-        _upsert_principal(conn, principal_id, status=status, now=now)
+        _upsert_principal(
+            conn,
+            principal_id,
+            principal_kind=principal_kind,
+            status=status,
+            now=now,
+        )
 
 
 def seed_tenant(
@@ -89,11 +98,14 @@ def seed_active_authority(
     *,
     tenant_id: UUID,
     principal_id: UUID,
+    principal_kind: PrincipalKind,
     capabilities: tuple[str, ...] = (),
 ) -> None:
     """Seed ACTIVE principal + tenant + membership (+ optional ACTIVE grants)."""
     with engine.begin() as conn:
-        _upsert_principal(conn, principal_id)
+        _upsert_principal(
+            conn, principal_id, principal_kind=principal_kind
+        )
         _upsert_tenant(conn, tenant_id)
         _upsert_membership(
             conn, tenant_id=tenant_id, principal_id=principal_id
@@ -166,25 +178,33 @@ def _upsert_principal(
     conn: Connection,
     principal_id: UUID,
     *,
+    principal_kind: PrincipalKind | None,
     status: str = PrincipalStatus.ACTIVE,
     now: datetime | None = None,
 ) -> None:
+    kind_value = None if principal_kind is None else str(principal_kind)
     conn.execute(
         text(
             """
             INSERT INTO security.principals (
-                principal_id, status, created_at, updated_at
+                principal_id, status, principal_kind, created_at, updated_at
             ) VALUES (
-                :principal_id, :status,
+                :principal_id, :status, :principal_kind,
                 COALESCE(:now, clock_timestamp()),
                 COALESCE(:now, clock_timestamp())
             )
             ON CONFLICT (principal_id) DO UPDATE SET
                 status = EXCLUDED.status,
+                principal_kind = EXCLUDED.principal_kind,
                 updated_at = EXCLUDED.updated_at
             """
         ),
-        {"principal_id": principal_id, "status": status, "now": _ts(now)},
+        {
+            "principal_id": principal_id,
+            "status": status,
+            "principal_kind": kind_value,
+            "now": _ts(now),
+        },
     )
 
 

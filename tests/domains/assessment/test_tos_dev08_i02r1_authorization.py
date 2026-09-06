@@ -27,6 +27,7 @@ from aieos.platform.security.authorization import (
 )
 from aieos.platform.security.authorization.decisions import (
     GrantStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -107,6 +108,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         _auth(runtime_engine).authorize(
             tenant_id=tenant_id,
@@ -122,6 +124,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -138,6 +141,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -154,6 +158,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_CORRECT,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -170,6 +175,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_READ,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -186,6 +192,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_LIST,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -202,6 +209,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -218,6 +226,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with pytest.raises(AssessmentCapabilityForbidden):
             _auth(runtime_engine).authorize(
@@ -234,6 +243,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         auth = _auth(runtime_engine)
         auth.authorize(
@@ -264,6 +274,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         seed_grant(
             bootstrap_engine,
@@ -297,18 +308,21 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         if setup == "suspended_principal":
             seed_principal(
                 bootstrap_engine,
                 principal_id,
                 status=PrincipalStatus.SUSPENDED,
+                principal_kind=PrincipalKind.HUMAN,
             )
         elif setup == "disabled_principal":
             seed_principal(
                 bootstrap_engine,
                 principal_id,
                 status=PrincipalStatus.DISABLED,
+                principal_kind=PrincipalKind.HUMAN,
             )
         else:
             seed_tenant(
@@ -338,9 +352,7 @@ class TestKernelAssessmentAuthorization:
                 capability=ASSESSMENT_CLASSROOM_RECORD,
             )
 
-    def test_auth12_unexpected_failure_sanitized(
-        self, tenant_id, principal_id
-    ) -> None:
+    def test_auth12_unexpected_failure_sanitized(self, tenant_id, principal_id) -> None:
         class _BrokenKernel:
             def decide_capability(self, **_kwargs):
                 raise RuntimeError("db exploded")
@@ -364,6 +376,7 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         adapter_src = Path(
             "src/aieos/platform/security/authorization/assessment_adapters.py"
@@ -388,11 +401,11 @@ class TestKernelAssessmentAuthorization:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         with bootstrap_engine.begin() as conn:
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO security.audit_records (
                         audit_record_id, tenant_id, action,
                         primary_resource_type, primary_resource_id,
@@ -412,8 +425,7 @@ class TestKernelAssessmentAuthorization:
                         NULL, 'API',
                         :corr, :caus, NULL, clock_timestamp()
                     )
-                    """
-                ),
+                    """),
                 {
                     "aid": uuid.uuid7(),
                     "tid": tenant_id,
@@ -440,6 +452,7 @@ class TestHttpCapabilityAndReplay:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -470,6 +483,7 @@ class TestHttpCapabilityAndReplay:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -500,6 +514,7 @@ class TestHttpCapabilityAndReplay:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -537,23 +552,19 @@ class TestHttpCapabilityAndReplay:
         assert denied.status_code == 403, denied.text
         with bootstrap_engine.connect() as conn:
             count = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT count(*) FROM assessment.classroom_assessments
                     WHERE tenant_id = :tid
-                    """
-                ),
+                    """),
                 {"tid": tenant_id},
             ).scalar_one()
             assert count == 1
             audits = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT count(*) FROM security.audit_records
                     WHERE tenant_id = :tid
                       AND action = 'assessment.classroom.record'
-                    """
-                ),
+                    """),
                 {"tid": tenant_id},
             ).scalar_one()
             assert audits == 1
@@ -568,13 +579,11 @@ class TestHttpCapabilityAndReplay:
         assert replayed.json()["assessment_id"] == assessment_id
         with bootstrap_engine.connect() as conn:
             audits = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT count(*) FROM security.audit_records
                     WHERE tenant_id = :tid
                       AND action = 'assessment.classroom.record'
-                    """
-                ),
+                    """),
                 {"tid": tenant_id},
             ).scalar_one()
             assert audits == 1
@@ -587,6 +596,7 @@ class TestHttpCapabilityAndReplay:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(ASSESSMENT_CLASSROOM_RECORD,),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -635,6 +645,7 @@ class TestHttpCapabilityAndReplay:
                 ASSESSMENT_CLASSROOM_RECORD,
                 ASSESSMENT_CLASSROOM_CORRECT,
             ),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -679,12 +690,10 @@ class TestHttpCapabilityAndReplay:
         assert denied.status_code == 403
         with bootstrap_engine.connect() as conn:
             row = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT aggregate_revision FROM assessment.classroom_assessments
                     WHERE assessment_id = :aid
-                    """
-                ),
+                    """),
                 {"aid": assessment_id},
             ).scalar_one()
             assert int(row) == rev
@@ -700,6 +709,7 @@ class TestHttpCapabilityAndReplay:
                 ASSESSMENT_CLASSROOM_RECORD,
                 ASSESSMENT_CLASSROOM_VOID,
             ),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -740,13 +750,11 @@ class TestHttpCapabilityAndReplay:
         assert denied.status_code == 403
         with bootstrap_engine.connect() as conn:
             row = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT aggregate_revision, lifecycle_state
                     FROM assessment.classroom_assessments
                     WHERE assessment_id = :aid
-                    """
-                ),
+                    """),
                 {"aid": assessment_id},
             ).one()
             assert int(row.aggregate_revision) == rev
@@ -763,6 +771,7 @@ class TestHttpCapabilityAndReplay:
                 ASSESSMENT_CLASSROOM_RECORD,
                 ASSESSMENT_CLASSROOM_CORRECT,
             ),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -807,7 +816,6 @@ class TestHttpCapabilityAndReplay:
         )
         assert denied.status_code == 403
 
-
     def test_auth12_http_authorization_unavailable_503(
         self, runtime_engine, bootstrap_engine, tenant_id, principal_id
     ) -> None:
@@ -820,6 +828,7 @@ class TestHttpCapabilityAndReplay:
             tenant_id=tenant_id,
             principal_id=principal_id,
             capabilities=(),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -854,6 +863,7 @@ class TestHttpCapabilityAndReplay:
                 ASSESSMENT_CLASSROOM_RECORD,
                 ASSESSMENT_CLASSROOM_CORRECT,
             ),
+            principal_kind=PrincipalKind.HUMAN,
         )
         content_id, version_id = _seed_content(
             bootstrap_engine, tenant_id, principal_id
@@ -898,15 +908,13 @@ class TestHttpCapabilityAndReplay:
         assert corrected.status_code == 200, corrected.text
         with bootstrap_engine.begin() as conn:
             updated = conn.execute(
-                text(
-                    """
+                text("""
                     UPDATE api.idempotency_records
                     SET result_content_id = :other
                     WHERE tenant_id = :tid
                       AND actor_principal_id = :pid
                       AND operation = 'assessment_classroom_correct.v1'
-                    """
-                ),
+                    """),
                 {
                     "other": assessment_b,
                     "tid": tenant_id,
@@ -937,6 +945,5 @@ class TestProductionCatalogComposition:
         assert (
             "known_capabilities=( AIEOS_CONTENT_CAPABILITIES"
             " | AIEOS_ASSESSMENT_CAPABILITIES"
-            " | AIEOS_TEACHING_WORK_CAPABILITIES )"
-            in compact_src
+            " | AIEOS_TEACHING_WORK_CAPABILITIES )" in compact_src
         )

@@ -14,6 +14,7 @@ from sqlalchemy.engine import Connection, Engine
 from aieos.platform.security.authorization.decisions import (
     GrantStatus,
     MembershipStatus,
+    PrincipalKind,
     PrincipalStatus,
     TenantStatus,
 )
@@ -45,16 +46,37 @@ def coerce_authority_status(enum_cls: type[_StatusT], raw: object) -> _StatusT:
         ) from exc
 
 
+def coerce_principal_kind(raw: object) -> PrincipalKind | None:
+    """Materialize principal_kind: NULL → None; valid enum; else unavailable."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise AuthorizationUnavailableError("authorization unavailable")
+    try:
+        return PrincipalKind(raw)
+    except ValueError as exc:
+        raise AuthorizationUnavailableError(
+            "authorization unavailable"
+        ) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class PrincipalAuthorityRow:
     principal_id: UUID
     status: PrincipalStatus
+    principal_kind: PrincipalKind | None
 
     def __post_init__(self) -> None:
-        if isinstance(self.status, PrincipalStatus):
+        if not isinstance(self.status, PrincipalStatus):
+            object.__setattr__(
+                self, "status", coerce_authority_status(PrincipalStatus, self.status)
+            )
+        if self.principal_kind is None or isinstance(
+            self.principal_kind, PrincipalKind
+        ):
             return
         object.__setattr__(
-            self, "status", coerce_authority_status(PrincipalStatus, self.status)
+            self, "principal_kind", coerce_principal_kind(self.principal_kind)
         )
 
 
@@ -129,6 +151,20 @@ class SqlAlchemySecurityAuthorityRepository:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
+    def load_principal(
+        self, principal_id: UUID
+    ) -> PrincipalAuthorityRow | None:
+        """Load current principal SoR row (no tenant RLS scope required)."""
+        try:
+            with security_authority_read(self._engine) as conn:
+                return self._fetch_principal(conn, principal_id)
+        except AuthorizationUnavailableError:
+            raise
+        except Exception as exc:
+            raise AuthorizationUnavailableError(
+                "authorization unavailable"
+            ) from exc
+
     def load_tenant_access_bundle(
         self, *, principal_id: UUID, tenant_id: UUID
     ) -> TenantAccessBundle:
@@ -195,6 +231,7 @@ class SqlAlchemySecurityAuthorityRepository:
                 select(
                     principals_table.c.principal_id,
                     principals_table.c.status,
+                    principals_table.c.principal_kind,
                 ).where(principals_table.c.principal_id == principal_id)
             )
             .mappings()
@@ -205,6 +242,7 @@ class SqlAlchemySecurityAuthorityRepository:
         return PrincipalAuthorityRow(
             principal_id=row["principal_id"],
             status=coerce_authority_status(PrincipalStatus, row["status"]),
+            principal_kind=coerce_principal_kind(row["principal_kind"]),
         )
 
     def _fetch_tenant(
