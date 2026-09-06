@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from uuid import UUID
 
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
@@ -138,7 +139,26 @@ from aieos.platform.security.authenticator import RequestIdentityAuthenticator
 from aieos.platform.security.authorization import (
     CurrentPrincipalClassificationAuthority,
 )
-from aieos.platform.security.context import SecurityContextResolver
+from aieos.platform.security.context import (
+    AuthorizationUnavailableError,
+    SecurityContextResolver,
+)
+
+
+class _UnavailablePrincipalClassificationAuthority:
+    """Fail-closed gate when no SoR engine is composed (OpenAPI/test shells)."""
+
+    def require_current_human_principal(self, principal_id: UUID) -> object:
+        del principal_id
+        raise AuthorizationUnavailableError("authorization unavailable")
+
+    def require_current_workload_principal(self, principal_id: UUID) -> object:
+        del principal_id
+        raise AuthorizationUnavailableError("authorization unavailable")
+
+    def resolve_current_principal_kind(self, principal_id: UUID) -> object:
+        del principal_id
+        raise AuthorizationUnavailableError("authorization unavailable")
 
 _APP_DESCRIPTION = (
     "AIEOS HTTP foundation (GCI-I12, TOS-DEV02, TOS-DEV03, TOS-DEV04, TOS-DEV06-I01). "
@@ -201,12 +221,13 @@ def create_app(
     classification = principal_classification_authority
     if classification is None:
         engine = getattr(teaching_uow_factory, "_engine", None)
-        if not isinstance(engine, Engine):
-            raise TypeError(
-                "principal_classification_authority is required when "
-                "teaching_uow_factory does not expose a SQLAlchemy Engine"
-            )
-        classification = CurrentPrincipalClassificationAuthority(engine)
+        if isinstance(engine, Engine):
+            classification = CurrentPrincipalClassificationAuthority(engine)
+        else:
+            # Composition shells without a SoR engine (OpenAPI export / non-DB
+            # HTTP harnesses) still construct Memory services; any Memory call
+            # fails closed until a real authority is wired.
+            classification = _UnavailablePrincipalClassificationAuthority()
     app.state.create_content_service = CreateContentService(
         uow_factory, content_types, idempotency_retention=idempotency_retention
     )
