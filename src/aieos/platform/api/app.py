@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import FastAPI
+from sqlalchemy.engine import Engine
 
 from aieos.domains.content.api.v1.routes import router as content_v1_router
 from aieos.domains.content.application.ai_for_review import (
@@ -98,6 +99,9 @@ from aieos.domains.teaching.application.memory_create import CreateTeacherMemory
 from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
 from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
+from aieos.domains.teaching.application.owner_resolution import (
+    HumanPrincipalClassificationGate,
+)
 from aieos.domains.teaching.application.ports import (
     TeachingUnitOfWorkFactory,
     TeachingWorkAuthorization,
@@ -131,6 +135,9 @@ from aieos.platform.api.openapi import build_openapi
 from aieos.platform.api.pagination import CursorCodec
 from aieos.platform.api.problems import install_exception_handlers
 from aieos.platform.security.authenticator import RequestIdentityAuthenticator
+from aieos.platform.security.authorization import (
+    CurrentPrincipalClassificationAuthority,
+)
 from aieos.platform.security.context import SecurityContextResolver
 
 _APP_DESCRIPTION = (
@@ -171,6 +178,9 @@ def create_app(
     generation_clock: UtcNow | None = None,
     school_context_class_reader: SchoolContextClassReader | None = None,
     teaching_authorization: TeachingWorkAuthorization | None = None,
+    principal_classification_authority: (
+        HumanPrincipalClassificationGate | None
+    ) = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -188,6 +198,15 @@ def create_app(
     app.state.request_identity_authenticator = request_identity_authenticator
     app.state.security_resolver = security_resolver
     app.state.cursor_codec = codec
+    classification = principal_classification_authority
+    if classification is None:
+        engine = getattr(teaching_uow_factory, "_engine", None)
+        if not isinstance(engine, Engine):
+            raise TypeError(
+                "principal_classification_authority is required when "
+                "teaching_uow_factory does not expose a SQLAlchemy Engine"
+            )
+        classification = CurrentPrincipalClassificationAuthority(engine)
     app.state.create_content_service = CreateContentService(
         uow_factory, content_types, idempotency_retention=idempotency_retention
     )
@@ -240,12 +259,19 @@ def create_app(
         teaching_uow_factory
     )
     app.state.create_teacher_memory_service = CreateTeacherMemoryService(
-        teaching_uow_factory, idempotency_retention=idempotency_retention
+        teaching_uow_factory,
+        idempotency_retention=idempotency_retention,
+        principal_classification=classification,
     )
     app.state.update_teacher_memory_service = UpdateTeacherMemoryService(
-        teaching_uow_factory, idempotency_retention=idempotency_retention
+        teaching_uow_factory,
+        idempotency_retention=idempotency_retention,
+        principal_classification=classification,
     )
-    app.state.get_teacher_memory_service = GetTeacherMemoryService(teaching_uow_factory)
+    app.state.get_teacher_memory_service = GetTeacherMemoryService(
+        teaching_uow_factory,
+        principal_classification=classification,
+    )
     app.state.teacher_os_today_mission_service = GetTeacherOsTodayMissionService(
         teaching_uow_factory,
         ReviewQueuePendingCountAdapter(list_teacher_review_queue_service),

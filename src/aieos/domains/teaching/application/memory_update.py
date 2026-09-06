@@ -23,7 +23,8 @@ from aieos.domains.teaching.application.memory_models import (
     teacher_memory_read_model,
 )
 from aieos.domains.teaching.application.owner_resolution import (
-    resolve_represented_teacher_principal,
+    HumanPrincipalClassificationGate,
+    require_human_teacher_owner,
 )
 from aieos.domains.teaching.application.ports import TeachingUnitOfWorkFactory
 from aieos.domains.teaching.domain.errors import InvalidTeacherMemoryError
@@ -61,11 +62,13 @@ class UpdateTeacherMemoryService:
         uow_factory: TeachingUnitOfWorkFactory,
         *,
         idempotency_retention: timedelta,
+        principal_classification: HumanPrincipalClassificationGate,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be a positive duration")
         self._uow_factory = uow_factory
         self._idempotency_retention = idempotency_retention
+        self._principal_classification = principal_classification
 
     def update(
         self,
@@ -79,8 +82,9 @@ class UpdateTeacherMemoryService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None = None,
     ) -> TeacherMemoryReadModel:
-        teacher_principal_id = resolve_represented_teacher_principal(
+        teacher_principal_id = require_human_teacher_owner(
             calling_principal_id=principal_id,
+            classification=self._principal_classification,
             effective_actor_id=event_context.effective_actor_id,
             execution_channel=audit_provenance.execution_channel,
         )

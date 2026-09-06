@@ -3,6 +3,10 @@
 teacher_principal_id means the represented/effective HUMAN teacher Principal.
 It is NOT definitionally the transport/authenticated caller (principal_id).
 
+Durable ownership requires an ACTIVE HUMAN principal from current SoR
+classification (CurrentPrincipalClassificationAuthority). Direct Teacher OS
+API equality (caller == owner) is only a fallback *after* that HUMAN gate.
+
 TrustedSecurityContext today exposes only tenant_id + principal_id.
 MutationEventContext.effective_actor_id and SecurityAuditExecutionChannel are
 the only additional server-composed signals available without inventing
@@ -15,11 +19,13 @@ Rules:
    → fail closed until governed delegation exists (do not invent ownership).
 3. Direct Teacher OS execution (API channel, effective equals caller or absent)
    → teacher_principal_id = calling_principal_id as explicit direct-execution
-   fallback — not as a durable definition that caller == owner.
+   fallback — not as a durable definition that caller == owner — then require
+   current HUMAN classification before any Memory UoW/mutation.
 """
 
 from __future__ import annotations
 
+from typing import Protocol
 from uuid import UUID
 
 from aieos.domains.teaching.application.errors import InvalidTeacherMemoryRequest
@@ -33,6 +39,12 @@ _NON_API_CHANNELS = frozenset(
         SecurityAuditExecutionChannel.SYSTEM,
     }
 )
+
+
+class HumanPrincipalClassificationGate(Protocol):
+    """Fail-closed current SoR HUMAN check (no Teaching SQL)."""
+
+    def require_current_human_principal(self, principal_id: UUID) -> object: ...
 
 
 def resolve_represented_teacher_principal(
@@ -88,3 +100,24 @@ def resolve_represented_teacher_principal(
     # Direct Teacher OS execution: principal_id == effective_actor_id (or
     # effective omitted on read). Explicit compatibility fallback only.
     return calling_principal_id
+
+
+def require_human_teacher_owner(
+    *,
+    calling_principal_id: UUID,
+    classification: HumanPrincipalClassificationGate,
+    effective_actor_id: UUID | None = None,
+    execution_channel: SecurityAuditExecutionChannel | None = None,
+) -> UUID:
+    """Resolve represented teacher owner, then require current ACTIVE HUMAN.
+
+    Classification uses current security SoR authority (not JWT/headers).
+    UnauthorizedError / AuthorizationUnavailableError propagate unchanged.
+    """
+    teacher_principal_id = resolve_represented_teacher_principal(
+        calling_principal_id=calling_principal_id,
+        effective_actor_id=effective_actor_id,
+        execution_channel=execution_channel,
+    )
+    classification.require_current_human_principal(teacher_principal_id)
+    return teacher_principal_id

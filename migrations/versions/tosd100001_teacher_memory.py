@@ -3,14 +3,16 @@
 Creates teaching.teacher_memories (durable teacher preference profile) and
 extends security.audit_records CHECK vocabulary for memory create/update.
 
+``principal_kind`` already exists on ``security.principals`` from pedi090002
+and is NOT duplicated here. No Principal backfill.
+
 Deliberately absent:
   * Continuous Context / chat history / learner data
   * automatic preference inference
-  * principal_kind column / represented-principal GUC (not yet in runtime)
   * DELETE grant / soft-delete lifecycle
 
 Revision ID: tosd100001
-Revises: tosd090002
+Revises: pedi090002
 Create Date: 2026-09-06
 """
 
@@ -24,7 +26,7 @@ from alembic import op
 from sqlalchemy import text
 
 revision: str = "tosd100001"
-down_revision: str | None = "tosd090002"
+down_revision: str | None = "pedi090002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

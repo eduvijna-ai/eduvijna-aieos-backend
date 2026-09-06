@@ -27,6 +27,11 @@ from aieos.platform.api.app import create_app
 from aieos.platform.runtime.remediation_assessment_source import (
     SqlAlchemyRemediationAssessmentSource,
 )
+from aieos.platform.security.authorization import (
+    CurrentPrincipalClassificationAuthority,
+    PrincipalKind,
+)
+from aieos.platform.security.authorization.decisions import PrincipalStatus
 from tests.fakes import (
     AllowAssetCurrentGovernance,
     AllowAssetReferenceValidation,
@@ -38,6 +43,7 @@ from tests.fakes import (
     FixedPrincipalAuthenticator,
     StubSecurityContextResolver,
 )
+from tests.platform.security.authorization.helpers import seed_principal
 
 FIXED_NOW = datetime(2026, 9, 6, 12, 0, tzinfo=UTC)
 IDEMPOTENCY_RETENTION = timedelta(hours=24)
@@ -72,11 +78,43 @@ def headers(
     return out
 
 
+def seed_teacher_principal(
+    bootstrap_engine: Engine,
+    principal_id: UUID,
+    *,
+    principal_kind: PrincipalKind | None = PrincipalKind.HUMAN,
+    status: str = PrincipalStatus.ACTIVE,
+) -> None:
+    """Seed teacher fixture principals as HUMAN by default for Memory tests."""
+    seed_principal(
+        bootstrap_engine,
+        principal_id,
+        principal_kind=principal_kind,
+        status=status,
+    )
+
+
 def build_memory_client(
     runtime_engine: Engine,
     tenant_id: UUID,
     principal_id: UUID,
+    *,
+    bootstrap_engine: Engine | None = None,
+    seed_kind: PrincipalKind | None = PrincipalKind.HUMAN,
+    seed_status: str = PrincipalStatus.ACTIVE,
+    seed: bool = True,
 ) -> TestClient:
+    if seed:
+        if bootstrap_engine is None:
+            raise TypeError(
+                "bootstrap_engine is required when seeding teacher principals"
+            )
+        seed_teacher_principal(
+            bootstrap_engine,
+            principal_id,
+            principal_kind=seed_kind,
+            status=seed_status,
+        )
     app = create_app(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
         teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(
@@ -102,6 +140,9 @@ def build_memory_client(
             teacher_principal_id=principal_id,
         ),
         teaching_authorization=_AllowTeachingWorkAuthorization(),  # type: ignore[arg-type]
+        principal_classification_authority=CurrentPrincipalClassificationAuthority(
+            runtime_engine
+        ),
     )
     return TestClient(app, raise_server_exceptions=False)
 

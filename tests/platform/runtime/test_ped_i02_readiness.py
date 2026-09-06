@@ -120,6 +120,10 @@ def _config_for_runtime_url(runtime_url: str, *, timeout: str = "5"):
 
 
 def _compose(config, probe, uow_factory) -> Any:
+    class _UnusedPrincipalClassification:
+        def require_current_human_principal(self, principal_id):
+            raise AssertionError("test must not classify principals")
+
     return compose_api_application(
         config,
         ApiRuntimeDependencies(
@@ -139,6 +143,7 @@ def _compose(config, probe, uow_factory) -> Any:
             asset_current_governance=AllowAssetCurrentGovernance(),
             readiness_probe=probe,
             mutation_activation_gate=_DisabledMutationGate(),
+            principal_classification_authority=_UnusedPrincipalClassification(),
         ),
     )
 

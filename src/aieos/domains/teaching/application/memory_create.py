@@ -21,7 +21,8 @@ from aieos.domains.teaching.application.memory_models import (
     teacher_memory_read_model,
 )
 from aieos.domains.teaching.application.owner_resolution import (
-    resolve_represented_teacher_principal,
+    HumanPrincipalClassificationGate,
+    require_human_teacher_owner,
 )
 from aieos.domains.teaching.application.ports import TeachingUnitOfWorkFactory
 from aieos.domains.teaching.domain.errors import InvalidTeacherMemoryError
@@ -54,11 +55,13 @@ class CreateTeacherMemoryService:
         uow_factory: TeachingUnitOfWorkFactory,
         *,
         idempotency_retention: timedelta,
+        principal_classification: HumanPrincipalClassificationGate,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be a positive duration")
         self._uow_factory = uow_factory
         self._idempotency_retention = idempotency_retention
+        self._principal_classification = principal_classification
 
     def create(
         self,
@@ -73,14 +76,15 @@ class CreateTeacherMemoryService:
     ) -> TeacherMemoryReadModel:
         """Create initial Memory for the represented teacher Principal.
 
-        Durable owner is resolve_represented_teacher_principal(...), never a
-        client-supplied owner id. Calling principal remains audit/idempotency
-        provenance and is not definitionally the Memory owner.
-        Duplicate create for the same teacher is deterministic: return the
-        existing profile without a second mutation.
+        Durable owner is require_human_teacher_owner(...): resolve then require
+        current ACTIVE HUMAN from SoR. Never a client-supplied owner id.
+        Calling principal remains audit/idempotency provenance and is not
+        definitionally the Memory owner. Duplicate create for the same teacher
+        is deterministic: return the existing profile without a second mutation.
         """
-        teacher_principal_id = resolve_represented_teacher_principal(
+        teacher_principal_id = require_human_teacher_owner(
             calling_principal_id=principal_id,
+            classification=self._principal_classification,
             effective_actor_id=event_context.effective_actor_id,
             execution_channel=audit_provenance.execution_channel,
         )

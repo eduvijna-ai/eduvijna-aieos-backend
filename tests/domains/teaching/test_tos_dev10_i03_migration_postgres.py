@@ -44,17 +44,58 @@ def _clear_memory_evidence(bootstrap_engine: Engine) -> None:
         )
 
 
-def test_upgrade_from_tosd090002_creates_table_schema_rls_and_indexes(
+def _principal_kind_column_intact(conn) -> None:
+    nullable = conn.execute(
+        text(
+            """
+            SELECT is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'security'
+              AND table_name = 'principals'
+              AND column_name = 'principal_kind'
+            """
+        )
+    ).scalar_one()
+    assert nullable == "YES"
+    column_default = conn.execute(
+        text(
+            """
+            SELECT column_default
+            FROM information_schema.columns
+            WHERE table_schema = 'security'
+              AND table_name = 'principals'
+              AND column_name = 'principal_kind'
+            """
+        )
+    ).scalar_one()
+    assert column_default is None
+    constraint = conn.execute(
+        text(
+            """
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conname = 'ck_security_principals_principal_kind'
+            """
+        )
+    ).scalar_one()
+    assert "HUMAN" in constraint
+    assert "WORKLOAD" in constraint
+
+
+def test_upgrade_from_pedi090002_creates_table_preserves_principal_kind(
     postgres18, bootstrap_engine: Engine
 ) -> None:
     cfg = alembic_config(postgres18["migrator_url"])
     clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
     _clear_memory_evidence(bootstrap_engine)
-    command.downgrade(cfg, "tosd090002")
-    with bootstrap_engine.connect() as conn:
+    command.downgrade(cfg, "pedi090002")
+    provision_runtime_grants(bootstrap_engine)
+
+    preexisting = uuid.uuid7()
+    with bootstrap_engine.begin() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "tosd090002"
+            == "pedi090002"
         )
         exists_before = conn.execute(
             text(
@@ -68,6 +109,19 @@ def test_upgrade_from_tosd090002_creates_table_schema_rls_and_indexes(
             )
         ).scalar_one()
         assert exists_before is False
+        _principal_kind_column_intact(conn)
+        conn.execute(
+            text(
+                """
+                INSERT INTO security.principals (
+                    principal_id, status, principal_kind, created_at, updated_at
+                ) VALUES (
+                    :id, 'ACTIVE', NULL, clock_timestamp(), clock_timestamp()
+                )
+                """
+            ),
+            {"id": preexisting},
+        )
 
     command.upgrade(cfg, "tosd100001")
     provision_runtime_grants(bootstrap_engine)
@@ -123,9 +177,6 @@ def test_upgrade_from_tosd090002_creates_table_schema_rls_and_indexes(
             )
         }
         assert "ix_teaching_teacher_memories_tenant_teacher" in indexes
-        assert "uq_teaching_teacher_memories_tenant_teacher" in indexes or any(
-            "tenant_teacher" in name for name in indexes
-        )
         uniques = {
             row[0]
             for row in conn.execute(
@@ -140,6 +191,45 @@ def test_upgrade_from_tosd090002_creates_table_schema_rls_and_indexes(
         }
         assert "uq_teaching_teacher_memories_tenant_teacher" in uniques
         assert "uq_teaching_teacher_memories_tenant_memory" in uniques
+        _principal_kind_column_intact(conn)
+        kind = conn.execute(
+            text(
+                """
+                SELECT principal_kind FROM security.principals
+                WHERE principal_id = :id
+                """
+            ),
+            {"id": preexisting},
+        ).scalar_one()
+        assert kind is None
+
+
+def test_empty_downgrade_to_pedi090002(
+    postgres18, bootstrap_engine: Engine
+) -> None:
+    cfg = alembic_config(postgres18["migrator_url"])
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+    _clear_memory_evidence(bootstrap_engine)
+    command.downgrade(cfg, "pedi090002")
+    provision_runtime_grants(bootstrap_engine)
+    with bootstrap_engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == "pedi090002"
+        )
+        exists = conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'teaching'
+                      AND table_name = 'teacher_memories'
+                )
+                """
+            )
+        ).scalar_one()
+        assert exists is False
+        _principal_kind_column_intact(conn)
 
 
 def test_memory_audit_actions_accepted_and_downgrade_blocked_with_evidence(
@@ -202,7 +292,7 @@ def test_memory_audit_actions_accepted_and_downgrade_blocked_with_evidence(
 
     cfg = alembic_config(postgres18["migrator_url"])
     with pytest.raises(Exception):
-        command.downgrade(cfg, "tosd090002")
+        command.downgrade(cfg, "pedi090002")
 
     with bootstrap_engine.connect() as conn:
         assert (

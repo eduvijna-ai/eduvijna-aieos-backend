@@ -56,6 +56,7 @@ from aieos.platform.security.authorization import (
     AIEOS_CONTENT_CAPABILITIES,
     AIEOS_TEACHING_WORK_CAPABILITIES,
     AuthorizationKernel,
+    CurrentPrincipalClassificationAuthority,
     KernelClassroomAssessmentAuthorization,
     KernelCurrentTenantAccessAuthority,
     KernelPublicationAuthorization,
@@ -198,5 +199,8 @@ def compose_api_runtime_dependencies(
         readiness_probe=SqlAlchemyApiReadinessProbe(engine, config),
         mutation_activation_gate=load_api_mutation_activation_gate_from_process_environment(
             config.release_identity
+        ),
+        principal_classification_authority=CurrentPrincipalClassificationAuthority(
+            engine
         ),
     )

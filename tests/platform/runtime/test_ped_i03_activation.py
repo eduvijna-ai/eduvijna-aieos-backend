@@ -149,6 +149,10 @@ def _compose(
     review_authorization=None,
     publication_authorization=None,
 ):
+    class _UnusedPrincipalClassification:
+        def require_current_human_principal(self, principal_id):
+            raise AssertionError("test must not classify principals")
+
     tenant = uuid4()
     principal = uuid4()
     return (
@@ -175,6 +179,7 @@ def _compose(
                 asset_current_governance=AllowAssetCurrentGovernance(),
                 readiness_probe=_ReadyProbe(),
                 mutation_activation_gate=gate,
+                principal_classification_authority=_UnusedPrincipalClassification(),
             ),
         ),
         tenant,

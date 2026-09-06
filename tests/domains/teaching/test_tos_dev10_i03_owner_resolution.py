@@ -8,6 +8,7 @@ import pytest
 
 from aieos.domains.teaching.application.errors import InvalidTeacherMemoryRequest
 from aieos.domains.teaching.application.owner_resolution import (
+    require_human_teacher_owner,
     resolve_represented_teacher_principal,
 )
 from aieos.platform.security.audit import SecurityAuditExecutionChannel
@@ -72,3 +73,51 @@ def test_client_cannot_supply_owner_through_resolver_signature() -> None:
     owner = resolve_represented_teacher_principal(calling_principal_id=teacher)
     assert owner == teacher
     assert owner is not str(teacher)  # type: ignore[comparison-overlap]
+
+
+def test_require_human_teacher_owner_calls_classification_after_resolve() -> None:
+    teacher = uuid4()
+    seen: list[object] = []
+
+    class _Gate:
+        def require_current_human_principal(self, principal_id):
+            seen.append(principal_id)
+            return "HUMAN"
+
+    assert (
+        require_human_teacher_owner(
+            calling_principal_id=teacher,
+            classification=_Gate(),
+            effective_actor_id=teacher,
+            execution_channel=SecurityAuditExecutionChannel.API,
+        )
+        == teacher
+    )
+    assert seen == [teacher]
+
+
+def test_require_human_teacher_owner_fails_closed_for_non_api() -> None:
+    class _Gate:
+        def require_current_human_principal(self, principal_id):
+            raise AssertionError("classification must not run when resolve fails")
+
+    with pytest.raises(InvalidTeacherMemoryRequest, match="non-API"):
+        require_human_teacher_owner(
+            calling_principal_id=uuid4(),
+            classification=_Gate(),
+            execution_channel=SecurityAuditExecutionChannel.SYSTEM,
+        )
+
+
+def test_require_human_teacher_owner_fails_closed_for_distinct_effective() -> None:
+    class _Gate:
+        def require_current_human_principal(self, principal_id):
+            raise AssertionError("classification must not run when resolve fails")
+
+    with pytest.raises(InvalidTeacherMemoryRequest, match="distinct effective"):
+        require_human_teacher_owner(
+            calling_principal_id=uuid4(),
+            classification=_Gate(),
+            effective_actor_id=uuid4(),
+            execution_channel=SecurityAuditExecutionChannel.API,
+        )

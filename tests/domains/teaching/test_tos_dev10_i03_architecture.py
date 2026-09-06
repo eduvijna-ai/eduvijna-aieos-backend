@@ -36,8 +36,11 @@ def test_current_head_is_tosd100001() -> None:
     assert EXPECTED_MIGRATION_HEAD == "tosd100001"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd100001"' in source
-    assert 'down_revision: str | None = "tosd090002"' in source
+    assert 'down_revision: str | None = "pedi090002"' in source
+    assert "principal_kind already exists" in source or "NOT duplicated" in source
+    assert "No Principal backfill" in source or "no Principal backfill" in source.lower()
     assert list(MIGRATIONS.glob("tosd100002*.py")) == []
+    assert (MIGRATIONS / "pedi090002_principal_kind.py").is_file()
 
 
 def test_openapi_contains_memory_ops_and_digest_is_frozen() -> None:
@@ -60,6 +63,8 @@ def test_owner_resolution_is_wired_and_not_caller_definitional() -> None:
         TEACHING / "application" / "owner_resolution.py"
     ).read_text(encoding="utf-8")
     assert "resolve_represented_teacher_principal" in resolver
+    assert "require_human_teacher_owner" in resolver
+    assert "HUMAN" in resolver
     assert "not definitionally" in resolver.lower() or "NOT definitionally" in resolver
     for path in (
         TEACHING / "application" / "memory_create.py",
@@ -67,7 +72,7 @@ def test_owner_resolution_is_wired_and_not_caller_definitional() -> None:
         TEACHING / "application" / "memory_queries.py",
     ):
         source = path.read_text(encoding="utf-8")
-        assert "resolve_represented_teacher_principal" in source
+        assert "require_human_teacher_owner" in source
         assert "Ownership is always TrustedSecurityContext.principal_id" not in source
     domain = (TEACHING / "domain" / "teacher_memory.py").read_text(encoding="utf-8")
     assert "resolve_represented_teacher_principal" in domain

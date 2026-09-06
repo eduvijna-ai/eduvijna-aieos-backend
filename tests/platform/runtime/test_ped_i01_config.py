@@ -361,6 +361,10 @@ class TestEnvironmentFailClosed:
 
 class TestComposition:
     def _dependencies(self) -> ApiRuntimeDependencies:
+        class _UnusedPrincipalClassification:
+            def require_current_human_principal(self, principal_id):
+                raise AssertionError("test must not classify principals")
+
         return ApiRuntimeDependencies(
             uow_factory=_UnusedUowFactory(),
             teaching_uow_factory=_UnusedUowFactory(),
@@ -378,6 +382,7 @@ class TestComposition:
             asset_current_governance=AllowAssetCurrentGovernance(),
             readiness_probe=_ReadyProbe(),
             mutation_activation_gate=_DisabledMutationGate(),
+            principal_classification_authority=_UnusedPrincipalClassification(),
         )
 
     def test_composition_requires_explicit_dependencies(self) -> None:
@@ -394,6 +399,7 @@ class TestComposition:
         assert "review_authorization" in required
         assert "publication_authorization" in required
         assert "asset_reference_validation" in required
+        assert "principal_classification_authority" in required
         with pytest.raises(TypeError):
             ApiRuntimeDependencies()  # type: ignore[call-arg]
 
