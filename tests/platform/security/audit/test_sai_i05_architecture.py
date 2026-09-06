@@ -100,6 +100,9 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "GetContentVersionService": "R",
     "ListTeacherReviewQueueService": "R",
     "GetTeacherReviewQueueItemService": "R",
+    "ListTeacherLibraryService": "R",
+    "GetTeacherLibraryItemService": "R",
+    "GetTeacherLibraryVersionService": "R",
     "ValidateVersionAssetGovernanceService": "R",
 }
 

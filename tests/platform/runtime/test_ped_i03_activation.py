@@ -606,6 +606,12 @@ class TestReadsAndHealthIndependence:
             ).status_code
             == 200
         )
+        assert (
+            client.get(
+                "/api/v1/teacher-os/library", headers=_headers(seed_tenant)
+            ).status_code
+            == 200
+        )
 
     def test_health_and_reads_with_broken_gate(
         self, postgres18, runtime_engine

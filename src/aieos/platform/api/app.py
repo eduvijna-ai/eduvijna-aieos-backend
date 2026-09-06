@@ -35,6 +35,11 @@ from aieos.domains.content.application.ports import (
 from aieos.domains.content.application.publish import PublishContentService
 from aieos.domains.content.application.queries import GetContentService, ListContentsService
 from aieos.domains.content.application.review import ReviewCommandService
+from aieos.domains.content.application.library import (
+    GetTeacherLibraryItemService,
+    GetTeacherLibraryVersionService,
+    ListTeacherLibraryService,
+)
 from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
     ListTeacherReviewQueueService,
@@ -212,6 +217,13 @@ def create_app(
     list_teacher_review_queue_service = ListTeacherReviewQueueService(uow_factory)
     app.state.list_teacher_review_queue_service = list_teacher_review_queue_service
     app.state.get_teacher_review_queue_item_service = GetTeacherReviewQueueItemService(
+        uow_factory
+    )
+    app.state.list_teacher_library_service = ListTeacherLibraryService(uow_factory)
+    app.state.get_teacher_library_item_service = GetTeacherLibraryItemService(
+        uow_factory
+    )
+    app.state.get_teacher_library_version_service = GetTeacherLibraryVersionService(
         uow_factory
     )
     app.state.create_teaching_work_service = CreateTeachingWorkService(

@@ -16,6 +16,11 @@ from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
     ListTeacherReviewQueueService,
 )
+from aieos.domains.content.application.library import (
+    GetTeacherLibraryItemService,
+    GetTeacherLibraryVersionService,
+    ListTeacherLibraryService,
+)
 from aieos.platform.api.context import TENANT_ID_HEADER, parse_requested_tenant_id
 from aieos.platform.api.pagination import CursorCodec
 from aieos.platform.security.authenticator import RequestIdentityAuthenticator
@@ -93,3 +98,17 @@ def get_teacher_review_queue_item_service(
     request: Request,
 ) -> GetTeacherReviewQueueItemService:
     return request.app.state.get_teacher_review_queue_item_service
+
+
+def list_teacher_library_service(request: Request) -> ListTeacherLibraryService:
+    return request.app.state.list_teacher_library_service
+
+
+def get_teacher_library_item_service(request: Request) -> GetTeacherLibraryItemService:
+    return request.app.state.get_teacher_library_item_service
+
+
+def get_teacher_library_version_service(
+    request: Request,
+) -> GetTeacherLibraryVersionService:
+    return request.app.state.get_teacher_library_version_service

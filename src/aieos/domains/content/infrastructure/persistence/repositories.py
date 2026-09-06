@@ -21,6 +21,11 @@ from aieos.domains.content.application.ai_generation_bindings import (
 )
 from aieos.domains.content.application.migration_models import MigrationImportRecord
 from aieos.domains.content.application.models import LockedContentHead
+from aieos.domains.content.application.library_models import (
+    TeacherLibraryDetail,
+    TeacherLibraryItem,
+    TeacherLibraryVersion,
+)
 from aieos.domains.content.application.review_queue_models import (
     ARTIFACT_STATUS_IN_REVIEW,
     TeacherReviewQueueDetail,
@@ -836,6 +841,254 @@ class SqlAlchemyReviewQueueReadRepository:
             schema_version=int(row["schema_version"]),  # type: ignore[arg-type]
             payload=thawed,
             payload_sha256=str(row["payload_sha256"]),
+        )
+
+
+from aieos.domains.content.infrastructure.persistence.models import (
+    content_versions_table,
+    contents_table,
+    migration_import_records_table,
+    publications_table,
+    review_decisions_table,
+    version_asset_refs_table,
+)
+from aieos.platform.ai.infrastructure.persistence.models import generation_runs_table
+
+
+def _teaching_work_id_subquery():
+    """Optional enrichment: TeachingWork via succeeded generation_runs result binding."""
+    return (
+        select(generation_runs_table.c.work_resource_id)
+        .where(
+            generation_runs_table.c.tenant_id == contents_table.c.tenant_id,
+            generation_runs_table.c.result_content_id == contents_table.c.content_id,
+            generation_runs_table.c.work_resource_type == "teaching.work",
+            generation_runs_table.c.status == "SUCCEEDED",
+            generation_runs_table.c.result_content_id.is_not(None),
+        )
+        .order_by(
+            generation_runs_table.c.completed_at.desc().nulls_last(),
+            generation_runs_table.c.created_at.desc(),
+            generation_runs_table.c.generation_run_id.desc(),
+        )
+        .limit(1)
+        .scalar_subquery()
+        .label("teaching_work_id")
+    )
+
+
+def _library_item_from_row(row: Mapping[str, object]) -> TeacherLibraryItem:
+    current = row["current_version_id"]
+    published = row["published_version_id"]
+    stewardship = str(row["stewardship_state"])
+    review_version_id = None
+    if stewardship == "IN_REVIEW" and current is not None:
+        review_version_id = ContentVersionId(current)  # type: ignore[arg-type]
+    teaching = row.get("teaching_work_id")
+    return TeacherLibraryItem(
+        content_id=ContentId(row["content_id"]),  # type: ignore[arg-type]
+        content_type=str(row["content_type"]),
+        title=str(row["title"]),
+        created_at=row["created_at"],  # type: ignore[arg-type]
+        updated_at=row["updated_at"],  # type: ignore[arg-type]
+        stewardship_state=stewardship,
+        current_version_id=(
+            None if current is None else ContentVersionId(current)  # type: ignore[arg-type]
+        ),
+        published_version_id=(
+            None if published is None else ContentVersionId(published)  # type: ignore[arg-type]
+        ),
+        teaching_work_id=None if teaching is None else teaching,  # type: ignore[arg-type]
+        review_version_id=review_version_id,
+    )
+
+
+class SqlAlchemyLibraryReadRepository:
+    """Read-only Library projection over content.contents. No Library table."""
+
+    def __init__(self, connection: Connection, execution_tenant_id: UUID) -> None:
+        self._connection = connection
+        self._execution_tenant_id = execution_tenant_id
+
+    def list_page(
+        self,
+        *,
+        owner_principal_id: UUID,
+        limit: int,
+        content_type: str | None,
+        stewardship_state: str | None,
+        published_only: bool,
+        after_updated_at: datetime | None,
+        after_content_id: ContentId | None,
+    ) -> list[TeacherLibraryItem]:
+        stmt = (
+            select(
+                contents_table.c.content_id,
+                contents_table.c.content_type,
+                contents_table.c.title,
+                contents_table.c.created_at,
+                contents_table.c.updated_at,
+                contents_table.c.stewardship_state,
+                contents_table.c.current_version_id,
+                contents_table.c.published_version_id,
+                _teaching_work_id_subquery(),
+            )
+            .where(
+                contents_table.c.tenant_id == self._execution_tenant_id,
+                contents_table.c.owner_principal_id == owner_principal_id,
+            )
+            .order_by(
+                contents_table.c.updated_at.desc(),
+                contents_table.c.content_id.desc(),
+            )
+            .limit(limit)
+        )
+        if content_type is not None:
+            stmt = stmt.where(contents_table.c.content_type == content_type)
+        if stewardship_state is not None:
+            stmt = stmt.where(contents_table.c.stewardship_state == stewardship_state)
+        if published_only:
+            stmt = stmt.where(contents_table.c.published_version_id.is_not(None))
+        if after_updated_at is not None and after_content_id is not None:
+            stmt = stmt.where(
+                or_(
+                    contents_table.c.updated_at < after_updated_at,
+                    and_(
+                        contents_table.c.updated_at == after_updated_at,
+                        contents_table.c.content_id < after_content_id.value,
+                    ),
+                )
+            )
+        try:
+            rows = self._connection.execute(stmt).mappings().all()
+            return [_library_item_from_row(row) for row in rows]
+        except Exception as exc:
+            reraise_as_application_error(exc)
+
+    def get_item(
+        self,
+        content_id: ContentId,
+        *,
+        owner_principal_id: UUID,
+    ) -> TeacherLibraryDetail | None:
+        stmt = (
+            select(
+                contents_table.c.content_id,
+                contents_table.c.content_type,
+                contents_table.c.title,
+                contents_table.c.created_at,
+                contents_table.c.updated_at,
+                contents_table.c.stewardship_state,
+                contents_table.c.current_version_id,
+                contents_table.c.published_version_id,
+                contents_table.c.aggregate_revision,
+                _teaching_work_id_subquery(),
+            )
+            .where(
+                contents_table.c.tenant_id == self._execution_tenant_id,
+                contents_table.c.owner_principal_id == owner_principal_id,
+                contents_table.c.content_id == content_id.value,
+            )
+            .limit(1)
+        )
+        try:
+            row = self._connection.execute(stmt).mappings().one_or_none()
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        if row is None:
+            return None
+        item = _library_item_from_row(row)
+        return TeacherLibraryDetail(
+            content_id=item.content_id,
+            content_type=item.content_type,
+            title=item.title,
+            created_at=item.created_at,
+            updated_at=item.updated_at,
+            stewardship_state=item.stewardship_state,
+            current_version_id=item.current_version_id,
+            published_version_id=item.published_version_id,
+            teaching_work_id=item.teaching_work_id,
+            review_version_id=item.review_version_id,
+            aggregate_revision=AggregateRevision(int(row["aggregate_revision"])),  # type: ignore[arg-type]
+        )
+
+    def get_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        owner_principal_id: UUID,
+    ) -> TeacherLibraryVersion | None:
+        join_from = contents_table.join(
+            content_versions_table,
+            and_(
+                content_versions_table.c.tenant_id == contents_table.c.tenant_id,
+                content_versions_table.c.content_id == contents_table.c.content_id,
+                content_versions_table.c.version_id == version_id.value,
+            ),
+        )
+        stmt = (
+            select(
+                contents_table.c.content_id,
+                contents_table.c.content_type,
+                contents_table.c.title,
+                contents_table.c.stewardship_state,
+                contents_table.c.current_version_id,
+                contents_table.c.published_version_id,
+                contents_table.c.aggregate_revision,
+                content_versions_table.c.version_id,
+                content_versions_table.c.version_number,
+                content_versions_table.c.schema_id,
+                content_versions_table.c.schema_version,
+                content_versions_table.c.payload,
+                content_versions_table.c.payload_sha256,
+                content_versions_table.c.origin,
+                content_versions_table.c.created_at,
+                _teaching_work_id_subquery(),
+            )
+            .select_from(join_from)
+            .where(
+                contents_table.c.tenant_id == self._execution_tenant_id,
+                contents_table.c.owner_principal_id == owner_principal_id,
+                contents_table.c.content_id == content_id.value,
+            )
+            .limit(1)
+        )
+        try:
+            row = self._connection.execute(stmt).mappings().one_or_none()
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        if row is None:
+            return None
+        thawed = thaw_json_value(row["payload"])
+        if not isinstance(thawed, Mapping):
+            raise PersistenceInvariantViolation(
+                "ContentVersion payload must be a JSON object"
+            )
+        current = row["current_version_id"]
+        published = row["published_version_id"]
+        teaching = row.get("teaching_work_id")
+        return TeacherLibraryVersion(
+            content_id=ContentId(row["content_id"]),  # type: ignore[arg-type]
+            version_id=ContentVersionId(row["version_id"]),  # type: ignore[arg-type]
+            version_number=VersionNumber(int(row["version_number"])),  # type: ignore[arg-type]
+            content_type=str(row["content_type"]),
+            title=str(row["title"]),
+            stewardship_state=str(row["stewardship_state"]),
+            schema_id=str(row["schema_id"]),
+            schema_version=int(row["schema_version"]),  # type: ignore[arg-type]
+            payload=thawed,
+            payload_sha256=str(row["payload_sha256"]),
+            origin=str(row["origin"]),
+            created_at=row["created_at"],  # type: ignore[arg-type]
+            published_version_id=(
+                None if published is None else ContentVersionId(published)  # type: ignore[arg-type]
+            ),
+            current_version_id=(
+                None if current is None else ContentVersionId(current)  # type: ignore[arg-type]
+            ),
+            teaching_work_id=None if teaching is None else teaching,  # type: ignore[arg-type]
+            aggregate_revision=AggregateRevision(int(row["aggregate_revision"])),  # type: ignore[arg-type]
         )
 
 
