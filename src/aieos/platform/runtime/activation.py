@@ -57,6 +57,8 @@ FROZEN_API_MUTATION_OPERATION_IDS: frozenset[str] = frozenset(
         "assessment_classroom_record",
         "assessment_classroom_correct",
         "assessment_classroom_void",
+        "teacher_os_memory_create",
+        "teacher_os_memory_update",
     }
 )
 
@@ -79,6 +81,7 @@ READ_ONLY_OPERATION_IDS: frozenset[str] = frozenset(
         "teacher_os_teach_context_get",
         "assessment_classroom_get",
         "assessment_classroom_list",
+        "teacher_os_memory_get",
     }
 )
 

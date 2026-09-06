@@ -30,12 +30,13 @@ ASSESSMENT_SOURCE = (
 
 
 def test_current_head_and_only_i02_migration() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-    assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+    assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+    assert EXPECTED_MIGRATION_HEAD == "tosd100001"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd090002"' in source
     assert 'down_revision: str | None = "tosd090001"' in source
     assert list(MIGRATIONS.glob("tosd090003*.py")) == []
+    assert (MIGRATIONS / "tosd100001_teacher_memory.py").is_file()
 
 
 def test_openapi_contains_dedicated_endpoint_and_digest_is_frozen() -> None:

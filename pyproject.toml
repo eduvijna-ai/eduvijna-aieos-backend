@@ -100,4 +100,5 @@ markers = [
     "tos_dev08_i02: TOS-DEV08-I02 ClassroomAssessment application/API + authority composition",
     "tos_dev09_i01: TOS-DEV09-I01 remediation TeachingWork + immutable origin domain/persistence",
     "tos_dev09_i02: TOS-DEV09-I02 Assessment-origin remediation TeachingWork creation",
+    "tos_dev10_i03: TOS-DEV10-I03 Teacher Memory v1 preference profile SoR",
 ]

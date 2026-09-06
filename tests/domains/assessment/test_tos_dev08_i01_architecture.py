@@ -54,15 +54,15 @@ def _imports(path: Path) -> list[str]:
 
 class TestI01ArchitectureGuards:
     def test_current_alembic_head_tosd080001(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080001"' in text
         assert 'down_revision: str | None = "tosd070002"' in text
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )
-        assert versions[-1] == "tosd090002_teaching_work_remediation_audit.py"
+        assert versions[-1] == "tosd100001_teacher_memory.py"
 
     def test_assessment_schema_in_readiness_ownership(self) -> None:
         assert "assessment" in _CONTENT_OWNED_SCHEMAS
@@ -155,7 +155,7 @@ class TestI01ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-    "B4326D43A213D7831F2AAD8E77A2CEC6BA70B800B4C62EFC52D5B8DFC07CB4D9"
+    "9B36BD1BF21BA4935A8ACA031176F9C57A06EB2E54E3ACA2261A7D7B6C3EDA69"
         )
 
     def test_i01_domain_has_no_audit_or_idempotency_wiring(self) -> None:

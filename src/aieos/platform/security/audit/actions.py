@@ -41,6 +41,8 @@ class SecurityAuditAction(StrEnum):
         "teaching.execution.observation.correct"
     )
     TEACHING_WORK_REMEDIATION_CREATE = "teaching.work.remediation.create"
+    TEACHING_MEMORY_CREATE = "teaching.memory.create"
+    TEACHING_MEMORY_UPDATE = "teaching.memory.update"
     ASSESSMENT_CLASSROOM_RECORD = "assessment.classroom.record"
     ASSESSMENT_CLASSROOM_CORRECT = "assessment.classroom.correct"
     ASSESSMENT_CLASSROOM_VOID = "assessment.classroom.void"
@@ -93,6 +95,7 @@ _TEACHING_CREATE_ACTIONS = frozenset(
         SecurityAuditAction.TEACHING_EXECUTION_START,
         SecurityAuditAction.TEACHING_EXECUTION_OBSERVATION_CREATE,
         SecurityAuditAction.TEACHING_WORK_REMEDIATION_CREATE,
+        SecurityAuditAction.TEACHING_MEMORY_CREATE,
     }
 )
 _TEACHING_INCREMENT_ACTIONS = frozenset(
@@ -103,6 +106,7 @@ _TEACHING_INCREMENT_ACTIONS = frozenset(
         SecurityAuditAction.TEACHING_EXECUTION_COMPLETE,
         SecurityAuditAction.TEACHING_EXECUTION_CANCEL,
         SecurityAuditAction.TEACHING_EXECUTION_OBSERVATION_CORRECT,
+        SecurityAuditAction.TEACHING_MEMORY_UPDATE,
     }
 )
 _ASSESSMENT_CREATE_ACTIONS = frozenset(

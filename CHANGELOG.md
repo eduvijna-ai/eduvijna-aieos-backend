@@ -7,6 +7,16 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- TOS-DEV10-I03 — Teacher Memory v1: durable teacher preference profile SoR
+  (`teaching.teacher_memories`, Alembic `tosd100001`), teacher-os GET/POST/PUT
+  `/api/v1/teacher-os/memory` with idempotency, ETag/If-Match concurrency, and
+  security audit `teaching.memory.create|update`. Ownership is authenticated
+  principal only; Continuous Context / chat / learner / inference deferred.
+  Prepare may later read Memory as UI defaults only — MEMORY → GENERATION
+  CONTEXT DEFERRED (no ADR-052 prompt binding in this increment).
+
 ### Fixed
 
 - TOS-DEV09-I02R1 — Assessment-origin remediation create corrections: move

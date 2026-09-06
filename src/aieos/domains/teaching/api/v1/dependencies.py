@@ -40,6 +40,9 @@ from aieos.domains.teaching.application.execution_start import (
     StartTeachingExecutionService,
 )
 from aieos.domains.teaching.application.generate import GenerateTeachingWorkService
+from aieos.domains.teaching.application.memory_create import CreateTeacherMemoryService
+from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
+from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.prepare import PrepareTeachingWorkService
 from aieos.domains.teaching.application.remediation_create import (
@@ -67,7 +70,9 @@ __all__ = [
     "create_teaching_execution_observation_service",
     "create_teaching_work_service",
     "create_remediation_teaching_work_service",
+    "create_teacher_memory_service",
     "generate_teaching_work_service",
+    "get_teacher_memory_service",
     "get_teaching_assignment_service",
     "get_teaching_execution_service",
     "get_teaching_work_service",
@@ -82,6 +87,7 @@ __all__ = [
     "start_teaching_execution_service",
     "teacher_os_teach_context_service",
     "teacher_os_today_mission_service",
+    "update_teacher_memory_service",
     "update_teaching_assignment_due_service",
 ]
 
@@ -349,3 +355,15 @@ def teacher_os_teach_context_service(
             "Teacher OS Teach context is not composed in this runtime"
         )
     return service
+
+
+def create_teacher_memory_service(request: Request) -> CreateTeacherMemoryService:
+    return request.app.state.create_teacher_memory_service
+
+
+def get_teacher_memory_service(request: Request) -> GetTeacherMemoryService:
+    return request.app.state.get_teacher_memory_service
+
+
+def update_teacher_memory_service(request: Request) -> UpdateTeacherMemoryService:
+    return request.app.state.update_teacher_memory_service

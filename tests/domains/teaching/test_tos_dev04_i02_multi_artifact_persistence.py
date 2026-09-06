@@ -438,8 +438,8 @@ def _make_domain_version(
 
 class TestMigrationHeadAndSchema:
     def test_single_alembic_head_is_tosd060001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
@@ -450,7 +450,7 @@ class TestMigrationHeadAndSchema:
             for p in (REPO_ROOT / "migrations" / "versions").glob("*.py")
             if p.name != "__pycache__"
         )
-        assert versions[-1].startswith("tosd090002_")
+        assert versions[-1].startswith("tosd100001_")
 
     def test_new_indexes_and_constraint_present(
         self, bootstrap_engine: Engine

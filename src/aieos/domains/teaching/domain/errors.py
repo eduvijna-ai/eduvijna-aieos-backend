@@ -37,3 +37,7 @@ class InvalidTeachingExecutionError(TeachingDomainError):
 
 class InvalidTeachingExecutionObservationError(TeachingDomainError):
     """A TeachingExecutionObservation field or mutation failed."""
+
+
+class InvalidTeacherMemoryError(TeachingDomainError):
+    """A TeacherMemory aggregate field or preference payload failed."""

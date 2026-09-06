@@ -28,6 +28,9 @@ from aieos.domains.teaching.infrastructure.persistence.repositories import (
     SqlAlchemyTeachingWorkRemediationOriginRepository,
     SqlAlchemyTeachingWorkRepository,
 )
+from aieos.domains.teaching.infrastructure.persistence.teacher_memory_repository import (
+    SqlAlchemyTeacherMemoryRepository,
+)
 from aieos.platform.api.infrastructure.persistence.repositories import (
     SqlAlchemyIdempotencyRepository,
 )
@@ -55,6 +58,7 @@ class SqlAlchemyTeachingUnitOfWork:
         self.remediation_origins: SqlAlchemyTeachingWorkRemediationOriginRepository
         self.assignments: SqlAlchemyTeachingAssignmentRepository
         self.executions: SqlAlchemyTeachingExecutionRepository
+        self.teacher_memories: SqlAlchemyTeacherMemoryRepository
         self.idempotency: SqlAlchemyIdempotencyRepository
         self.outbox: SqlAlchemyOutboxRepository
         self.audit: TeachingSecurityMutationAuditRepository
@@ -81,6 +85,9 @@ class SqlAlchemyTeachingUnitOfWork:
                 self._connection, self._execution_tenant_id
             )
             self.executions = SqlAlchemyTeachingExecutionRepository(
+                self._connection, self._execution_tenant_id
+            )
+            self.teacher_memories = SqlAlchemyTeacherMemoryRepository(
                 self._connection, self._execution_tenant_id
             )
             self.idempotency = SqlAlchemyIdempotencyRepository(

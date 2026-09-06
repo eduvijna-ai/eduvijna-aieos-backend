@@ -109,10 +109,10 @@ def _insert_action(
     )
 
 
-def test_current_database_head_is_tosd090002(bootstrap_engine: Engine) -> None:
+def test_current_database_head_is_tosd100001(bootstrap_engine: Engine) -> None:
     with bootstrap_engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "tosd090002"
+            "tosd100001"
         )
 
 

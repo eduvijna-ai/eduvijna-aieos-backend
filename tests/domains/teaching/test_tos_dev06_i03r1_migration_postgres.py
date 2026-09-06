@@ -162,8 +162,8 @@ def _seed_assignment_row(conn, *, tenant_id: uuid.UUID) -> uuid.UUID:
 
 class TestTosd060002Migration:
     def test_head_constants_and_chain(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         text_002 = (MIGRATIONS / "tosd060002_teaching_assignment_audit.py").read_text(
             encoding="utf-8"
         )

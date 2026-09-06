@@ -19,6 +19,7 @@ from aieos.domains.teaching.domain.identities import (
     AggregateRevision,
     AssignmentId,
     ExecutionId,
+    MemoryId,
     ObservationId,
     ObservationRevision,
     WorkId,
@@ -26,6 +27,7 @@ from aieos.domains.teaching.domain.identities import (
 from aieos.domains.teaching.domain.remediation_origin import (
     TeachingWorkRemediationOrigin,
 )
+from aieos.domains.teaching.domain.teacher_memory import TeacherMemory
 from aieos.domains.teaching.domain.work import TeachingWork
 from aieos.platform.events.ports import OutboxRepository
 from aieos.platform.idempotency.ports import IdempotencyRepository
@@ -164,6 +166,27 @@ class TeachingAssignmentRepository(Protocol):
     ) -> list[TeachingAssignment]: ...
 
 
+class TeacherMemoryRepository(Protocol):
+    """Durable persistence for the teacher-owned TeacherMemory aggregate."""
+
+    def insert(self, memory: TeacherMemory) -> None: ...
+
+    def get_for_teacher(self, teacher_principal_id: UUID) -> TeacherMemory | None: ...
+
+    def get_for_teacher_for_update(
+        self, teacher_principal_id: UUID
+    ) -> TeacherMemory | None: ...
+
+    def get_by_id(self, memory_id: MemoryId) -> TeacherMemory | None: ...
+
+    def update(
+        self,
+        memory: TeacherMemory,
+        *,
+        expected_revision: AggregateRevision,
+    ) -> bool: ...
+
+
 class TeachingExecutionRepository(Protocol):
     """Durable persistence for TeachingExecution and its conceptual children."""
 
@@ -237,6 +260,7 @@ class TeachingUnitOfWork(Protocol):
     remediation_origins: TeachingWorkRemediationOriginRepository
     assignments: TeachingAssignmentRepository
     executions: TeachingExecutionRepository
+    teacher_memories: TeacherMemoryRepository
     idempotency: IdempotencyRepository
     outbox: OutboxRepository
     audit: SecurityMutationAuditRepository

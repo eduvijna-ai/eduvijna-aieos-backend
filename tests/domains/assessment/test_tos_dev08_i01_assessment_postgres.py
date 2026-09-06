@@ -109,8 +109,8 @@ def _assessment(**overrides) -> ClassroomAssessment:
 
 class TestP01P03MigrationAndShape:
     def test_p01_alembic_head_tosd080001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd090002"
-        assert EXPECTED_MIGRATION_HEAD == "tosd090002"
+        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
@@ -119,7 +119,7 @@ class TestP01P03MigrationAndShape:
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )
-        assert versions[-1].startswith("tosd090002_")
+        assert versions[-1].startswith("tosd100001_")
 
     def test_p02_assessment_schema_exists(self, bootstrap_engine: Engine) -> None:
         insp = inspect(bootstrap_engine)

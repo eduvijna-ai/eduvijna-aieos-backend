@@ -134,6 +134,7 @@ def test_migration_chain_and_forbidden_tables() -> None:
     "tosd080002_classroom_assessment_audit.py",
     "tosd090001_remediation_work_origin.py",
     "tosd090002_teaching_work_remediation_audit.py",
+    "tosd100001_teacher_memory.py",
     ]
 
 

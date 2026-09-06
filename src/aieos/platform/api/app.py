@@ -89,6 +89,9 @@ from aieos.domains.teaching.application.execution_start import (
     StartTeachingExecutionService,
 )
 from aieos.domains.teaching.application.generate import GenerateTeachingWorkService
+from aieos.domains.teaching.application.memory_create import CreateTeacherMemoryService
+from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
+from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.ports import (
     TeachingUnitOfWorkFactory,
@@ -224,6 +227,13 @@ def create_app(
     app.state.list_teaching_works_service = ListTeachingWorksService(
         teaching_uow_factory
     )
+    app.state.create_teacher_memory_service = CreateTeacherMemoryService(
+        teaching_uow_factory, idempotency_retention=idempotency_retention
+    )
+    app.state.update_teacher_memory_service = UpdateTeacherMemoryService(
+        teaching_uow_factory, idempotency_retention=idempotency_retention
+    )
+    app.state.get_teacher_memory_service = GetTeacherMemoryService(teaching_uow_factory)
     app.state.teacher_os_today_mission_service = GetTeacherOsTodayMissionService(
         teaching_uow_factory,
         ReviewQueuePendingCountAdapter(list_teacher_review_queue_service),

@@ -127,6 +127,8 @@ from aieos.domains.teaching.application.errors import (
     TeachingWorkForbidden,
     TeachingWorkCapabilityForbidden,
     TeachingWorkNotFound,
+    TeacherMemoryNotFound,
+    InvalidTeacherMemoryRequest,
     WorkGenerationAlreadyExists,
     WorkGenerationInProgress,
     WorkGenerationPreconditionRequired,
@@ -491,6 +493,12 @@ _TEACHING_PROBLEMS: dict[type[TeachingApplicationError], tuple[int, str, str, st
         "Teaching Work not found",
         "Teaching Work was not found",
     ),
+    TeacherMemoryNotFound: (
+        404,
+        "teacher_memory_not_found",
+        "Teacher Memory not found",
+        "Teacher Memory was not found",
+    ),
     TeachingWorkForbidden: (
         403,
         "forbidden",
@@ -616,6 +624,12 @@ _TEACHING_PROBLEMS: dict[type[TeachingApplicationError], tuple[int, str, str, st
         "invalid_teaching_work_request",
         "Invalid Teaching Work request",
         "Teaching Work request is invalid",
+    ),
+    InvalidTeacherMemoryRequest: (
+        422,
+        "invalid_teacher_memory_request",
+        "Invalid Teacher Memory request",
+        "Teacher Memory request is invalid",
     ),
     TeachingIdempotencyKeyReused: (
         409,

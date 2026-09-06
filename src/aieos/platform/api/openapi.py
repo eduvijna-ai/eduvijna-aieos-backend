@@ -29,6 +29,8 @@ _MUTATION_IDEMPOTENCY_IDS = {
     "teaching_execution_cancel",
     "teaching_execution_observation_create",
     "teaching_execution_observation_correct",
+    "teacher_os_memory_create",
+    "teacher_os_memory_update",
 }
 _IF_MATCH_OPERATION_IDS = {
     "content_version_append",
@@ -43,6 +45,7 @@ _IF_MATCH_OPERATION_IDS = {
     "teaching_execution_complete",
     "teaching_execution_cancel",
     "teaching_execution_observation_correct",
+    "teacher_os_memory_update",
 }
 _GET_OPERATION_IDS = {
     "content_get",
@@ -58,6 +61,7 @@ _GET_OPERATION_IDS = {
     "teaching_execution_get",
     "teaching_execution_list",
     "teacher_os_teach_context_get",
+    "teacher_os_memory_get",
 }
 
 _IDEMPOTENCY_PARAM = {
@@ -187,6 +191,9 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
                     "teaching_execution_cancel",
                     "teaching_execution_observation_create",
                     "teaching_execution_observation_correct",
+                    "teacher_os_memory_get",
+                    "teacher_os_memory_create",
+                    "teacher_os_memory_update",
                 }:
                     headers["ETag"] = {
                         "description": "Opaque aggregate revision validator",

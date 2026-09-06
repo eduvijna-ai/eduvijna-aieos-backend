@@ -117,6 +117,25 @@ class ObservationId:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoryId:
+    """Stable Teacher Memory identity for one teacher preference profile."""
+
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "value", _require_uuid7(self.value, label="memory_id")
+        )
+
+    @classmethod
+    def generate(cls) -> MemoryId:
+        return cls(uuid.uuid7())
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+@dataclass(frozen=True, slots=True)
 class AggregateRevision:
     """Optimistic concurrency revision of a Teaching-owned aggregate."""
 
