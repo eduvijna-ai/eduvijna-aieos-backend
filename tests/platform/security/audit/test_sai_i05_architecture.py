@@ -280,6 +280,8 @@ class TestMutationInventory:
             "teaching.execution.observation.create",
             "teaching.execution.observation.correct",
             "teaching.work.remediation.create",
+            "teaching.memory.create",
+            "teaching.memory.update",
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",

@@ -138,6 +138,7 @@ class TestTeachingWorkScenarioLoader:
             "execution_content_bindings",
             "execution_observations",
             "work_remediation_origins",
+            "teacher_memories",
         }
         assert works == len(WORK_SPECS)
         assert assignments == 0

@@ -146,6 +146,7 @@ class TestNoTeachingIntentSystemOfRecord:
             "execution_content_bindings",
             "execution_observations",
             "work_remediation_origins",
+            "teacher_memories",
         ]
 
     def test_intent_type_is_a_value_object_not_an_aggregate(self) -> None:

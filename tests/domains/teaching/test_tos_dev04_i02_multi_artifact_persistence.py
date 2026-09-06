@@ -443,7 +443,7 @@ class TestMigrationHeadAndSchema:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "tosd090002"
+                == "tosd100001"
             )
         versions = sorted(
             p.name
@@ -554,7 +554,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd090002"
+                    == "tosd100001"
                 )
                 prov = conn.execute(
                     text(
@@ -590,7 +590,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd090002"
+                    == "tosd100001"
                 )
         finally:
             _ensure_head(postgres18, bootstrap_engine)
@@ -615,7 +615,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd090002"
+                    == "tosd100001"
                 )
                 count = conn.execute(
                     text(
