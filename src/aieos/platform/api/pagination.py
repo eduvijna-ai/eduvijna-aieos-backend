@@ -23,6 +23,7 @@ class ListCursor:
 
 
 REVIEW_QUEUE_CURSOR_TYPE = "teacher_os_review_queue"
+LIBRARY_CURSOR_TYPE = "teacher_os_library"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,16 @@ class ReviewQueueCursor:
     submitted_at: datetime
     content_id: UUID
     queue_type: str = REVIEW_QUEUE_CURSOR_TYPE
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryCursor:
+    """Opaque keyset cursor for Teacher OS Library pages."""
+
+    tenant_id: UUID
+    updated_at: datetime
+    content_id: UUID
+    cursor_type: str = LIBRARY_CURSOR_TYPE
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -150,4 +161,55 @@ class CursorCodec:
             submitted_at=submitted_at,
             content_id=content_id,
             queue_type=REVIEW_QUEUE_CURSOR_TYPE,
+        )
+
+    def encode_library(self, cursor: LibraryCursor) -> str:
+        if cursor.cursor_type != LIBRARY_CURSOR_TYPE:
+            raise InvalidCursorError("invalid cursor")
+        payload = json.dumps(
+            {
+                "v": self.version,
+                "cursor_type": LIBRARY_CURSOR_TYPE,
+                "tenant_id": str(cursor.tenant_id),
+                "updated_at": _canon_dt(cursor.updated_at),
+                "content_id": str(cursor.content_id),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        signature = hmac.new(self._key, payload, hashlib.sha256).digest()
+        return f"{_b64url_encode(payload)}.{_b64url_encode(signature)}"
+
+    def decode_library(
+        self, token: str, *, expected_tenant_id: UUID
+    ) -> LibraryCursor:
+        try:
+            blob, sig_b64 = token.split(".", 1)
+            payload = _b64url_decode(blob)
+            signature = _b64url_decode(sig_b64)
+        except (ValueError, Exception) as exc:
+            raise InvalidCursorError("invalid cursor") from exc
+        expected = hmac.new(self._key, payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise InvalidCursorError("invalid cursor")
+        try:
+            data = json.loads(payload.decode("utf-8"))
+            if data.get("v") != self.version:
+                raise InvalidCursorError("invalid cursor")
+            if data.get("cursor_type") != LIBRARY_CURSOR_TYPE:
+                raise InvalidCursorError("invalid cursor")
+            tenant_id = UUID(str(data["tenant_id"]))
+            content_id = UUID(str(data["content_id"]))
+            updated_at = datetime.fromisoformat(
+                str(data["updated_at"]).replace("Z", "+00:00")
+            )
+        except (KeyError, ValueError, TypeError) as exc:
+            raise InvalidCursorError("invalid cursor") from exc
+        if tenant_id != expected_tenant_id:
+            raise InvalidCursorError("invalid cursor")
+        return LibraryCursor(
+            tenant_id=tenant_id,
+            updated_at=updated_at,
+            content_id=content_id,
+            cursor_type=LIBRARY_CURSOR_TYPE,
         )

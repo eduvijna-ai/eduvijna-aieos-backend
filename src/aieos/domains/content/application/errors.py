@@ -158,6 +158,14 @@ class ReviewQueueInvalidRequest(ContentApplicationError):
     """Teacher OS Review Queue request violates a queue-specific contract."""
 
 
+class LibraryItemNotFound(ContentApplicationError):
+    """Teacher OS Library item is not visible or does not exist for this teacher."""
+
+
+class LibraryInvalidRequest(ContentApplicationError):
+    """Teacher OS Library request violates a library-specific contract."""
+
+
 class MigrationImportProvenanceInvalid(ContentApplicationError):
     """Migration import provenance failed the typed allow-listed V1 contract."""
 

@@ -12,9 +12,12 @@ from aieos.domains.content.api.v1.dependencies import (
     cursor_codec,
     get_content_service,
     get_content_version_service,
+    get_teacher_library_item_service,
+    get_teacher_library_version_service,
     get_teacher_review_queue_item_service,
     http_append_service,
     list_contents_service,
+    list_teacher_library_service,
     list_teacher_review_queue_service,
     publish_content_service,
     resolve_trusted_context,
@@ -31,6 +34,11 @@ from aieos.domains.content.api.v1.models import (
     ReviewDecisionRequest,
     ReviewDecisionResponse,
     ReviewSubmissionResponse,
+    TeacherLibraryDetailResponse,
+    TeacherLibraryItemResponse,
+    TeacherLibraryListResponse,
+    TeacherLibraryReviewNavigation,
+    TeacherLibraryVersionResponse,
     TeacherReviewQueueDetailResponse,
     TeacherReviewQueueItemResponse,
     TeacherReviewQueueListResponse,
@@ -54,6 +62,17 @@ from aieos.domains.content.application.models import (
 from aieos.domains.content.application.publish import PublishContentService
 from aieos.domains.content.application.queries import GetContentService, ListContentsService
 from aieos.domains.content.application.review import ReviewCommandService
+from aieos.domains.content.application.library import (
+    GetTeacherLibraryItemService,
+    GetTeacherLibraryVersionService,
+    ListTeacherLibraryService,
+)
+from aieos.domains.content.application.library_models import (
+    ListTeacherLibraryQuery,
+    TeacherLibraryDetail,
+    TeacherLibraryItem,
+    TeacherLibraryVersion,
+)
 from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
     ListTeacherReviewQueueService,
@@ -72,7 +91,12 @@ from aieos.domains.content.domain.identities import (
 from aieos.platform.api.etag import encode_revision_etag
 from aieos.platform.api.idempotency_key import parse_idempotency_key
 from aieos.platform.api.if_match import parse_if_match
-from aieos.platform.api.pagination import CursorCodec, ListCursor, ReviewQueueCursor
+from aieos.platform.api.pagination import (
+    CursorCodec,
+    LibraryCursor,
+    ListCursor,
+    ReviewQueueCursor,
+)
 from aieos.platform.api.problems import ProblemDetails
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.security.context import TrustedSecurityContext
@@ -668,3 +692,186 @@ def teacher_os_review_queue_get(
     )
     response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
     return _to_queue_detail(model)
+
+
+def _library_review_navigation(
+    model: TeacherLibraryItem | TeacherLibraryDetail,
+) -> TeacherLibraryReviewNavigation | None:
+    if model.review_version_id is None:
+        return None
+    return TeacherLibraryReviewNavigation(
+        content_id=model.content_id.value,
+        version_id=model.review_version_id.value,
+    )
+
+
+def _to_library_item(model: TeacherLibraryItem) -> TeacherLibraryItemResponse:
+    return TeacherLibraryItemResponse(
+        content_id=model.content_id.value,
+        content_type=model.content_type,
+        title=model.title,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+        stewardship_state=model.stewardship_state,
+        current_version_id=(
+            None if model.current_version_id is None else model.current_version_id.value
+        ),
+        published_version_id=(
+            None
+            if model.published_version_id is None
+            else model.published_version_id.value
+        ),
+        teaching_work_id=model.teaching_work_id,
+        review_navigation=_library_review_navigation(model),
+    )
+
+
+def _to_library_detail(model: TeacherLibraryDetail) -> TeacherLibraryDetailResponse:
+    return TeacherLibraryDetailResponse(
+        content_id=model.content_id.value,
+        content_type=model.content_type,
+        title=model.title,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+        stewardship_state=model.stewardship_state,
+        current_version_id=(
+            None if model.current_version_id is None else model.current_version_id.value
+        ),
+        published_version_id=(
+            None
+            if model.published_version_id is None
+            else model.published_version_id.value
+        ),
+        teaching_work_id=model.teaching_work_id,
+        review_navigation=_library_review_navigation(model),
+        aggregate_revision=int(model.aggregate_revision),
+    )
+
+
+def _to_library_version(model: TeacherLibraryVersion) -> TeacherLibraryVersionResponse:
+    return TeacherLibraryVersionResponse(
+        content_id=model.content_id.value,
+        version_id=model.version_id.value,
+        version_number=int(model.version_number),
+        content_type=model.content_type,
+        title=model.title,
+        stewardship_state=model.stewardship_state,
+        schema_id=model.schema_id,
+        schema_version=model.schema_version,
+        payload=dict(model.payload),
+        payload_sha256=model.payload_sha256,
+        origin=model.origin,
+        created_at=model.created_at,
+        published_version_id=(
+            None
+            if model.published_version_id is None
+            else model.published_version_id.value
+        ),
+        current_version_id=(
+            None if model.current_version_id is None else model.current_version_id.value
+        ),
+        teaching_work_id=model.teaching_work_id,
+        aggregate_revision=int(model.aggregate_revision),
+    )
+
+
+@router.get(
+    "/teacher-os/library",
+    response_model=TeacherLibraryListResponse,
+    operation_id="teacher_os_library_list",
+    responses=_LIST_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_library_list(
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        ListTeacherLibraryService, Depends(list_teacher_library_service)
+    ],
+    codec: Annotated[CursorCodec, Depends(cursor_codec)],
+    limit: Annotated[int | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    content_type: Annotated[str | None, Query()] = None,
+    stewardship_state: Annotated[str | None, Query()] = None,
+    published_only: Annotated[bool | None, Query()] = None,
+) -> TeacherLibraryListResponse:
+    page_size = DEFAULT_LIST_LIMIT if limit is None else limit
+    after_updated_at = None
+    after_content_id = None
+    if cursor is not None:
+        decoded = codec.decode_library(cursor, expected_tenant_id=context.tenant_id)
+        after_updated_at = decoded.updated_at
+        after_content_id = ContentId(decoded.content_id)
+    result = service.list(
+        context.tenant_id,
+        context.principal_id,
+        ListTeacherLibraryQuery(
+            limit=page_size,
+            content_type=content_type,
+            stewardship_state=stewardship_state,
+            published_only=bool(published_only),
+            after_updated_at=after_updated_at,
+            after_content_id=after_content_id,
+        ),
+    )
+    items = [_to_library_item(item) for item in result.items]
+    next_cursor = None
+    if result.has_more and result.items:
+        last = result.items[-1]
+        next_cursor = codec.encode_library(
+            LibraryCursor(
+                tenant_id=context.tenant_id,
+                updated_at=last.updated_at,
+                content_id=last.content_id.value,
+            )
+        )
+    return TeacherLibraryListResponse(items=items, next_cursor=next_cursor)
+
+
+@router.get(
+    "/teacher-os/library/{content_id}",
+    response_model=TeacherLibraryDetailResponse,
+    operation_id="teacher_os_library_get",
+    responses=_GET_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_library_get(
+    content_id: UUID,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        GetTeacherLibraryItemService, Depends(get_teacher_library_item_service)
+    ],
+) -> TeacherLibraryDetailResponse:
+    model = service.get(
+        context.tenant_id,
+        context.principal_id,
+        _content_id(content_id),
+    )
+    response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
+    return _to_library_detail(model)
+
+
+@router.get(
+    "/teacher-os/library/{content_id}/versions/{version_id}",
+    response_model=TeacherLibraryVersionResponse,
+    operation_id="teacher_os_library_version_get",
+    responses=_GET_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_library_version_get(
+    content_id: UUID,
+    version_id: UUID,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        GetTeacherLibraryVersionService, Depends(get_teacher_library_version_service)
+    ],
+) -> TeacherLibraryVersionResponse:
+    model = service.get(
+        context.tenant_id,
+        context.principal_id,
+        _content_id(content_id),
+        _version_id(version_id),
+    )
+    response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
+    return _to_library_version(model)
