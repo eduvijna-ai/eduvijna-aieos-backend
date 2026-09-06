@@ -20,7 +20,7 @@ ARG AIEOS_APPLICATION_VERSION
 LABEL org.opencontainers.image.title="aieos-backend" \
       org.opencontainers.image.description="AIEOS Backend production runtime OCI candidate (governed worker modules; not published by I01)" \
       org.opencontainers.image.version="${AIEOS_APPLICATION_VERSION}" \
-      org.opencontainers.image.source="https://github.com/eduvijna/eduvijna-aieos-backend" \
+      org.opencontainers.image.source="https://github.com/eduvijna-ai/eduvijna-aieos-backend" \
       org.opencontainers.image.revision="${AIEOS_GIT_REVISION}" \
       io.eduvijna.aieos.classification="PRODUCTION_BACKEND_RUNTIME" \
       io.eduvijna.aieos.application_version="${AIEOS_APPLICATION_VERSION}" \

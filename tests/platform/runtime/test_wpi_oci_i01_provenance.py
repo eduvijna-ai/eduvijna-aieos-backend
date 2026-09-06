@@ -65,7 +65,7 @@ def _inspect(
                 "org.opencontainers.image.title": "aieos-backend",
                 "org.opencontainers.image.description": "candidate",
                 "org.opencontainers.image.version": "0.1.0",
-                "org.opencontainers.image.source": "https://github.com/eduvijna/eduvijna-aieos-backend",
+                "org.opencontainers.image.source": "https://github.com/eduvijna-ai/eduvijna-aieos-backend",
                 "org.opencontainers.image.revision": revision,
                 "io.eduvijna.aieos.classification": "PRODUCTION_BACKEND_RUNTIME",
                 "io.eduvijna.aieos.application_version": "0.1.0",

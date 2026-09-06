@@ -97,7 +97,7 @@ required = {
     "org.opencontainers.image.title": None,
     "org.opencontainers.image.description": None,
     "org.opencontainers.image.version": app_ver,
-    "org.opencontainers.image.source": "https://github.com/eduvijna/eduvijna-aieos-backend",
+    "org.opencontainers.image.source": "https://github.com/eduvijna-ai/eduvijna-aieos-backend",
     "org.opencontainers.image.revision": backend,
     "io.eduvijna.aieos.classification": "PRODUCTION_BACKEND_RUNTIME",
     "io.eduvijna.aieos.application_version": app_ver,

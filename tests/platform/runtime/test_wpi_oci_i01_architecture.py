@@ -66,7 +66,7 @@ def test_dockerfile_python_uv_lock_nonroot_labels_failclosed() -> None:
     assert "10001" in text
     assert re.search(r"(?m)^USER 10001:10001\s*$", text)
     assert "org.opencontainers.image.source=" in text
-    assert "https://github.com/eduvijna/eduvijna-aieos-backend" in text
+    assert "https://github.com/eduvijna-ai/eduvijna-aieos-backend" in text
     assert "org.opencontainers.image.revision=" in text
     assert "${AIEOS_GIT_REVISION}" in text
     assert "AIEOS_BACKEND_RUNTIME_COMMAND_REQUIRED" in text
