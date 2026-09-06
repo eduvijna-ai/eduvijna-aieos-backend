@@ -22,6 +22,9 @@ from aieos.domains.teaching.application.memory_models import (
     UpdateTeacherMemoryCommand,
     teacher_memory_read_model,
 )
+from aieos.domains.teaching.application.owner_resolution import (
+    resolve_represented_teacher_principal,
+)
 from aieos.domains.teaching.application.ports import TeachingUnitOfWorkFactory
 from aieos.domains.teaching.domain.errors import InvalidTeacherMemoryError
 from aieos.domains.teaching.domain.identities import AggregateRevision, MemoryId
@@ -76,6 +79,11 @@ class UpdateTeacherMemoryService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None = None,
     ) -> TeacherMemoryReadModel:
+        teacher_principal_id = resolve_represented_teacher_principal(
+            calling_principal_id=principal_id,
+            effective_actor_id=event_context.effective_actor_id,
+            execution_channel=audit_provenance.execution_channel,
+        )
         updated_at = _now(now)
         fingerprint = update_fingerprint(expected_aggregate_revision, command)
         scope = IdempotencyScope(
@@ -97,13 +105,15 @@ class UpdateTeacherMemoryService:
                     raise PersistenceInvariantViolation(
                         "idempotent memory update outcome is not visible"
                     )
-                if replayed.teacher_principal_id != principal_id:
+                if replayed.teacher_principal_id != teacher_principal_id:
                     raise PersistenceInvariantViolation(
                         "idempotent memory update outcome ownership mismatch"
                     )
                 return teacher_memory_read_model(replayed)
 
-            locked = uow.teacher_memories.get_for_teacher_for_update(principal_id)
+            locked = uow.teacher_memories.get_for_teacher_for_update(
+                teacher_principal_id
+            )
             if locked is None:
                 raise TeacherMemoryNotFound("Teacher Memory not found")
             if int(locked.aggregate_revision) != int(expected_aggregate_revision):

@@ -1,9 +1,15 @@
 # TOS-DEV10-I03 — Teacher Memory v1
 
 Teacher Memory is the durable teacher-owned preference profile System of Record
-for Teacher OS. Ownership is always `tenant_id` + authenticated teacher
-Principal (`TrustedSecurityContext.principal_id`). Clients never supply
-`teacher_principal_id` or `tenant_id` on Memory write/read bodies.
+for Teacher OS. Durable ownership is `tenant_id` + represented/effective HUMAN
+teacher Principal (`teacher_principal_id`), resolved by
+`resolve_represented_teacher_principal` from trusted server-side identity.
+
+`TrustedSecurityContext.principal_id` is the calling/authenticated Principal.
+It is **not** definitionally the Memory owner. Direct Teacher OS requests where
+`principal_id == effective_actor_id` resolve owner to that Principal only as an
+explicit direct-execution fallback. Clients never supply `teacher_principal_id`
+or `tenant_id` on Memory write/read bodies.
 
 ## Authority boundaries
 
@@ -12,6 +18,8 @@ Principal (`TrustedSecurityContext.principal_id`). Clients never supply
 - POST creates once per teacher; duplicate create is deterministic and does not
   rewrite preferences.
 - PUT replaces preferences under `If-Match` aggregate revision concurrency.
+- Non-API / service / workload execution without a safely represented HUMAN
+  teacher fails closed and cannot become Memory owner.
 - Continuous Context, chat history, learner data, and preference inference are
   out of scope for this increment.
 

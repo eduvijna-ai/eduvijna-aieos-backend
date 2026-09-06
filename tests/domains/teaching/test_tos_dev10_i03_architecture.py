@@ -48,6 +48,30 @@ def test_openapi_contains_memory_ops_and_digest_is_frozen() -> None:
     assert "teacher_os_memory_get" in contract
     assert "teacher_os_memory_create" in contract
     assert "teacher_os_memory_update" in contract
+    # Post-I02 composition must retain Library operations.
+    assert "/api/v1/teacher-os/library" in contract
+    assert "teacher_os_library_list" in contract
+    assert "teacher_os_library_get" in contract
+    assert "teacher_os_library_version_get" in contract
+
+
+def test_owner_resolution_is_wired_and_not_caller_definitional() -> None:
+    resolver = (
+        TEACHING / "application" / "owner_resolution.py"
+    ).read_text(encoding="utf-8")
+    assert "resolve_represented_teacher_principal" in resolver
+    assert "not definitionally" in resolver.lower() or "NOT definitionally" in resolver
+    for path in (
+        TEACHING / "application" / "memory_create.py",
+        TEACHING / "application" / "memory_update.py",
+        TEACHING / "application" / "memory_queries.py",
+    ):
+        source = path.read_text(encoding="utf-8")
+        assert "resolve_represented_teacher_principal" in source
+        assert "Ownership is always TrustedSecurityContext.principal_id" not in source
+    domain = (TEACHING / "domain" / "teacher_memory.py").read_text(encoding="utf-8")
+    assert "resolve_represented_teacher_principal" in domain
+    assert "until principal_kind exists" not in domain
 
 
 def test_authority_boundaries_exclude_deferred_scope() -> None:

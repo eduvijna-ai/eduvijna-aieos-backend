@@ -20,6 +20,9 @@ from aieos.domains.teaching.application.memory_models import (
     TeacherMemoryReadModel,
     teacher_memory_read_model,
 )
+from aieos.domains.teaching.application.owner_resolution import (
+    resolve_represented_teacher_principal,
+)
 from aieos.domains.teaching.application.ports import TeachingUnitOfWorkFactory
 from aieos.domains.teaching.domain.errors import InvalidTeacherMemoryError
 from aieos.domains.teaching.domain.identities import MemoryId
@@ -68,12 +71,19 @@ class CreateTeacherMemoryService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None = None,
     ) -> TeacherMemoryReadModel:
-        """Create initial Memory for the authenticated teacher principal.
+        """Create initial Memory for the represented teacher Principal.
 
-        Ownership is always TrustedSecurityContext.principal_id — never a
-        client-supplied owner id. Duplicate create for the same teacher is
-        deterministic: return the existing profile without a second mutation.
+        Durable owner is resolve_represented_teacher_principal(...), never a
+        client-supplied owner id. Calling principal remains audit/idempotency
+        provenance and is not definitionally the Memory owner.
+        Duplicate create for the same teacher is deterministic: return the
+        existing profile without a second mutation.
         """
+        teacher_principal_id = resolve_represented_teacher_principal(
+            calling_principal_id=principal_id,
+            effective_actor_id=event_context.effective_actor_id,
+            execution_channel=audit_provenance.execution_channel,
+        )
         created_at = _now(now)
         fingerprint = create_fingerprint(command)
         scope = IdempotencyScope(
@@ -95,13 +105,13 @@ class CreateTeacherMemoryService:
                     raise PersistenceInvariantViolation(
                         "idempotent memory create outcome is not visible"
                     )
-                if replayed.teacher_principal_id != principal_id:
+                if replayed.teacher_principal_id != teacher_principal_id:
                     raise PersistenceInvariantViolation(
                         "idempotent memory create outcome ownership mismatch"
                     )
                 return teacher_memory_read_model(replayed)
 
-            already = uow.teacher_memories.get_for_teacher(principal_id)
+            already = uow.teacher_memories.get_for_teacher(teacher_principal_id)
             if already is not None:
                 # Deterministic duplicate: same teacher already has Memory.
                 # Do not rewrite preferences; do not emit a second audit.
@@ -110,7 +120,7 @@ class CreateTeacherMemoryService:
             try:
                 memory = TeacherMemory.create(
                     tenant_id=execution_tenant_id,
-                    teacher_principal_id=principal_id,
+                    teacher_principal_id=teacher_principal_id,
                     preferences=command.preferences,
                     created_at=created_at,
                 )

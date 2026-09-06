@@ -1,12 +1,14 @@
 """TeacherMemory aggregate contract.
 
 Teacher Memory is the durable teacher-owned preference profile SoR.
-Ownership is tenant_id + represented HUMAN teacher Principal
-(teacher_principal_id). TrustedSecurityContext.principal_id is treated as
-that represented teacher in DEV Teacher OS until principal_kind exists.
+Ownership is tenant_id + represented/effective HUMAN teacher Principal
+(teacher_principal_id), resolved by
+resolve_represented_teacher_principal from trusted server-side identity.
 
 teacher_principal_id is NEVER taken from a client-supplied owner id.
 Transport callers, service workloads, and audit provenance are not ownership.
+Calling principal_id is not definitionally the Memory owner; direct Teacher OS
+execution may resolve owner == caller only as an explicit compatibility fallback.
 """
 
 from __future__ import annotations
