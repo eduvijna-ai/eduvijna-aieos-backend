@@ -15,6 +15,7 @@ import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field
 
+from aieos.domains.education.preparation_kit_v1 import PreparationKitV1
 from aieos.domains.education.worksheet_v1 import WorksheetV1
 from aieos.platform.ai.config import GroqProviderConfig
 from aieos.platform.ai.gateway import (
@@ -165,6 +166,31 @@ class TestGroqAdapterContract:
         assert "tools" not in kwargs
         assert "stream" not in kwargs
 
+    def test_preparation_kit_defs_require_every_property(self) -> None:
+        schema = json_schema_for_output_type(PreparationKitV1)
+        question = schema["$defs"]["WorksheetQuestionV1"]
+        assert set(question["required"]) == set(question["properties"])
+        assert "options" in question["required"]
+        assert "visual_description" in question["required"]
+        assert question["additionalProperties"] is False
+
+        def _assert_closed_objects(node: object) -> None:
+            if isinstance(node, list):
+                for item in node:
+                    _assert_closed_objects(item)
+                return
+            if not isinstance(node, dict):
+                return
+            properties = node.get("properties")
+            if node.get("type") == "object" or isinstance(properties, dict):
+                if isinstance(properties, dict):
+                    assert node.get("additionalProperties") is False
+                    assert set(node.get("required") or []) == set(properties)
+            for value in node.values():
+                _assert_closed_objects(value)
+
+        _assert_closed_objects(schema)
+
     def test_client_uses_groq_base_url_and_zero_retries(self) -> None:
         gateway = GroqStructuredModelGateway(_config())
         assert str(gateway._client.base_url).rstrip("/") == "https://api.groq.com/openai/v1"
@@ -269,6 +295,21 @@ class TestSanitizedDiagnostics:
         }
         assert "message" not in scalars
         assert "SECRET" not in str(scalars)
+
+    def test_extractor_reads_flat_groq_schema_rejection_without_message(self) -> None:
+        body = {
+            "type": "invalid_request_error",
+            "schema_kind": "required",
+            "schema_path": "/$defs/WorksheetQuestionV1/required",
+            "message": "SECRET_MESSAGE_MUST_NOT_EXTRACT",
+            "param": "response_format",
+        }
+        scalars = _extract_provider_error_scalars(body)
+        assert scalars["provider_error_type"] == "invalid_request_error"
+        assert scalars["provider_error_schema_kind"] == "required"
+        assert "message" not in scalars
+        assert "SECRET" not in str(scalars)
+        assert "schema_path" not in scalars
 
     def test_failure_log_contains_no_prohibited_content(
         self, monkeypatch: pytest.MonkeyPatch

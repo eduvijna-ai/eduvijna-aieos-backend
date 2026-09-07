@@ -62,10 +62,9 @@ def _extract_provider_error_scalars(body: object) -> dict[str, str | int | float
     if not isinstance(body, Mapping):
         return out
     error = body.get("error")
-    if not isinstance(error, Mapping):
-        return out
-    for key in ("type", "code"):
-        scalar = _safe_scalar(error.get(key))
+    source = error if isinstance(error, Mapping) else body
+    for key in ("type", "code", "schema_kind"):
+        scalar = _safe_scalar(source.get(key))
         if scalar is not None:
             out[f"provider_error_{key}"] = scalar
     return out
@@ -102,7 +101,12 @@ def _enforce_object_schema(node: object) -> None:
             node["required"] = required
             for child in properties.values():
                 _enforce_object_schema(child)
-    for key in ("$defs", "definitions", "items", "additionalProperties"):
+    for key in ("$defs", "definitions"):
+        defs = node.get(key)
+        if isinstance(defs, dict):
+            for value in defs.values():
+                _enforce_object_schema(value)
+    for key in ("items", "additionalProperties"):
         if key in node:
             _enforce_object_schema(node[key])
     for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
