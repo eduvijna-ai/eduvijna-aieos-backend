@@ -1,8 +1,15 @@
-"""TOS-DEV10-I04 Teacher OS development demo scenario (A–F).
+"""TOS-DEV10-I04 / I04R1 Teacher OS development demo scenario (A–F).
 
 NON_PRODUCTION. Synthetic tenant/principal only, reusing TOS-DEV01 identities.
-Seeds Prepare/Review → Library → Assign/Teach → Assess/Improve → Memory via
-published HTTP contracts so Assistant has rich authorized context.
+
+Final loaded state keeps independently inspectable lifecycle examples:
+
+  1. REVIEW WORK — TeachingWork + generated artifact left IN_REVIEW
+  2. LIBRARY/PUBLISHED WORK — separate TeachingWork, approved + published
+  3. ASSIGN/TEACH/ASSESS — uses the published work
+  4. REMEDIATION — Improve command from class-level assessment
+  5. Teacher Memory — ACTIVE HUMAN preference profile
+  6. Assistant context — governed records for mission/work/library/assess/etc.
 
 Never runs on application startup, migration, worker startup, or production
 composition. The CLI is the only entry point.
@@ -33,7 +40,8 @@ __all__ = [
     "SYNTHETIC_PRINCIPAL_ID",
     "SYNTHETIC_TENANT_ID",
     "CLASS_REF",
-    "GOAL_PREPARE",
+    "GOAL_REVIEW",
+    "GOAL_PUBLISH",
     "GOAL_REMEDIATE",
     "DemoReport",
     "ensure_synthetic_human_principal",
@@ -45,12 +53,16 @@ SCENARIO_ID = "tos-dev10-i04-teacher-os-demo"
 CLASS_REF = "class-5a"
 INTENT_PREPARE_TOMORROW = "prepare_tomorrow"
 
-GOAL_PREPARE = (
-    "[TOS-DEV10-I04:A-prepare] Prepare tomorrow's Grade 5 fractions lesson so "
-    "Assistant can reason about mission, work, and preparation artefacts."
+GOAL_REVIEW = (
+    "[TOS-DEV10-I04R1:review] Prepare Grade 5 fractions review-queue demo so "
+    "Review remains pending with an IN_REVIEW preparation artefact."
+)
+GOAL_PUBLISH = (
+    "[TOS-DEV10-I04R1:library] Prepare Grade 5 fractions library demo so a "
+    "separate published worksheet is visible in Library."
 )
 GOAL_REMEDIATE = (
-    "[TOS-DEV10-I04:D-remediate] Re-teach comparing fractions with concrete "
+    "[TOS-DEV10-I04R1:remediate] Re-teach comparing fractions with concrete "
     "visual models after class-level MIXED evidence."
 )
 
@@ -72,9 +84,12 @@ class DemoReport:
     scenario_date: str
     target_date: str
     class_ref: str
-    work_id: str | None
-    content_id: str | None
-    version_id: str | None
+    review_work_id: str | None
+    review_content_id: str | None
+    review_version_id: str | None
+    published_work_id: str | None
+    published_content_id: str | None
+    published_version_id: str | None
     assignment_id: str | None
     execution_id: str | None
     assessment_id: str | None
@@ -91,9 +106,12 @@ class DemoReport:
             "scenario_date": self.scenario_date,
             "target_date": self.target_date,
             "class_ref": self.class_ref,
-            "work_id": self.work_id,
-            "content_id": self.content_id,
-            "version_id": self.version_id,
+            "review_work_id": self.review_work_id,
+            "review_content_id": self.review_content_id,
+            "review_version_id": self.review_version_id,
+            "published_work_id": self.published_work_id,
+            "published_content_id": self.published_content_id,
+            "published_version_id": self.published_version_id,
             "assignment_id": self.assignment_id,
             "execution_id": self.execution_id,
             "assessment_id": self.assessment_id,
@@ -130,7 +148,7 @@ def ensure_synthetic_human_principal(
 
 
 def _idem_key(step: str) -> str:
-    return f"tos-dev10-i04:{SCENARIO_ID}:{SYNTHETIC_TENANT_ID}:{step}"
+    return f"tos-dev10-i04r1:{SCENARIO_ID}:{SYNTHETIC_TENANT_ID}:{step}"
 
 
 def _headers(
@@ -179,19 +197,23 @@ def _get_work(client: Any, tenant_id: UUID, work_id: str) -> dict[str, Any]:
     return body
 
 
-def _ensure_prepare_work(
+def _ensure_work(
     client: Any,
     tenant_id: UUID,
     *,
+    goal_text: str,
+    topic: str,
     target_date: date,
+    step_key: str,
+    idem_step: str,
     steps: list[StepStatus],
 ) -> tuple[str, str, bool]:
-    existing = _find_work(_list_works(client, tenant_id), goal_text=GOAL_PREPARE)
+    existing = _find_work(_list_works(client, tenant_id), goal_text=goal_text)
     if existing is not None:
         work = _get_work(client, tenant_id, existing["work_id"])
         steps.append(
             StepStatus(
-                key="A.work",
+                key=step_key,
                 status="reused",
                 detail={"work_id": work["work_id"]},
             )
@@ -202,21 +224,21 @@ def _ensure_prepare_work(
         "/api/v1/teaching/works",
         json={
             "intent_type": INTENT_PREPARE_TOMORROW,
-            "goal_text": GOAL_PREPARE,
+            "goal_text": goal_text,
             "target_date": target_date.isoformat(),
             "locale": "en-IN",
             "class_label": "Grade 5A",
             "subject": "Mathematics",
-            "topic": "Comparing fractions",
+            "topic": topic,
         },
-        headers=_headers(tenant_id, idempotency_key=_idem_key("create-work")),
+        headers=_headers(tenant_id, idempotency_key=_idem_key(idem_step)),
     )
     if created.status_code not in (200, 201):
-        raise RuntimeError(f"teaching work create failed: {created.text}")
+        raise RuntimeError(f"teaching work create failed ({step_key}): {created.text}")
     body = created.json()
     steps.append(
         StepStatus(
-            key="A.work",
+            key=step_key,
             status="created",
             detail={"work_id": body["work_id"]},
         )
@@ -242,6 +264,8 @@ def _ensure_generate(
     *,
     work_id: str,
     work_etag: str,
+    step_key: str,
+    idem_step: str,
     steps: list[StepStatus],
 ) -> tuple[str, str, bool]:
     artifacts = _list_artifacts(client, tenant_id, work_id)
@@ -249,11 +273,12 @@ def _ensure_generate(
         artifact = artifacts[0]
         steps.append(
             StepStatus(
-                key="A.generate",
+                key=step_key,
                 status="reused",
                 detail={
                     "content_id": artifact["content_id"],
                     "version_id": artifact["version_id"],
+                    "stewardship_state": artifact.get("stewardship_state"),
                 },
             )
         )
@@ -263,7 +288,7 @@ def _ensure_generate(
         f"/api/v1/teaching/works/{work_id}/actions/generate",
         headers=_headers(
             tenant_id,
-            idempotency_key=_idem_key("generate"),
+            idempotency_key=_idem_key(idem_step),
             if_match=work_etag,
         ),
     )
@@ -274,27 +299,29 @@ def _ensure_generate(
         artifact = artifacts[0]
         steps.append(
             StepStatus(
-                key="A.generate",
+                key=step_key,
                 status="reused",
                 detail={
                     "content_id": artifact["content_id"],
                     "version_id": artifact["version_id"],
+                    "stewardship_state": artifact.get("stewardship_state"),
                 },
             )
         )
         return artifact["content_id"], artifact["version_id"], True
     if generated.status_code != 200:
         raise RuntimeError(
-            f"generate failed: {generated.status_code} {generated.text}"
+            f"generate failed ({step_key}): {generated.status_code} {generated.text}"
         )
     body = generated.json()["artifact"]
     steps.append(
         StepStatus(
-            key="A.generate",
+            key=step_key,
             status="created",
             detail={
                 "content_id": body["content_id"],
                 "version_id": body["version_id"],
+                "stewardship_state": body.get("stewardship_state"),
             },
         )
     )
@@ -315,6 +342,52 @@ def _get_content(client: Any, tenant_id: UUID, content_id: str) -> dict[str, Any
     return body
 
 
+def _assert_review_pending(
+    client: Any,
+    tenant_id: UUID,
+    *,
+    content_id: str,
+    version_id: str,
+    steps: list[StepStatus],
+) -> None:
+    content = _get_content(client, tenant_id, content_id)
+    state = content.get("stewardship_state")
+    if state != "IN_REVIEW":
+        raise RuntimeError(
+            f"review demo must remain IN_REVIEW; got stewardship_state={state!r}"
+        )
+    if content.get("published_version_id") is not None:
+        raise RuntimeError("review demo must not be published")
+
+    queue = client.get(
+        "/api/v1/teacher-os/review-queue",
+        params={"limit": 100},
+        headers=_headers(tenant_id),
+    )
+    if queue.status_code != 200:
+        raise RuntimeError(f"review-queue list failed: {queue.text}")
+    found = any(
+        item.get("content_id") == content_id
+        and item.get("version_id") == version_id
+        for item in queue.json()["items"]
+    )
+    if not found:
+        raise RuntimeError("review demo artifact missing from Review Queue")
+
+    steps.append(
+        StepStatus(
+            key="A.review_pending",
+            status="reused",
+            detail={
+                "content_id": content_id,
+                "version_id": version_id,
+                "stewardship_state": "IN_REVIEW",
+                "in_review_queue": True,
+            },
+        )
+    )
+
+
 def _ensure_approve_and_publish(
     client: Any,
     tenant_id: UUID,
@@ -322,7 +395,7 @@ def _ensure_approve_and_publish(
     content_id: str,
     version_id: str,
     steps: list[StepStatus],
-) -> tuple[str, bool, bool]:
+) -> tuple[bool, bool]:
     content = _get_content(client, tenant_id, content_id)
     approved_reused = True
     published_reused = True
@@ -339,7 +412,7 @@ def _ensure_approve_and_publish(
             json={},
             headers=_headers(
                 tenant_id,
-                idempotency_key=_idem_key("approve"),
+                idempotency_key=_idem_key("library-approve"),
                 if_match=detail.headers["ETag"],
             ),
         )
@@ -374,7 +447,7 @@ def _ensure_approve_and_publish(
                 detail={"content_id": content_id, "version_id": version_id},
             )
         )
-        return version_id, approved_reused, True
+        return approved_reused, True
 
     if content.get("stewardship_state") not in {"APPROVED", "PUBLISHED"}:
         raise RuntimeError(
@@ -386,7 +459,7 @@ def _ensure_approve_and_publish(
         json={"version_id": version_id},
         headers=_headers(
             tenant_id,
-            idempotency_key=_idem_key("publish"),
+            idempotency_key=_idem_key("library-publish"),
             if_match=content["_etag"],
         ),
     )
@@ -400,7 +473,45 @@ def _ensure_approve_and_publish(
             detail={"content_id": content_id, "version_id": version_id},
         )
     )
-    return version_id, approved_reused, published_reused
+    return approved_reused, published_reused
+
+
+def _assert_library_visible(
+    client: Any,
+    tenant_id: UUID,
+    *,
+    content_id: str,
+    version_id: str,
+    steps: list[StepStatus],
+) -> None:
+    library = client.get(
+        "/api/v1/teacher-os/library",
+        params={"limit": 100, "published_only": True},
+        headers=_headers(tenant_id),
+    )
+    if library.status_code != 200:
+        raise RuntimeError(f"library list failed: {library.text}")
+    found = None
+    for item in library.json()["items"]:
+        if item.get("content_id") == content_id:
+            found = item
+            break
+    if found is None:
+        raise RuntimeError("published demo content missing from Library")
+    if found.get("published_version_id") != version_id:
+        raise RuntimeError(
+            "library published_version_id does not match demo published version"
+        )
+    steps.append(
+        StepStatus(
+            key="B.library_visible",
+            status="reused",
+            detail={
+                "content_id": content_id,
+                "published_version_id": version_id,
+            },
+        )
+    )
 
 
 def _ensure_assignment(
@@ -601,7 +712,7 @@ def _ensure_assessment(
             "content_version_id": version_id,
             "class_result_level": "MIXED",
             "class_result_note": (
-                "[TOS-DEV10-I04] Synthetic MIXED class-level evidence for Improve."
+                "[TOS-DEV10-I04R1] Synthetic MIXED class-level evidence for Improve."
             ),
             "work_id": work_id,
             "execution_id": execution_id,
@@ -715,8 +826,9 @@ def _ensure_memory(
 
 def _mark_assistant_context_ready(
     *,
-    work_id: str,
-    content_id: str,
+    review_work_id: str,
+    published_work_id: str,
+    published_content_id: str,
     assignment_id: str,
     execution_id: str,
     assessment_id: str,
@@ -730,8 +842,9 @@ def _mark_assistant_context_ready(
             status="reused",
             detail={
                 "ready": True,
-                "work_id": work_id,
-                "content_id": content_id,
+                "review_work_id": review_work_id,
+                "published_work_id": published_work_id,
+                "published_content_id": published_content_id,
                 "assignment_id": assignment_id,
                 "execution_id": execution_id,
                 "assessment_id": assessment_id,
@@ -749,40 +862,101 @@ def ensure_teacher_os_demo(
     principal_id: UUID = SYNTHETIC_PRINCIPAL_ID,
     scenario_date: date,
 ) -> DemoReport:
-    """Idempotently ensure demo scenarios A–F via HTTP application contracts."""
+    """Idempotently ensure distinct lifecycle demo scenarios via HTTP contracts."""
     target_date = scenario_date + timedelta(days=1)
     steps: list[StepStatus] = []
     reused_flags: list[bool] = []
 
-    work_id, work_etag, reused = _ensure_prepare_work(
-        client, tenant_id, target_date=target_date, steps=steps
-    )
-    reused_flags.append(reused)
-
-    content_id, version_id, reused = _ensure_generate(
+    # --- 1. REVIEW WORK (leave IN_REVIEW) ---
+    review_work_id, review_etag, reused = _ensure_work(
         client,
         tenant_id,
-        work_id=work_id,
-        work_etag=work_etag,
+        goal_text=GOAL_REVIEW,
+        topic="Comparing fractions — review queue",
+        target_date=target_date,
+        step_key="A.review_work",
+        idem_step="review-create-work",
         steps=steps,
     )
     reused_flags.append(reused)
 
-    _version, approved_reused, published_reused = _ensure_approve_and_publish(
+    review_content_id, review_version_id, reused = _ensure_generate(
         client,
         tenant_id,
-        content_id=content_id,
-        version_id=version_id,
+        work_id=review_work_id,
+        work_etag=review_etag,
+        step_key="A.review_generate",
+        idem_step="review-generate",
+        steps=steps,
+    )
+    reused_flags.append(reused)
+    _assert_review_pending(
+        client,
+        tenant_id,
+        content_id=review_content_id,
+        version_id=review_version_id,
+        steps=steps,
+    )
+
+    # --- 2. LIBRARY / PUBLISHED WORK (separate aggregate) ---
+    published_work_id, published_etag, reused = _ensure_work(
+        client,
+        tenant_id,
+        goal_text=GOAL_PUBLISH,
+        topic="Comparing fractions — library",
+        target_date=target_date,
+        step_key="B.published_work",
+        idem_step="library-create-work",
+        steps=steps,
+    )
+    reused_flags.append(reused)
+
+    published_content_id, published_version_id, reused = _ensure_generate(
+        client,
+        tenant_id,
+        work_id=published_work_id,
+        work_etag=published_etag,
+        step_key="B.published_generate",
+        idem_step="library-generate",
+        steps=steps,
+    )
+    reused_flags.append(reused)
+
+    approved_reused, published_reused = _ensure_approve_and_publish(
+        client,
+        tenant_id,
+        content_id=published_content_id,
+        version_id=published_version_id,
         steps=steps,
     )
     reused_flags.extend([approved_reused, published_reused])
+    _assert_library_visible(
+        client,
+        tenant_id,
+        content_id=published_content_id,
+        version_id=published_version_id,
+        steps=steps,
+    )
 
+    # Review artifact must still be pending after library publish path.
+    review_after = _get_content(client, tenant_id, review_content_id)
+    if review_after.get("stewardship_state") != "IN_REVIEW":
+        raise RuntimeError(
+            "review artifact must survive loader completion as IN_REVIEW; "
+            f"got {review_after.get('stewardship_state')!r}"
+        )
+    if review_content_id == published_content_id:
+        raise RuntimeError("review and published content IDs must be distinct")
+    if review_work_id == published_work_id:
+        raise RuntimeError("review and published work IDs must be distinct")
+
+    # --- 3. ASSIGN / TEACH / ASSESS on published work ---
     assignment_id, reused = _ensure_assignment(
         client,
         tenant_id,
-        work_id=work_id,
-        content_id=content_id,
-        version_id=version_id,
+        work_id=published_work_id,
+        content_id=published_content_id,
+        version_id=published_version_id,
         steps=steps,
     )
     reused_flags.append(reused)
@@ -790,9 +964,9 @@ def ensure_teacher_os_demo(
     execution_id, reused = _ensure_execution(
         client,
         tenant_id,
-        work_id=work_id,
-        content_id=content_id,
-        version_id=version_id,
+        work_id=published_work_id,
+        content_id=published_content_id,
+        version_id=published_version_id,
         steps=steps,
     )
     reused_flags.append(reused)
@@ -800,15 +974,16 @@ def ensure_teacher_os_demo(
     assessment_id, assessment_revision, reused = _ensure_assessment(
         client,
         tenant_id,
-        work_id=work_id,
-        content_id=content_id,
-        version_id=version_id,
+        work_id=published_work_id,
+        content_id=published_content_id,
+        version_id=published_version_id,
         execution_id=execution_id,
         assignment_id=assignment_id,
         steps=steps,
     )
     reused_flags.append(reused)
 
+    # --- 4. REMEDIATION ---
     remediation_work_id, reused = _ensure_remediation(
         client,
         tenant_id,
@@ -819,12 +994,15 @@ def ensure_teacher_os_demo(
     )
     reused_flags.append(reused)
 
+    # --- 5. Teacher Memory ---
     memory_id, reused = _ensure_memory(client, tenant_id, steps)
     reused_flags.append(reused)
 
+    # --- 6. Assistant context marker ---
     _mark_assistant_context_ready(
-        work_id=work_id,
-        content_id=content_id,
+        review_work_id=review_work_id,
+        published_work_id=published_work_id,
+        published_content_id=published_content_id,
         assignment_id=assignment_id,
         execution_id=execution_id,
         assessment_id=assessment_id,
@@ -840,9 +1018,12 @@ def ensure_teacher_os_demo(
         scenario_date=scenario_date.isoformat(),
         target_date=target_date.isoformat(),
         class_ref=CLASS_REF,
-        work_id=work_id,
-        content_id=content_id,
-        version_id=version_id,
+        review_work_id=review_work_id,
+        review_content_id=review_content_id,
+        review_version_id=review_version_id,
+        published_work_id=published_work_id,
+        published_content_id=published_content_id,
+        published_version_id=published_version_id,
         assignment_id=assignment_id,
         execution_id=execution_id,
         assessment_id=assessment_id,

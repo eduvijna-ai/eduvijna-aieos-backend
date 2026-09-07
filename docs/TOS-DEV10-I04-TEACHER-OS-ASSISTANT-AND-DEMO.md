@@ -42,7 +42,7 @@ uv run alembic current
 Expected head: `tosd100001` (Teacher Memory). No chat migration is authorized
 in this increment.
 
-## 3. Load demo (scenarios A–F)
+## 3. Load demo (scenarios A–F) — I04R1 distinct lifecycles
 
 Explicit CLI only. Refuses when `AIEOS_ENVIRONMENT` / `ENVIRONMENT` is
 `production`/`prod`. Defaults to localhost DB hosts; use
@@ -55,20 +55,29 @@ uv run python tools/development/load_teacher_os_demo.py `
   --scenario-date 2026-09-06
 ```
 
-What it does:
+Final loaded state keeps **independently inspectable** lifecycle examples
+(I04R1). Review and Library are **separate** TeachingWorks / Content IDs.
+Business aggregates are created only through published HTTP contracts (no
+business-table SQL inserts). Bootstrap SQL may upsert the synthetic ACTIVE
+HUMAN principal only.
 
 | Step | Surface |
 |------|---------|
-| A | Teaching Work + generate worksheet into Review |
-| B | Approve + publish for Library |
-| C | Assignment + TeachingExecution on `class-5a` |
-| D | ClassroomAssessment (MIXED) + remediation Teaching Work |
-| E | Teacher Memory preferences |
-| F | Enough authorized context for Assistant questions |
+| A | **REVIEW WORK** — TeachingWork + generate; artifact remains `IN_REVIEW` / pending Review (not approved or published) |
+| B | **LIBRARY WORK** — separate TeachingWork + generate + approve + publish; visible in Library |
+| C | Assignment + completed TeachingExecution on published work / `class-5a` |
+| D | ClassroomAssessment (MIXED) + remediation TeachingWork via Improve |
+| E | Teacher Memory preferences (ACTIVE HUMAN profile) |
+| F | Enough authorized context for Assistant (mission/work/library/assess/remediation/Memory) |
 
-Idempotent: re-run reuses rows matched by goal_text / title markers.
-Non-secret report: `tmp/teacher-os-demo.json` (gitignored). Console prints
-`created` / `reused` / `updated` per step.
+`DemoReport` / `tmp/teacher-os-demo.json` exposes distinct IDs:
+`review_work_id`, `review_content_id`, `review_version_id`,
+`published_work_id`, `published_content_id`, `published_version_id`,
+`assignment_id`, `execution_id`, `assessment_id`, `remediation_work_id`,
+`memory_id`.
+
+Idempotent: second run reuses the same stable scenario identities.
+Console prints `created` / `reused` / `updated` per step.
 
 Synthetic identities (from `teacher_os_review_scenario.py`):
 
@@ -160,8 +169,8 @@ Tenant must match the synthetic ID from `tmp/teacher-os-demo.json`.
 Smoke the seeded journey:
 
 1. Today’s Mission
-2. Work / Review / Library (published worksheet)
-3. Teach (assignment + execution on `class-5a`)
+2. Work / **Review** (pending IN_REVIEW worksheet) / **Library** (separate published worksheet)
+3. Teach (assignment + execution on published work / `class-5a`)
 4. Assess / Improve (MIXED assessment + remediation work)
 5. Memory preferences
 
