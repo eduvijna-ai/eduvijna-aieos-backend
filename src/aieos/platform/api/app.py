@@ -131,8 +131,13 @@ from aieos.domains.teaching.application.school_context import (
 from aieos.domains.teaching.application.teach_composition import (
     GetTeacherOsTeachContextService,
 )
+from aieos.platform.ai.api.v1.routes import router as platform_ai_v1_router
 from aieos.platform.ai.application.ports import AIUnitOfWorkFactory
 from aieos.platform.ai.clock import UtcNow
+from aieos.platform.ai.composition import (
+    ProviderRuntimeProjection,
+    build_provider_runtime_projection,
+)
 from aieos.platform.ai.config import DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER
 from aieos.platform.ai.gateway import StructuredModelGateway
 from aieos.platform.api.context import RequestContextMiddleware
@@ -198,6 +203,7 @@ def create_app(
     ai_generation_authorization: AIGenerationAuthorizationPort | None = None,
     ai_provider_id: str = DEFAULT_AI_PROVIDER,
     ai_model_id: str = DEFAULT_AI_MODEL,
+    provider_runtime: ProviderRuntimeProjection | None = None,
     generation_lease_seconds: int = 120,
     generation_clock: UtcNow | None = None,
     school_context_class_reader: SchoolContextClassReader | None = None,
@@ -219,8 +225,14 @@ def create_app(
     app.include_router(content_v1_router)
     app.include_router(teaching_v1_router)
     app.include_router(assessment_v1_router)
+    app.include_router(platform_ai_v1_router)
     app.state.request_identity_authenticator = request_identity_authenticator
     app.state.security_resolver = security_resolver
+    app.state.provider_runtime = provider_runtime or build_provider_runtime_projection(
+        provider_id=ai_provider_id,
+        model_id=ai_model_id,
+        gateway_composed=model_gateway is not None,
+    )
     app.state.cursor_codec = codec
     classification = principal_classification_authority
     if classification is None:

@@ -12,6 +12,8 @@ from tests.dbutil import REPO_ROOT
 SRC = REPO_ROOT / "src" / "aieos"
 GATEWAY = SRC / "platform" / "ai" / "gateway.py"
 OPENAI_PKG = SRC / "platform" / "ai" / "providers" / "openai"
+GROQ_PKG = SRC / "platform" / "ai" / "providers" / "groq"
+_OPENAI_CLIENT_PACKAGES = (OPENAI_PKG, GROQ_PKG)
 FRONTEND_PACKAGE = REPO_ROOT.parent / "eduvijna-aieos-frontend" / "package.json"
 
 
@@ -30,7 +32,7 @@ def _import_roots(path: Path) -> set[str]:
 def test_openai_import_confined_to_provider_package() -> None:
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):
-        if OPENAI_PKG in path.parents or path.parent == OPENAI_PKG:
+        if any(pkg in path.parents or path.parent == pkg for pkg in _OPENAI_CLIENT_PACKAGES):
             continue
         if "openai" in _import_roots(path):
             offenders.append(str(path.relative_to(REPO_ROOT)))
@@ -54,3 +56,4 @@ def test_frontend_has_no_openai_dependency_when_checked_out() -> None:
         pytest.skip("frontend package.json not present beside backend")
     text = FRONTEND_PACKAGE.read_text(encoding="utf-8").lower()
     assert "openai" not in text
+    assert "groq" not in text
