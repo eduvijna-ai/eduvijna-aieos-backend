@@ -166,6 +166,33 @@ class TestGroqAdapterContract:
         assert "tools" not in kwargs
         assert "stream" not in kwargs
 
+    def test_json_validate_failed_retries_then_succeeds(self) -> None:
+        valid = valid_worksheet_model()
+        client = MagicMock()
+        client.chat.completions.create.side_effect = [
+            _api_status(
+                400,
+                body={"type": "invalid_request_error", "code": "json_validate_failed"},
+            ),
+            _api_status(
+                400,
+                body={"type": "invalid_request_error", "code": "json_validate_failed"},
+            ),
+            _completion(content=json.dumps(valid.model_dump(mode="json"))),
+        ]
+        result = _gateway(client).generate_structured(_request())
+        assert result.provider_id == "groq"
+        assert client.chat.completions.create.call_count == 3
+
+    def test_non_json_validate_400_does_not_retry(self) -> None:
+        client = MagicMock()
+        client.chat.completions.create.side_effect = _api_status(
+            400, body={"type": "invalid_request_error", "code": "invalid_value"}
+        )
+        with pytest.raises(ModelRequestRejected):
+            _gateway(client).generate_structured(_tiny_request())
+        assert client.chat.completions.create.call_count == 1
+
     def test_preparation_kit_defs_require_every_property(self) -> None:
         schema = json_schema_for_output_type(PreparationKitV1)
         question = schema["$defs"]["WorksheetQuestionV1"]
@@ -338,7 +365,8 @@ class TestSanitizedDiagnostics:
             _gateway(client).generate_structured(_tiny_request())
         assert len(captured) == 1
         message, aieos = captured[0]
-        assert message == "groq_structured_generation_failed"
+        assert message.startswith("groq_structured_generation_failed")
+        assert "classification=model_request_rejected" in message
         assert aieos["provider"] == "groq"
         assert aieos["operation"] == "chat.completions.create"
         assert aieos["classification"] == "model_request_rejected"

@@ -34,6 +34,8 @@ _BOUNDED_IDENTIFIER_MAX_LEN = 64
 _SCHEMA_NAME_MAX_LEN = 64
 _SCHEMA_NAME_RE = re.compile(r"[^A-Za-z0-9_]+")
 _INCOMPLETE_FINISH_REASONS = frozenset({"length", "max_tokens"})
+_JSON_VALIDATE_FAILED_CODE = "json_validate_failed"
+_JSON_VALIDATE_ATTEMPTS = 3
 
 
 def _safe_scalar(value: object) -> str | int | float | bool | None:
@@ -115,7 +117,7 @@ def _enforce_object_schema(node: object) -> None:
 
 
 def json_schema_for_output_type(output_type: type[BaseModel]) -> dict[str, Any]:
-    schema = output_type.model_json_schema()
+    schema = json.loads(json.dumps(output_type.model_json_schema()))
     _enforce_object_schema(schema)
     return schema
 
@@ -181,7 +183,22 @@ def _log_ai_diagnostic(*, classification: str, **fields: object) -> None:
             payload[key] = value
         elif isinstance(value, tuple) and all(isinstance(item, str) for item in value):
             payload[key] = value
-    _LOGGER.warning("groq_structured_generation_failed", extra={"aieos_ai": payload})
+    safe_bits = []
+    for key in (
+        "classification",
+        "exception_class",
+        "http_status",
+        "provider_error_type",
+        "provider_error_code",
+        "provider_error_schema_kind",
+    ):
+        value = payload.get(key)
+        if value is not None:
+            safe_bits.append(f"{key}={value}")
+    _LOGGER.warning(
+        "groq_structured_generation_failed " + " ".join(safe_bits),
+        extra={"aieos_ai": payload},
+    )
 
 
 def _log_failure(
@@ -216,6 +233,51 @@ def _assistant_message_content(response: object) -> str | None:
     return content
 
 
+def _status_error_code(exc: APIStatusError) -> str | None:
+    scalars = _extract_provider_error_scalars(getattr(exc, "body", None))
+    code = scalars.get("provider_error_code")
+    if isinstance(code, str) and code:
+        return code
+    return None
+
+
+def _raise_mapped_status_error(exc: APIStatusError) -> None:
+    status = int(exc.status_code)
+    scalars = _extract_provider_error_scalars(getattr(exc, "body", None))
+    request_id = getattr(exc, "request_id", None)
+    if not isinstance(request_id, str):
+        request_id = None
+    if status in _UNAVAILABLE_STATUS_CODES:
+        _log_failure(
+            classification="model_provider_unavailable",
+            exception_class=type(exc).__name__,
+            http_status=status,
+            provider_error_type=scalars.get("provider_error_type"),
+            provider_error_code=scalars.get("provider_error_code"),
+            provider_request_id=request_id,
+        )
+        raise ModelProviderUnavailable("Groq provider unavailable") from exc
+    if 400 <= status < 500:
+        _log_failure(
+            classification="model_request_rejected",
+            exception_class=type(exc).__name__,
+            http_status=status,
+            provider_error_type=scalars.get("provider_error_type"),
+            provider_error_code=scalars.get("provider_error_code"),
+            provider_request_id=request_id,
+        )
+        raise ModelRequestRejected("Groq request rejected") from exc
+    _log_failure(
+        classification="model_generation_failed",
+        exception_class=type(exc).__name__,
+        http_status=status,
+        provider_error_type=scalars.get("provider_error_type"),
+        provider_error_code=scalars.get("provider_error_code"),
+        provider_request_id=request_id,
+    )
+    raise ModelGenerationFailed("Groq generation failed") from exc
+
+
 class GroqStructuredModelGateway:
     """Structured generation via Groq OpenAI-compatible chat.completions."""
 
@@ -234,64 +296,49 @@ class GroqStructuredModelGateway:
         max_tokens = min(request.max_output_tokens, self._config.max_output_tokens)
         schema_name = bounded_schema_name(request.output_type)
         schema = json_schema_for_output_type(request.output_type)
-        try:
-            response = self._client.chat.completions.create(
-                model=self._config.model_id,
-                messages=[
-                    {"role": "system", "content": request.instructions},
-                    {"role": "user", "content": request.input_text},
-                ],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "strict": True,
-                        "schema": schema,
-                    },
+        create_kwargs = {
+            "model": self._config.model_id,
+            "messages": [
+                {"role": "system", "content": request.instructions},
+                {"role": "user", "content": request.input_text},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
                 },
-                max_completion_tokens=max_tokens,
-            )
+            },
+            "max_completion_tokens": max_tokens,
+        }
+        response: Any = None
+        try:
+            for attempt in range(1, _JSON_VALIDATE_ATTEMPTS + 1):
+                try:
+                    response = self._client.chat.completions.create(**create_kwargs)
+                    break
+                except APIStatusError as exc:
+                    if (
+                        int(exc.status_code) == 400
+                        and _status_error_code(exc) == _JSON_VALIDATE_FAILED_CODE
+                        and attempt < _JSON_VALIDATE_ATTEMPTS
+                    ):
+                        _log_ai_diagnostic(
+                            classification="groq_json_validate_retry",
+                            exception_class=type(exc).__name__,
+                            http_status=400,
+                            provider_error_code=_JSON_VALIDATE_FAILED_CODE,
+                            attempt=attempt,
+                        )
+                        continue
+                    _raise_mapped_status_error(exc)
         except (APIConnectionError, APITimeoutError) as exc:
             _log_failure(
                 classification="model_provider_unavailable",
                 exception_class=type(exc).__name__,
             )
             raise ModelProviderUnavailable("Groq provider unavailable") from exc
-        except APIStatusError as exc:
-            status = int(exc.status_code)
-            scalars = _extract_provider_error_scalars(getattr(exc, "body", None))
-            request_id = getattr(exc, "request_id", None)
-            if not isinstance(request_id, str):
-                request_id = None
-            if status in _UNAVAILABLE_STATUS_CODES:
-                _log_failure(
-                    classification="model_provider_unavailable",
-                    exception_class=type(exc).__name__,
-                    http_status=status,
-                    provider_error_type=scalars.get("provider_error_type"),
-                    provider_error_code=scalars.get("provider_error_code"),
-                    provider_request_id=request_id,
-                )
-                raise ModelProviderUnavailable("Groq provider unavailable") from exc
-            if 400 <= status < 500:
-                _log_failure(
-                    classification="model_request_rejected",
-                    exception_class=type(exc).__name__,
-                    http_status=status,
-                    provider_error_type=scalars.get("provider_error_type"),
-                    provider_error_code=scalars.get("provider_error_code"),
-                    provider_request_id=request_id,
-                )
-                raise ModelRequestRejected("Groq request rejected") from exc
-            _log_failure(
-                classification="model_generation_failed",
-                exception_class=type(exc).__name__,
-                http_status=status,
-                provider_error_type=scalars.get("provider_error_type"),
-                provider_error_code=scalars.get("provider_error_code"),
-                provider_request_id=request_id,
-            )
-            raise ModelGenerationFailed("Groq generation failed") from exc
         except (TypeError, ValueError) as exc:
             _log_failure(
                 classification="model_adapter_contract_failed",
@@ -299,11 +346,19 @@ class GroqStructuredModelGateway:
             )
             raise ModelAdapterContractFailed("Groq adapter contract failed") from exc
         except Exception as exc:  # noqa: BLE001 — residual SDK failure
+            if isinstance(exc, (ModelProviderUnavailable, ModelRequestRejected, ModelGenerationFailed)):
+                raise
             _log_failure(
                 classification="model_generation_failed",
                 exception_class=type(exc).__name__,
             )
             raise ModelGenerationFailed("Groq generation failed") from exc
+        if response is None:
+            _log_failure(
+                classification="model_generation_failed",
+                exception_class="MissingGroqResponse",
+            )
+            raise ModelGenerationFailed("Groq generation failed")
 
         metadata = _inspect_response_metadata(response)
         finish_reason = metadata.get("finish_reason")
