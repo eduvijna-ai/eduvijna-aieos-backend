@@ -43,6 +43,7 @@ from aieos.domains.teaching.application.generate import GenerateTeachingWorkServ
 from aieos.domains.teaching.application.memory_create import CreateTeacherMemoryService
 from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
 from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
+from aieos.domains.teaching.application.assistant import TeacherOsAssistantService
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.prepare import PrepareTeachingWorkService
 from aieos.domains.teaching.application.remediation_create import (
@@ -73,6 +74,7 @@ __all__ = [
     "create_teacher_memory_service",
     "generate_teaching_work_service",
     "get_teacher_memory_service",
+    "teacher_os_assistant_service",
     "get_teaching_assignment_service",
     "get_teaching_execution_service",
     "get_teaching_work_service",
@@ -363,6 +365,17 @@ def create_teacher_memory_service(request: Request) -> CreateTeacherMemoryServic
 
 def get_teacher_memory_service(request: Request) -> GetTeacherMemoryService:
     return request.app.state.get_teacher_memory_service
+
+
+def teacher_os_assistant_service(request: Request) -> TeacherOsAssistantService:
+    service = getattr(request.app.state, "teacher_os_assistant_service", None)
+    if service is None:
+        from aieos.domains.teaching.application.errors import AssistantServiceUnavailable
+
+        raise AssistantServiceUnavailable(
+            "Teacher OS Assistant is not composed in this runtime"
+        )
+    return service
 
 
 def update_teacher_memory_service(request: Request) -> UpdateTeacherMemoryService:

@@ -48,7 +48,13 @@ class FakeStructuredModelGateway:
         if self.result_factory is not None:
             parsed = self.result_factory(request)
         else:
-            raise ModelGenerationFailed("fake gateway has no result_factory configured")
+            development_fake = getattr(request.output_type, "development_fake", None)
+            if callable(development_fake):
+                parsed = development_fake(request.input_text)
+            else:
+                raise ModelGenerationFailed(
+                    "fake gateway has no result_factory configured"
+                )
         if not isinstance(parsed, request.output_type):
             raise ModelOutputInvalid("fake result_factory returned unexpected type")
         return StructuredGenerationResult(

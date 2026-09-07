@@ -1747,6 +1747,140 @@
         "title": "TeacherMemoryUpdateRequest",
         "type": "object"
       },
+      "TeacherOsAssistantHistoryTurn": {
+        "additionalProperties": false,
+        "description": "Conversation material only \u2014 never business authority.",
+        "properties": {
+          "content": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "TeacherOsAssistantHistoryTurn",
+        "type": "object"
+      },
+      "TeacherOsAssistantRequest": {
+        "additionalProperties": false,
+        "description": "Bounded Assistant turn request. No client context snapshots.",
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherOsAssistantHistoryTurn"
+            },
+            "maxItems": 12,
+            "title": "History",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "mission_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mission Date"
+          },
+          "teaching_work_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teaching Work Id"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "TeacherOsAssistantRequest",
+        "type": "object"
+      },
+      "TeacherOsAssistantResponse": {
+        "additionalProperties": false,
+        "description": "READ / REASON / SUGGEST response. Suggestions do not execute commands.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "context_summary": {
+            "title": "Context Summary",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "suggested_next_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Next Step"
+          },
+          "suggested_questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggested Questions",
+            "type": "array"
+          },
+          "teaching_work_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teaching Work Id"
+          }
+        },
+        "required": [
+          "answer",
+          "suggested_questions",
+          "suggested_next_step",
+          "teaching_work_id",
+          "context_summary",
+          "generated_at"
+        ],
+        "title": "TeacherOsAssistantResponse",
+        "type": "object"
+      },
       "TeacherOsMissionResponse": {
         "additionalProperties": false,
         "description": "Derived projection. No mission row exists behind this response.",
@@ -8165,6 +8299,296 @@
         "summary": "Content Review Submit",
         "tags": [
           "contents"
+        ]
+      }
+    },
+    "/api/v1/teacher-os/assistant": {
+      "post": {
+        "description": "Contextual Teacher OS Assistant turn. READ / REASON / SUGGEST only.\n\nDoes not persist chat. Does not mutate Memory, Publish, Assign, Teach,\nAssess, or create remediation. Client context snapshots are rejected \u2014\nteaching_work_id is re-read and re-authorized server-side when supplied.",
+        "operationId": "teacher_os_assistant_respond",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeacherOsAssistantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherOsAssistantResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Teacher Os Assistant Respond",
+        "tags": [
+          "teaching",
+          "teacher-os"
         ]
       }
     },

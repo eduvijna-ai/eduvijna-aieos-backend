@@ -131,6 +131,8 @@ from aieos.domains.teaching.application.errors import (
     TeachingWorkNotFound,
     TeacherMemoryNotFound,
     InvalidTeacherMemoryRequest,
+    InvalidTeacherAssistantRequest,
+    AssistantServiceUnavailable,
     WorkGenerationAlreadyExists,
     WorkGenerationInProgress,
     WorkGenerationPreconditionRequired,
@@ -644,6 +646,18 @@ _TEACHING_PROBLEMS: dict[type[TeachingApplicationError], tuple[int, str, str, st
         "invalid_teacher_memory_request",
         "Invalid Teacher Memory request",
         "Teacher Memory request is invalid",
+    ),
+    InvalidTeacherAssistantRequest: (
+        422,
+        "invalid_teacher_assistant_request",
+        "Invalid Teacher Assistant request",
+        "Teacher Assistant request is invalid",
+    ),
+    AssistantServiceUnavailable: (
+        503,
+        "assistant_service_unavailable",
+        "Assistant service unavailable",
+        "Teacher OS Assistant is not composed in this runtime",
     ),
     TeachingIdempotencyKeyReused: (
         409,

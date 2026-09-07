@@ -21,6 +21,7 @@ from aieos.domains.teaching.api.v1.dependencies import (
     create_teaching_work_service,
     generate_teaching_work_service,
     get_teacher_memory_service,
+    teacher_os_assistant_service,
     get_teaching_assignment_service,
     get_teaching_execution_service,
     get_teaching_work_service,
@@ -56,6 +57,8 @@ from aieos.domains.teaching.api.v1.models import (
     TeacherMemoryPreferencesBody,
     TeacherMemoryResponse,
     TeacherMemoryUpdateRequest,
+    TeacherOsAssistantRequest,
+    TeacherOsAssistantResponse,
     TeachingWorkArtifactsResponse,
     TeachingWorkCreateRequest,
     RemediationTeachingWorkCreateRequest,
@@ -126,6 +129,11 @@ from aieos.domains.teaching.application.memory_models import (
 )
 from aieos.domains.teaching.application.memory_queries import GetTeacherMemoryService
 from aieos.domains.teaching.application.memory_update import UpdateTeacherMemoryService
+from aieos.domains.teaching.application.assistant import TeacherOsAssistantService
+from aieos.domains.teaching.application.assistant_models import (
+    AssistantHistoryTurn,
+    TeacherOsAssistantCommand,
+)
 from aieos.domains.teaching.application.mission import GetTeacherOsTodayMissionService
 from aieos.domains.teaching.application.mission_models import TeacherOsMission
 from aieos.domains.teaching.application.audit import api_mutation_audit_provenance
@@ -231,6 +239,7 @@ _MEMORY_GET_RESPONSES = _problem_responses(400, 401, 403, 404, 422, 500, 503)
 _MEMORY_UPDATE_RESPONSES = _problem_responses(
     400, 401, 403, 404, 409, 412, 422, 428, 500, 503
 )
+_ASSISTANT_RESPONSES = _problem_responses(400, 401, 403, 404, 422, 500, 502, 503)
 
 
 def _mutation_event_context(
@@ -1118,6 +1127,54 @@ def teacher_os_memory_update(
     )
     response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
     return _to_memory_response(model)
+
+
+@router.post(
+    "/teacher-os/assistant",
+    response_model=TeacherOsAssistantResponse,
+    operation_id="teacher_os_assistant_respond",
+    responses=_ASSISTANT_RESPONSES,
+    tags=["teacher-os"],
+)
+def teacher_os_assistant_respond(
+    body: TeacherOsAssistantRequest,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        TeacherOsAssistantService, Depends(teacher_os_assistant_service)
+    ],
+) -> TeacherOsAssistantResponse:
+    """Contextual Teacher OS Assistant turn. READ / REASON / SUGGEST only.
+
+    Does not persist chat. Does not mutate Memory, Publish, Assign, Teach,
+    Assess, or create remediation. Client context snapshots are rejected —
+    teaching_work_id is re-read and re-authorized server-side when supplied.
+    """
+    from datetime import UTC, datetime
+
+    mission_date = body.mission_date or datetime.now(UTC).date()
+    result = service.respond(
+        context.tenant_id,
+        context.principal_id,
+        TeacherOsAssistantCommand(
+            message=body.message,
+            history=tuple(
+                AssistantHistoryTurn(role=turn.role, content=turn.content)
+                for turn in body.history
+            ),
+            teaching_work_id=body.teaching_work_id,
+            mission_date=mission_date,
+        ),
+    )
+    return TeacherOsAssistantResponse(
+        answer=result.answer,
+        suggested_questions=list(result.suggested_questions),
+        suggested_next_step=result.suggested_next_step,
+        teaching_work_id=(
+            None if result.teaching_work_id is None else result.teaching_work_id.value
+        ),
+        context_summary=result.context_summary,
+        generated_at=result.generated_at,
+    )
 
 
 @router.post(

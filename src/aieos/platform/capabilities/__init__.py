@@ -3,6 +3,7 @@
 from aieos.platform.capabilities.models import (
     CAPABILITY_EDUCATION_GENERATE_PREPARATION_KIT,
     CAPABILITY_EDUCATION_GENERATE_WORKSHEET,
+    CAPABILITY_TEACHER_OS_ASSISTANT_RESPOND,
     GENERATE_WORKSHEET_V1,
     CapabilityContract,
     CapabilityDescriptor,
@@ -18,6 +19,7 @@ from aieos.platform.capabilities.registry import (
 __all__ = [
     "CAPABILITY_EDUCATION_GENERATE_PREPARATION_KIT",
     "CAPABILITY_EDUCATION_GENERATE_WORKSHEET",
+    "CAPABILITY_TEACHER_OS_ASSISTANT_RESPOND",
     "GENERATE_WORKSHEET_V1",
     "CapabilityContract",
     "CapabilityDescriptor",

@@ -88,6 +88,13 @@ READ_ONLY_OPERATION_IDS: frozenset[str] = frozenset(
     }
 )
 
+# POST/PUT that do not mutate business SoR. Not gated by mutation activation.
+NON_MUTATING_WRITE_OPERATION_IDS: frozenset[str] = frozenset(
+    {
+        "teacher_os_assistant_respond",
+    }
+)
+
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -227,13 +234,20 @@ def discover_write_operation_ids(app: FastAPI) -> frozenset[str]:
 
 
 def assert_mutation_route_classification(app: FastAPI) -> None:
-    """Fail closed if write routes diverge from the frozen mutation inventory."""
+    """Fail closed if write routes diverge from frozen mutation + non-mutating writes."""
     discovered = discover_write_operation_ids(app)
-    if discovered != FROZEN_API_MUTATION_OPERATION_IDS:
+    expected = FROZEN_API_MUTATION_OPERATION_IDS | NON_MUTATING_WRITE_OPERATION_IDS
+    if discovered != expected:
         raise MutationRouteClassificationError(
             "write-capable /api/v1 operation_ids must equal the frozen "
-            f"mutation inventory; got {sorted(discovered)} expected "
-            f"{sorted(FROZEN_API_MUTATION_OPERATION_IDS)}"
+            f"mutation inventory plus non-mutating writes; got {sorted(discovered)} "
+            f"expected {sorted(expected)}"
+        )
+    overlap = FROZEN_API_MUTATION_OPERATION_IDS & NON_MUTATING_WRITE_OPERATION_IDS
+    if overlap:
+        raise MutationRouteClassificationError(
+            "operation_ids classified as both mutation and non-mutating: "
+            f"{sorted(overlap)}"
         )
     for route in iter_api_v1_routes(app):
         methods = {m.upper() for m in (route.methods or set())}
