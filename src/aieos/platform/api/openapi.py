@@ -65,6 +65,7 @@ _GET_OPERATION_IDS = {
     "teaching_execution_list",
     "teacher_os_teach_context_get",
     "teacher_os_memory_get",
+    "platform_ai_providers_get",
 }
 
 _IDEMPOTENCY_PARAM = {

@@ -35,18 +35,17 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 from aieos.domains.assessment.infrastructure.persistence.uow import (
     SqlAlchemyAssessmentUnitOfWorkFactory,
 )
+from aieos.platform.ai.composition import compose_configured_model_provider
 from aieos.platform.ai.config import (
     DEFAULT_AI_MODEL,
     DEFAULT_AI_PROVIDER,
     load_generation_lease_seconds,
-    load_openai_provider_config_from_env,
 )
 from aieos.platform.ai.fake import FakeStructuredModelGateway
 from aieos.platform.ai.gateway import StructuredModelGateway
 from aieos.platform.ai.infrastructure.persistence.uow import (
     SqlAlchemyAIUnitOfWorkFactory,
 )
-from aieos.platform.ai.providers.openai import OpenAIStructuredModelGateway
 from aieos.platform.api.app import create_app
 from aieos.platform.runtime.remediation_assessment_source import (
     SqlAlchemyRemediationAssessmentSource,
@@ -68,20 +67,13 @@ def build_development_teacher_os_app(
     """Compose create_app with development adapters, schemas, and optional gateway.
 
     Must not be called from production runtime entrypoints.
+    Explicit openai/groq without a valid key fails closed. Unset provider uses Fake.
     """
-    gateway = model_gateway
-    provider_id = ai_provider_id
-    model_id = ai_model_id
-    if gateway is None:
-        try:
-            config = load_openai_provider_config_from_env()
-            gateway = OpenAIStructuredModelGateway(config)
-            provider_id = config.provider_id
-            model_id = config.model_id
-        except ValueError:
-            gateway = FakeStructuredModelGateway()
-            provider_id = "fake"
-            model_id = "fake-model"
+    configured = compose_configured_model_provider(
+        injected_gateway=model_gateway,
+        provider_id=ai_provider_id if model_gateway is not None else None,
+        model_id=ai_model_id if model_gateway is not None else None,
+    )
 
     return create_app(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
@@ -106,10 +98,11 @@ def build_development_teacher_os_app(
         asset_reference_validation=DevelopmentAssetReferencePermit(),
         asset_current_governance=DevelopmentAssetCurrentUsePermit(),
         ai_uow_factory=SqlAlchemyAIUnitOfWorkFactory(runtime_engine),
-        model_gateway=gateway,
+        model_gateway=configured.gateway,
         ai_generation_authorization=DevelopmentAIGenerationPermit(),
-        ai_provider_id=provider_id,
-        ai_model_id=model_id,
+        ai_provider_id=configured.provider_id,
+        ai_model_id=configured.model_id,
+        provider_runtime=configured.projection,
         generation_lease_seconds=load_generation_lease_seconds(),
         school_context_class_reader=DevelopmentSchoolContextClassReader(
             tenant_id=tenant_id,

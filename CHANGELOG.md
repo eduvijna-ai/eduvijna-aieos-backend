@@ -9,6 +9,17 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- TOS-CX01-I03 — Groq first-class Model Gateway provider (`provider_id=groq`,
+  development model `openai/gpt-oss-120b`) via Groq's OpenAI-compatible Chat
+  Completions structured-output path. Explicit `AIEOS_AI_PROVIDER=groq|openai`
+  fails closed when the matching key is missing; Fake is used only when the
+  provider is unset or `fake`. Read-only Provider Aggregator projection
+  `GET /api/v1/platform/ai/providers`. OpenAI adapter retained. Alembic head
+  remains `tosd100001`. Groq strict JSON Schema now requires every property on
+  `$defs` object schemas (including optional Pydantic fields) so Groq does not
+  400 the Preparation Kit contract. Groq `json_validate_failed` on strict
+  structured output is retried up to two additional times without relaxing
+  fail-closed Pydantic validation or changing educational prompts.
 - TOS-DEV10-I03 — Teacher Memory v1: durable teacher preference profile SoR
   (`teaching.teacher_memories`, Alembic `tosd100001`), teacher-os GET/POST/PUT
   `/api/v1/teacher-os/memory` with idempotency, ETag/If-Match concurrency, and
