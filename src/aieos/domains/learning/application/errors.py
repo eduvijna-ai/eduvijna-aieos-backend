@@ -53,3 +53,55 @@ class InvalidResponse(LearningApplicationError):
 
 class SubmissionImmutable(LearningApplicationError):
     """LearnerSubmission evidence rejects UPDATE/DELETE, including privileged paths."""
+
+
+class AssignmentNotFound(LearningApplicationError):
+    """TeachingAssignment is not visible as current learner activity."""
+
+
+class AssignmentNotCurrentlyConsumable(LearningApplicationError):
+    """Assignment is not currently consumable for the learner."""
+
+
+class AssignmentNotYetAvailable(LearningApplicationError):
+    """Assignment is ACTIVE but available_from is still in the future."""
+
+
+class SecondAttemptNotAuthorized(LearningApplicationError):
+    """S01 one-attempt policy rejects a fresh start after SUBMITTED."""
+
+
+class AttemptInProgressConflict(LearningApplicationError):
+    """A fresh start is rejected because an IN_PROGRESS attempt already exists."""
+
+
+class LearnerAttemptForbidden(LearningApplicationError):
+    """The attempt is owned by a different learner. Conceal as not found at HTTP."""
+
+
+class ContentNotLearnerConsumable(LearningApplicationError):
+    """Exact assigned ContentVersion is not a governed learner-facing contract."""
+
+
+class ExactContentVersionNotFound(LearningApplicationError):
+    """Exact assigned ContentVersion is not visible in the execution tenant."""
+
+
+class IdempotencyKeyReused(LearningApplicationError):
+    """The Idempotency-Key was already bound to a different material request."""
+
+
+class InvalidLearnerRequest(LearningApplicationError):
+    """Learner request failed application validation."""
+
+
+class ResponseValidationFailed(LearningApplicationError):
+    """A response write failed validation against the exact learner projection."""
+
+
+class AssignmentClosedOrCancelled(LearningApplicationError):
+    """CLOSED or CANCELLED assignments reject start, save, and submit."""
+
+
+class HumanPrincipalRequired(LearningApplicationError):
+    """Current activity requires an ACTIVE HUMAN Principal."""

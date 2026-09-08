@@ -185,6 +185,59 @@ class SqlAlchemyLearnerAttemptRepository:
             return None
         return learner_attempt_from_row(row)
 
+    def list_for_learner_assignment(
+        self,
+        learner_id: UUID,
+        teaching_assignment_id: UUID,
+    ) -> list[LearnerAttempt]:
+        try:
+            rows = (
+                self._connection.execute(
+                    select(attempts_table)
+                    .where(
+                        attempts_table.c.tenant_id == self._execution_tenant_id,
+                        attempts_table.c.learner_principal_id == learner_id,
+                        attempts_table.c.teaching_assignment_id
+                        == teaching_assignment_id,
+                    )
+                    .order_by(attempts_table.c.attempt_number.asc())
+                )
+                .mappings()
+                .all()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        return [learner_attempt_from_row(row) for row in rows]
+
+    def list_for_learner(
+        self,
+        learner_id: UUID,
+        assignment_ids: Sequence[UUID],
+    ) -> list[LearnerAttempt]:
+        ids = tuple(assignment_ids)
+        if not ids:
+            return []
+        try:
+            rows = (
+                self._connection.execute(
+                    select(attempts_table)
+                    .where(
+                        attempts_table.c.tenant_id == self._execution_tenant_id,
+                        attempts_table.c.learner_principal_id == learner_id,
+                        attempts_table.c.teaching_assignment_id.in_(ids),
+                    )
+                    .order_by(
+                        attempts_table.c.updated_at.desc(),
+                        attempts_table.c.attempt_id.desc(),
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        return [learner_attempt_from_row(row) for row in rows]
+
     def update(
         self,
         attempt: LearnerAttempt,

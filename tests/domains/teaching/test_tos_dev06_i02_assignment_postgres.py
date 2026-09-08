@@ -144,12 +144,12 @@ def _assignment(
 
 class TestMigrationAndSchema:
     def test_alembic_head_tosd060001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010001"
+                == "a360s010002"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"

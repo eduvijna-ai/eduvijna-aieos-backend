@@ -50,6 +50,9 @@ from aieos.platform.api.app import create_app
 from aieos.platform.runtime.remediation_assessment_source import (
     SqlAlchemyRemediationAssessmentSource,
 )
+from aieos.platform.runtime.student_learning_command import (
+    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+)
 
 CURSOR_KEY = b"tos-dev01-development-cursor-signing-key"
 IDEMPOTENCY_RETENTION = timedelta(hours=24)
@@ -109,6 +112,9 @@ def build_development_teacher_os_app(
             teacher_principal_id=principal_id,
         ),
         teaching_authorization=DevelopmentTeachingWorkPermit(),
+        student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
+            runtime_engine
+        ),
     )
 
 

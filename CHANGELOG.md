@@ -7,7 +7,27 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- AIEOS360-S01-I03 — Student assignment consumption and authoritative
+  LearnerAttempt start/save/submit application + HTTP (`/api/v1/student-os/*`,
+  `/api/v1/learning/*`). Composed Student Learning command Unit of Work locks
+  TeachingAssignment then LearnerAttempt on one connection. Positive-allowlist
+  learner projection for worksheet/quiz/homework @1. Outbox facts for start and
+  submit only; production NATS Learning PUB remains unauthorized. Audit
+  vocabulary Alembic `a360s010002`. One-attempt S01 policy; due_at past remains
+  consumable while ACTIVE.
+
 ### Fixed
+
+- AIEOS360-S01-I03R1 — Exact Idempotency-Key replay is an established-outcome
+  replay (membership/ACTIVE authority not re-required); TRUE_FALSE HTTP input
+  is StrictBool; current-assignment list uses signed cursor pagination with
+  `available_from` filtered in SQL before LIMIT; Student Home reports an exact
+  current-assignment count; Learning application depends on a UoW port with
+  explicit runtime composition. Chief Architect authorized `a360s010002`
+  during I03 exact-head review for closed security-audit CHECK vocabulary.
+  Alembic head remains `a360s010002`.
 
 - AIEOS360-S01-I02R1 — LearnerSubmission snapshot is deeply immutable
   (`SubmissionResponseItem` value objects; no nested mutable dicts) and

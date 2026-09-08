@@ -106,4 +106,6 @@ markers = [
     "tos_dev10_i04: TOS-DEV10-I04 Teacher OS Contextual AI Assistant v1 + demo loader",
     "aieos360_s01_i01: AIEOS360-S01-I01 learner membership façade + NON_PRODUCTION student substrate",
     "aieos360_s01_i02: AIEOS360-S01-I02 Learning attempt/submission persistence and RLS",
+    "aieos360_s01_i03: AIEOS360-S01-I03 Student assignment consumption and attempt API",
+    "aieos360_s01_i03r1: AIEOS360-S01-I03R1 replay, pagination, and composition corrections",
 ]

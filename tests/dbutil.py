@@ -47,7 +47,8 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                 "DELETE FROM security.audit_records "
                 "WHERE action LIKE 'asset.%' "
                 "OR action LIKE 'teaching.%' "
-                "OR action LIKE 'assessment.%'"
+                "OR action LIKE 'assessment.%' "
+                "OR action LIKE 'learning.%'"
             )
         )
         conn.execute(

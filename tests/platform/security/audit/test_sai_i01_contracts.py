@@ -145,6 +145,9 @@ class TestActionsAndChannels:
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",
+            "learning.attempt.start",
+            "learning.attempt.save_responses",
+            "learning.attempt.submit",
         }
         assert "content.archive" not in {a.value for a in SecurityAuditAction}
         assert "asset.purge" not in {a.value for a in SecurityAuditAction}

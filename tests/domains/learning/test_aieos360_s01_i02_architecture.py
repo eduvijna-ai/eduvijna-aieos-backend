@@ -30,7 +30,8 @@ MIGRATIONS = REPO_ROOT / "migrations" / "versions"
 I02_MIGRATION = MIGRATIONS / "a360s010001_learning_attempt_submission.py"
 ASSIGNMENT_MIGRATION = MIGRATIONS / "tosd060001_teaching_assignments.py"
 ASSESSMENT_MIGRATION = MIGRATIONS / "tosd080001_classroom_assessments.py"
-NATS_ROOT = SRC_ROOT / "platform" / "events"
+EVENTS_ROOT = SRC_ROOT / "platform" / "events"
+NATS_ROOT = EVENTS_ROOT / "nats"
 
 
 def _py_files(root: Path) -> list[Path]:
@@ -99,24 +100,20 @@ class TestArchitectureIsolation:
         ).read_text(encoding="utf-8")
         assert "learner_attempt" not in assessment_models.lower()
 
-    def test_i02_51_no_student_http_route(self) -> None:
+    def test_i02_51_student_http_is_composed_outside_api_main(self) -> None:
         schema = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
         paths = schema.get("paths") or {}
-        assert not any("student-os" in path for path in paths)
-        assert not any("/learning/" in path for path in paths)
-        assert not (LEARNING_ROOT / "api").exists()
+        assert any("student-os" in path for path in paths)
+        assert any("/learning/" in path for path in paths)
+        assert (LEARNING_ROOT / "api").is_dir()
         routes = SRC_ROOT / "platform" / "runtime" / "entrypoints" / "api_main.py"
         main = routes.read_text(encoding="utf-8")
         assert "student-os" not in main
         assert "domains.learning.api" not in main
 
-    def test_i02_52_openapi_digest_unchanged(self) -> None:
+    def test_i02_52_openapi_digest_matches_release_pin(self) -> None:
         digest = hashlib.sha256(OPENAPI_SNAPSHOT.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert (
-            digest
-            == "D5CC3A53C789406C69D0207CB0A8778C2730FBE9544C567503EB256BDA92CEFB"
-        )
 
     def test_i02_53_no_temporal(self) -> None:
         for path in _py_files(LEARNING_ROOT):
@@ -139,6 +136,8 @@ class TestArchitectureIsolation:
         assert "student_agent" not in text
 
     def test_i02_56_no_production_nats_learning_publication_permission(self) -> None:
+        from aieos.platform.events.constants import PRODUCTION_EVENT_PUBLISH_PREFIXES
+
         learning_text = _learning_text()
         assert "nats" not in learning_text.lower()
         assert "io.eduvijna.aieos.learning.attempt.started.v1" not in learning_text
@@ -148,6 +147,11 @@ class TestArchitectureIsolation:
         )
         assert "io.eduvijna.aieos.learning." not in nats_blob
         assert "learning.attempt" not in nats_blob
+        assert PRODUCTION_EVENT_PUBLISH_PREFIXES == (
+            "io.eduvijna.aieos.content.",
+            "io.eduvijna.aieos.teaching.",
+        )
+        assert not any("learning" in prefix for prefix in PRODUCTION_EVENT_PUBLISH_PREFIXES)
 
     def test_i02_57_no_score_grade_mastery_schema(self) -> None:
         from aieos.domains.learning.infrastructure.persistence.models import (
@@ -192,11 +196,11 @@ class TestArchitectureIsolation:
         )
 
     def test_alembic_head_and_learning_schema_ownership(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010001"]
+        assert script.get_heads() == ["a360s010002"]
         assert "learning" in _CONTENT_OWNED_SCHEMAS
         sql = I02_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010001"' in sql

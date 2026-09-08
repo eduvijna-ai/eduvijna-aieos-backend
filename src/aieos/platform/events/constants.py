@@ -59,6 +59,23 @@ EMITTED_TEACHING_EVENT_TYPES = frozenset(
     }
 )
 
+CLOUDEVENTS_LEARNING_SOURCE = "urn:eduvijna:aieos:learning"
+AGGREGATE_TYPE_LEARNING_ATTEMPT = "learning.attempt"
+
+EVENT_LEARNING_ATTEMPT_STARTED_V1 = (
+    "io.eduvijna.aieos.learning.attempt.started.v1"
+)
+EVENT_LEARNING_ATTEMPT_SUBMITTED_V1 = (
+    "io.eduvijna.aieos.learning.attempt.submitted.v1"
+)
+
+EMITTED_LEARNING_EVENT_TYPES = frozenset(
+    {
+        EVENT_LEARNING_ATTEMPT_STARTED_V1,
+        EVENT_LEARNING_ATTEMPT_SUBMITTED_V1,
+    }
+)
+
 EMITTED_CONTENT_EVENT_TYPES = frozenset(
     {
         EVENT_CONTENT_CREATED_V1,
@@ -105,3 +122,7 @@ def teaching_assignment_subject(assignment_id: str) -> str:
 
 def teaching_execution_subject(execution_id: str) -> str:
     return f"teaching/execution/{execution_id}"
+
+
+def learning_attempt_subject(attempt_id: str) -> str:
+    return f"learning/attempt/{attempt_id}"

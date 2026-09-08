@@ -52,6 +52,7 @@ from aieos.domains.education.application.generate_preparation_kit import (
 )
 from aieos.domains.education.application.generate_worksheet import GenerateWorksheetCapability
 from aieos.domains.teaching.api.v1.routes import router as teaching_v1_router
+from aieos.domains.learning.api.v1.routes import router as learning_v1_router
 from aieos.domains.assessment.api.v1.routes import router as assessment_v1_router
 from aieos.domains.assessment.application.mutations import (
     CorrectClassroomAssessmentService,
@@ -128,6 +129,23 @@ from aieos.domains.teaching.application.school_context import (
     SchoolContextClassAuthorityService,
     SchoolContextClassReader,
 )
+from aieos.domains.learning.application.current_assignments import (
+    GetCurrentAssignmentService,
+    GetStudentHomeService,
+    ListCurrentAssignmentsService,
+)
+from aieos.domains.learning.application.get_attempt import GetAttemptService
+from aieos.domains.learning.application.learner_membership import (
+    SchoolContextLearnerMembershipAuthorityService,
+    SchoolContextLearnerMembershipReader,
+    UnconfiguredSchoolContextLearnerMembershipReader,
+)
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWorkFactory,
+)
+from aieos.domains.learning.application.save_responses import SaveResponsesService
+from aieos.domains.learning.application.start_attempt import StartAttemptService
+from aieos.domains.learning.application.submit_attempt import SubmitAttemptService
 from aieos.domains.teaching.application.teach_composition import (
     GetTeacherOsTeachContextService,
 )
@@ -211,6 +229,8 @@ def create_app(
     principal_classification_authority: (
         HumanPrincipalClassificationGate | None
     ) = None,
+    learner_membership_reader: SchoolContextLearnerMembershipReader | None = None,
+    student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -224,6 +244,7 @@ def create_app(
     app.add_middleware(RequestContextMiddleware)
     app.include_router(content_v1_router)
     app.include_router(teaching_v1_router)
+    app.include_router(learning_v1_router)
     app.include_router(assessment_v1_router)
     app.include_router(platform_ai_v1_router)
     app.state.request_identity_authenticator = request_identity_authenticator
@@ -530,6 +551,61 @@ def create_app(
         context_composer=app.state.compose_teacher_os_assistant_context_service,
         model_gateway=model_gateway,
     )
+
+    membership_reader = (
+        learner_membership_reader
+        if learner_membership_reader is not None
+        else UnconfiguredSchoolContextLearnerMembershipReader()
+    )
+    membership_authority = SchoolContextLearnerMembershipAuthorityService(
+        membership_reader
+    )
+    student_uow_factory = student_learning_uow_factory
+    if student_uow_factory is not None:
+        app.state.list_current_assignments_service = ListCurrentAssignmentsService(
+            student_uow_factory,
+            membership_reader,
+            classification,
+        )
+        app.state.get_current_assignment_service = GetCurrentAssignmentService(
+            student_uow_factory,
+            membership_reader,
+            classification,
+        )
+        app.state.get_student_home_service = GetStudentHomeService(
+            app.state.list_current_assignments_service
+        )
+        app.state.start_attempt_service = StartAttemptService(
+            student_uow_factory,
+            membership_authority,
+            classification,
+            idempotency_retention=idempotency_retention,
+        )
+        app.state.save_responses_service = SaveResponsesService(
+            student_uow_factory,
+            membership_authority,
+            classification,
+            idempotency_retention=idempotency_retention,
+        )
+        app.state.submit_attempt_service = SubmitAttemptService(
+            student_uow_factory,
+            membership_authority,
+            classification,
+            idempotency_retention=idempotency_retention,
+        )
+        app.state.get_attempt_service = GetAttemptService(
+            student_uow_factory,
+            membership_authority,
+            classification,
+        )
+    else:
+        app.state.list_current_assignments_service = None
+        app.state.get_current_assignment_service = None
+        app.state.get_student_home_service = None
+        app.state.start_attempt_service = None
+        app.state.save_responses_service = None
+        app.state.submit_attempt_service = None
+        app.state.get_attempt_service = None
 
     def _openapi() -> dict:
         if app.openapi_schema is None:

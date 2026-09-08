@@ -9,10 +9,12 @@ from uuid import UUID
 
 from aieos.platform.events.constants import (
     CLOUDEVENTS_DATACONTENTTYPE,
+    CLOUDEVENTS_LEARNING_SOURCE,
     CLOUDEVENTS_SOURCE,
     CLOUDEVENTS_SPECVERSION,
     CLOUDEVENTS_TEACHING_SOURCE,
     content_subject,
+    learning_attempt_subject,
     teaching_assignment_subject,
     teaching_execution_subject,
 )
@@ -101,6 +103,35 @@ def build_teaching_execution_cloudevent(
         "source": CLOUDEVENTS_TEACHING_SOURCE,
         "type": event_type,
         "subject": teaching_execution_subject(str(execution_id)),
+        "time": _rfc3339(time),
+        "datacontenttype": CLOUDEVENTS_DATACONTENTTYPE,
+        "data": dict(data),
+        "tenantid": str(tenant_id),
+        "correlationid": str(context.correlation_id),
+        "causationid": str(context.causation_id),
+        "actorid": str(context.actor_principal_id),
+        "effectiveactorid": str(context.effective_actor_id),
+        "aggregaterevision": int(aggregate_revision),
+    }
+
+
+def build_learning_cloudevent(
+    *,
+    event_id: EventId,
+    event_type: str,
+    attempt_id: UUID,
+    time: datetime,
+    context: MutationEventContext,
+    tenant_id: UUID,
+    aggregate_revision: int,
+    data: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "specversion": CLOUDEVENTS_SPECVERSION,
+        "id": str(event_id),
+        "source": CLOUDEVENTS_LEARNING_SOURCE,
+        "type": event_type,
+        "subject": learning_attempt_subject(str(attempt_id)),
         "time": _rfc3339(time),
         "datacontenttype": CLOUDEVENTS_DATACONTENTTYPE,
         "data": dict(data),

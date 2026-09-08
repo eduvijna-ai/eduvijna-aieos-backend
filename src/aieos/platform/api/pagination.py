@@ -24,6 +24,7 @@ class ListCursor:
 
 REVIEW_QUEUE_CURSOR_TYPE = "teacher_os_review_queue"
 LIBRARY_CURSOR_TYPE = "teacher_os_library"
+STUDENT_ASSIGNMENTS_CURSOR_TYPE = "student_os_assignments"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,16 @@ class LibraryCursor:
     updated_at: datetime
     content_id: UUID
     cursor_type: str = LIBRARY_CURSOR_TYPE
+
+
+@dataclass(frozen=True, slots=True)
+class StudentAssignmentCursor:
+    """Opaque keyset cursor for Student OS current-assignment pages."""
+
+    tenant_id: UUID
+    updated_at: datetime
+    assignment_id: UUID
+    cursor_type: str = STUDENT_ASSIGNMENTS_CURSOR_TYPE
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -212,4 +223,55 @@ class CursorCodec:
             updated_at=updated_at,
             content_id=content_id,
             cursor_type=LIBRARY_CURSOR_TYPE,
+        )
+
+    def encode_student_assignments(self, cursor: StudentAssignmentCursor) -> str:
+        if cursor.cursor_type != STUDENT_ASSIGNMENTS_CURSOR_TYPE:
+            raise InvalidCursorError("invalid cursor")
+        payload = json.dumps(
+            {
+                "v": self.version,
+                "cursor_type": STUDENT_ASSIGNMENTS_CURSOR_TYPE,
+                "tenant_id": str(cursor.tenant_id),
+                "updated_at": _canon_dt(cursor.updated_at),
+                "assignment_id": str(cursor.assignment_id),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        signature = hmac.new(self._key, payload, hashlib.sha256).digest()
+        return f"{_b64url_encode(payload)}.{_b64url_encode(signature)}"
+
+    def decode_student_assignments(
+        self, token: str, *, expected_tenant_id: UUID
+    ) -> StudentAssignmentCursor:
+        try:
+            blob, sig_b64 = token.split(".", 1)
+            payload = _b64url_decode(blob)
+            signature = _b64url_decode(sig_b64)
+        except (ValueError, Exception) as exc:
+            raise InvalidCursorError("invalid cursor") from exc
+        expected = hmac.new(self._key, payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise InvalidCursorError("invalid cursor")
+        try:
+            data = json.loads(payload.decode("utf-8"))
+            if data.get("v") != self.version:
+                raise InvalidCursorError("invalid cursor")
+            if data.get("cursor_type") != STUDENT_ASSIGNMENTS_CURSOR_TYPE:
+                raise InvalidCursorError("invalid cursor")
+            tenant_id = UUID(str(data["tenant_id"]))
+            assignment_id = UUID(str(data["assignment_id"]))
+            updated_at = datetime.fromisoformat(
+                str(data["updated_at"]).replace("Z", "+00:00")
+            )
+        except (KeyError, ValueError, TypeError) as exc:
+            raise InvalidCursorError("invalid cursor") from exc
+        if tenant_id != expected_tenant_id:
+            raise InvalidCursorError("invalid cursor")
+        return StudentAssignmentCursor(
+            tenant_id=tenant_id,
+            updated_at=updated_at,
+            assignment_id=assignment_id,
+            cursor_type=STUDENT_ASSIGNMENTS_CURSOR_TYPE,
         )
