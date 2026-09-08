@@ -10,6 +10,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from aieos.development.learner_principals import (
+    DEVELOPMENT_STUDENT_A_TOKEN,
+    DEVELOPMENT_STUDENT_B_TOKEN,
+    STUDENT_A_PRINCIPAL_ID,
+    STUDENT_B_PRINCIPAL_ID,
+)
 from aieos.domains.content.application.errors import ReviewForbidden
 from aieos.domains.content.application.ports import (
     CONTENT_REVIEW_DECIDE,
@@ -31,6 +37,35 @@ class DevelopmentPrincipalAuthenticator:
 
     def authenticate(self, request) -> TrustedRequestIdentity:
         return TrustedRequestIdentity(principal_id=self.principal_id)
+
+
+class DevelopmentStudentPrincipalAuthenticator:
+    """NON_PRODUCTION Student development authenticator.
+
+    Internally fixed aliases only:
+
+    ``dev-student-a`` → Student A PrincipalId
+    ``dev-student-b`` → Student B PrincipalId
+
+    Constructor accepts no mapping, PrincipalId, or token configuration.
+    Unknown or missing Bearer → unauthenticated. Bearer text is never
+    interpreted as a Principal UUID. Does not replace
+    ``DevelopmentPrincipalAuthenticator`` for Teacher OS.
+    """
+
+    def __init__(self) -> None:
+        return None
+
+    def authenticate(self, request) -> TrustedRequestIdentity:
+        authorization = request.headers.get("Authorization")
+        if authorization is None or not authorization.startswith("Bearer "):
+            raise UnauthenticatedError("unauthenticated")
+        token = authorization[len("Bearer ") :]
+        if token == DEVELOPMENT_STUDENT_A_TOKEN:
+            return TrustedRequestIdentity(principal_id=STUDENT_A_PRINCIPAL_ID)
+        if token == DEVELOPMENT_STUDENT_B_TOKEN:
+            return TrustedRequestIdentity(principal_id=STUDENT_B_PRINCIPAL_ID)
+        raise UnauthenticatedError("unauthenticated")
 
 
 class DevelopmentTenantSecurityResolver:
