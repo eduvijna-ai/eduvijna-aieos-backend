@@ -7,6 +7,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- AIEOS360-S01-I02R1 — LearnerSubmission snapshot is deeply immutable
+  (`SubmissionResponseItem` value objects; no nested mutable dicts) and
+  reconstructed snapshots revalidate S01 bounds. Response-item DB guard
+  `SELECT ... FOR UPDATE`s the parent `learning.attempts` row so
+  response-vs-submit cannot use stale IN_PROGRESS authority. Alembic head
+  remains `a360s010001`. OpenAPI unchanged.
+
 ### Added
 
 - AIEOS360-S01-I02 — Learning-domain LearnerAttempt + typed

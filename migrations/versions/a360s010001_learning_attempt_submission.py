@@ -6,6 +6,10 @@ Creates schema learning with:
   * learning.attempt_response_items
   * learning.submissions
 
+I02R1 (unmerged in-place correction): response-item terminal guard
+SELECT ... FOR UPDATE on the parent learning.attempts row. Snapshot
+JSONB persist shape is unchanged.
+
 Durable Learning SoR for LearnerAttempt working state, typed
 AttemptResponseItems, and immutable LearnerSubmission evidence.
 
@@ -259,10 +263,19 @@ UPGRADE_STATEMENTS: tuple[str, ...] = (
             parent_attempt := NEW.attempt_id;
             parent_tenant := NEW.tenant_id;
         END IF;
+        -- Parent-row serialization: lock the authoritative LearnerAttempt
+        -- before accepting response INSERT/UPDATE/DELETE. Missing parent
+        -- and non-IN_PROGRESS parent fail closed. Does not lock Teaching.
         SELECT lifecycle_state INTO parent_state
           FROM learning.attempts
          WHERE attempt_id = parent_attempt
-           AND tenant_id = parent_tenant;
+           AND tenant_id = parent_tenant
+           FOR UPDATE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION
+                'learning.attempt_response_items parent LearnerAttempt not found'
+                USING ERRCODE = '27000';
+        END IF;
         IF parent_state IS DISTINCT FROM 'IN_PROGRESS' THEN
             RAISE EXCEPTION
                 'learning.attempt_response_items cannot mutate unless parent attempt is IN_PROGRESS'

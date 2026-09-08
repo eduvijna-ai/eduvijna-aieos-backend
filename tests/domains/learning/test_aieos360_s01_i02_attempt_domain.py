@@ -236,7 +236,7 @@ class TestRevisionAndSubmit:
             text_value="first",
         )
         snapshot = canonical_response_snapshot([later, earlier])
-        assert [row["question_id"] for row in snapshot] == ["q-a", "q-b"]
+        assert [row.question_id for row in snapshot] == ["q-a", "q-b"]
         _submitted, submission = transition_in_progress_attempt_to_submitted(
             attempt,
             [later, earlier],
@@ -245,8 +245,11 @@ class TestRevisionAndSubmit:
             due_at_at_submit=None,
         )
         assert submission.response_snapshot == snapshot
-        assert submission.response_snapshot[0]["response_kind"] == "SHORT_ANSWER"
-        assert submission.response_snapshot[1]["value"] == "B"
+        assert (
+            submission.response_snapshot[0].response_kind
+            is AttemptResponseKind.SHORT_ANSWER
+        )
+        assert submission.response_snapshot[1].value == "B"
 
     def test_i02_16_submission_contains_no_score_grade_mastery_ai_fields(self) -> None:
         attempt = _start()
@@ -274,7 +277,8 @@ class TestRevisionAndSubmit:
         ):
             assert forbidden not in blob
         for row in submission.response_snapshot:
-            assert set(row) == {"question_id", "response_kind", "value"}
+            mapping = row.as_persistable_mapping()
+            assert set(mapping) == {"question_id", "response_kind", "value"}
 
     def test_i02_17_submit_transitions_in_progress_to_submitted(self) -> None:
         attempt = _start()

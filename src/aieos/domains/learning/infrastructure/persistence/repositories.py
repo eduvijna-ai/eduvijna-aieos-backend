@@ -103,7 +103,7 @@ def learner_submission_from_row(row) -> LearnerSubmission:
             content_id=row["content_id"],
             content_version_id=row["content_version_id"],
             class_ref=row["class_ref"],
-            response_snapshot=tuple(row["response_snapshot"] or ()),
+            response_snapshot=list(row["response_snapshot"] or []),
             submitted_at=row["submitted_at"],
             assignment_revision_at_submit=int(row["assignment_revision_at_submit"]),
             due_at_at_submit=row["due_at_at_submit"],
@@ -304,7 +304,9 @@ class SqlAlchemyLearnerSubmissionRepository:
         self._execution_tenant_id = execution_tenant_id
 
     def insert(self, submission: LearnerSubmission) -> None:
-        snapshot = [dict(row) for row in submission.response_snapshot]
+        snapshot = [
+            item.as_persistable_mapping() for item in submission.response_snapshot
+        ]
         try:
             self._connection.execute(
                 submissions_table.insert().values(

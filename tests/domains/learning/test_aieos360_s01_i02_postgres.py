@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -329,7 +330,43 @@ class TestTenantIsolation:
         assert loaded_attempt.lifecycle_state is AttemptLifecycleState.SUBMITTED
         assert loaded_attempt.submission_id == loaded_submission.submission_id
         assert loaded_submission.due_at_at_submit == FIXED_NOW + timedelta(hours=2)
-        assert loaded_submission.response_snapshot[0]["question_id"] == "q1"
+        assert loaded_submission.response_snapshot[0].question_id == "q1"
+        assert loaded_submission.response_snapshot[0].value == "ok"
+
+    def test_r1_08_repository_round_trip_returns_equally_immutable_evidence(
+        self, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        factory = SqlAlchemyLearningUnitOfWorkFactory(runtime_engine)
+        created = _start(tenant_id=tenant_id)
+        item = AttemptResponseItem.multiple_choice(
+            attempt_id=created.attempt_id, question_id="q1", choice_value="A"
+        )
+        submitted, submission = transition_in_progress_attempt_to_submitted(
+            created,
+            [item],
+            submitted_at=FIXED_NOW + timedelta(minutes=1),
+            assignment_revision_at_submit=1,
+            due_at_at_submit=None,
+        )
+        with factory(tenant_id) as uow:
+            uow.attempts.insert(created)
+            uow.persist_pure_submit_transition(
+                submitted, submission, expected_revision=created.aggregate_revision
+            )
+            uow.commit()
+        with factory(tenant_id) as uow:
+            loaded = uow.submissions.get_for_attempt(created.attempt_id)
+        assert loaded is not None
+        evidence = loaded.response_snapshot[0]
+        with pytest.raises(TypeError):
+            evidence["value"] = "tamper"  # type: ignore[index]
+        with pytest.raises(FrozenInstanceError):
+            evidence.value = "tamper"  # type: ignore[misc]
+        leaked = evidence.as_persistable_mapping()
+        leaked["value"] = "tamper"
+        assert evidence.value == "A"
+        assert loaded.response_snapshot[0].value == "A"
 
 
 class TestCardinalityAndGuards:
@@ -446,7 +483,7 @@ class TestCardinalityAndGuards:
             uow.attempts.insert(created)
             uow.commit()
         with factory(tenant_id) as uow:
-            with pytest.raises(DBAPIError):
+            with pytest.raises(DBAPIError, match="parent LearnerAttempt not found"):
                 uow.connection.execute(
                     text(
                         """

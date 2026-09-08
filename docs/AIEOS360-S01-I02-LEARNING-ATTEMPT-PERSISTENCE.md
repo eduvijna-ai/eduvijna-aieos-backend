@@ -53,21 +53,16 @@ is `SUBMITTED`. That is **PERSISTENCE CAPABILITY ONLY — NOT S01 BUSINESS
 AUTHORIZATION**. I02 does not add a second-attempt command, `max_attempts`, or
 retry policy.
 
-## Typed responses
-
-S01 kinds: `MULTIPLE_CHOICE`, `SHORT_ANSWER`, `TRUE_FALSE`. Exactly one matching
-value. Mutable only while the parent attempt is `IN_PROGRESS`. A material save
-increments parent `aggregate_revision` **once**. Database trigger rejects
-response INSERT/UPDATE/DELETE when the parent is not `IN_PROGRESS`.
-
-Working state is relational rows, not a mutable mega-JSON document.
-
 ## Immutable submission
 
 `LearnerSubmission.response_snapshot` is a canonical JSON array of
-`{question_id, response_kind, value}` sorted by `question_id`. It must not embed
-raw ContentVersion payload, answer keys, teacher notes, score, grade, mastery, or
-AI output.
+`{question_id, response_kind, value}` sorted by `question_id`. In memory it is
+a tuple of frozen `SubmissionResponseItem` value objects: nested dicts are
+never retained, caller-owned input mappings cannot alias into evidence, and
+snapshot bounds (`question_id`, choice/text length, TRUE_FALSE bool) are
+revalidated on construction and reconstruction — not only when built from
+typed `AttemptResponseItem` rows. It must not embed raw ContentVersion payload,
+answer keys, teacher notes, score, grade, mastery, or AI output.
 
 UPDATE and DELETE on `learning.submissions` are rejected at the database,
 including the privileged schema-owner path. No correction/resubmit rewrite.
@@ -76,6 +71,21 @@ including the privileged schema-owner path. No correction/resubmit rewrite.
 same-domain FK is submission → attempt (`ON DELETE RESTRICT`) to avoid a
 circular write requirement. Tests prove a `SUBMITTED` attempt always references
 its persisted submission.
+
+## Typed responses
+
+S01 kinds: `MULTIPLE_CHOICE`, `SHORT_ANSWER`, `TRUE_FALSE`. Exactly one matching
+value. Mutable only while the parent attempt is `IN_PROGRESS`. A material save
+increments parent `aggregate_revision` **once**. Database trigger rejects
+response INSERT/UPDATE/DELETE when the parent is not `IN_PROGRESS`. The trigger
+`SELECT ... FOR UPDATE`s the parent `learning.attempts` row before accepting
+the mutation, so a concurrent submit that already owns the parent cannot be
+bypassed with stale IN_PROGRESS authority. Missing parent fails closed.
+
+Working state is relational rows, not a mutable mega-JSON document.
+
+This does **not** serialize TeachingAssignment cancel/submit. That remains
+S01-I03.
 
 ## Pure submit transition
 

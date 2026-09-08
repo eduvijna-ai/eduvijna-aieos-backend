@@ -202,6 +202,8 @@ class TestArchitectureIsolation:
         assert 'revision: str = "a360s010001"' in sql
         assert 'down_revision: str | None = "tosd100001"' in sql
         assert "CREATE SCHEMA learning" in sql
+        assert "FOR UPDATE" in sql
+        assert "parent LearnerAttempt not found" in sql
         uow = (
             LEARNING_ROOT / "infrastructure" / "persistence" / "uow.py"
         ).read_text(encoding="utf-8")

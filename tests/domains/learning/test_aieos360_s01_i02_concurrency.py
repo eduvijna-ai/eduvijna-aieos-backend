@@ -6,6 +6,7 @@ That belongs to S01-I03.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import DBAPIError
 
 from aieos.domains.learning.application.errors import AttemptConcurrencyConflict
 from aieos.domains.learning.domain.attempt import LearnerAttempt
@@ -197,5 +199,187 @@ class TestConcurrentStaleSave:
         assert loaded is not None
         assert loaded.lifecycle_state is AttemptLifecycleState.SUBMITTED
         assert evidence is not None
-        assert evidence.response_snapshot[0]["value"] == "original"
+        assert evidence.response_snapshot[0].value == "original"
         assert items[0].text_value == "original"
+
+
+_RESPONSE_INSERT = """
+INSERT INTO learning.attempt_response_items (
+    tenant_id, attempt_id, question_id, response_kind,
+    choice_value, text_value, boolean_value,
+    created_at, updated_at
+) VALUES (
+    :tenant_id, :attempt_id, 'q-race', 'MULTIPLE_CHOICE',
+    'RACE', NULL, NULL, :ts, :ts
+)
+"""
+
+
+class TestDbTriggerParentSerialization:
+    """DB trigger FOR UPDATE proofs. Not TeachingAssignment serialization."""
+
+    def test_r1_09_submit_owns_parent_first_blocks_stale_response_insert(
+        self, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        factory = SqlAlchemyLearningUnitOfWorkFactory(runtime_engine)
+        created = _start(tenant_id=tenant_id)
+        submitted, submission = transition_in_progress_attempt_to_submitted(
+            created,
+            [],
+            submitted_at=FIXED_NOW + timedelta(minutes=1),
+            assignment_revision_at_submit=1,
+            due_at_at_submit=None,
+        )
+        with factory(tenant_id) as uow:
+            uow.attempts.insert(created)
+            uow.commit()
+
+        submit_locked = threading.Event()
+        release_submit = threading.Event()
+        insert_done = threading.Event()
+        errors: dict[str, BaseException | None] = {"insert": None, "submit": None}
+
+        def _submit() -> None:
+            try:
+                with factory(tenant_id) as uow:
+                    uow.persist_pure_submit_transition(
+                        submitted,
+                        submission,
+                        expected_revision=created.aggregate_revision,
+                    )
+                    submit_locked.set()
+                    if not release_submit.wait(timeout=20):
+                        raise TimeoutError("test did not release submit lock")
+                    uow.commit()
+            except BaseException as exc:
+                errors["submit"] = exc
+            finally:
+                submit_locked.set()
+
+        def _insert() -> None:
+            try:
+                with factory(tenant_id) as uow:
+                    uow.connection.execute(
+                        text(_RESPONSE_INSERT),
+                        {
+                            "tenant_id": tenant_id,
+                            "attempt_id": created.attempt_id.value,
+                            "ts": FIXED_NOW + timedelta(minutes=2),
+                        },
+                    )
+                    uow.commit()
+            except BaseException as exc:
+                errors["insert"] = exc
+            finally:
+                insert_done.set()
+
+        submit_thread = threading.Thread(target=_submit)
+        submit_thread.start()
+        assert submit_locked.wait(timeout=10)
+        insert_thread = threading.Thread(target=_insert)
+        insert_thread.start()
+        assert not insert_done.wait(timeout=0.5)
+        assert insert_thread.is_alive()
+        release_submit.set()
+        submit_thread.join(timeout=15)
+        insert_thread.join(timeout=15)
+        assert errors["submit"] is None
+        assert errors["insert"] is not None
+        assert isinstance(errors["insert"], DBAPIError)
+        assert "IN_PROGRESS" in str(errors["insert"])
+        with factory(tenant_id) as uow:
+            loaded = uow.attempts.get(created.attempt_id)
+            items = uow.responses.list_for_attempt(created.attempt_id)
+        assert loaded is not None
+        assert loaded.lifecycle_state is AttemptLifecycleState.SUBMITTED
+        assert items == []
+
+    def test_r1_10_response_mutation_owns_parent_first_then_submit_proceeds(
+        self, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        factory = SqlAlchemyLearningUnitOfWorkFactory(runtime_engine)
+        created = _start(tenant_id=tenant_id)
+        submitted, submission = transition_in_progress_attempt_to_submitted(
+            created,
+            [],
+            submitted_at=FIXED_NOW + timedelta(minutes=1),
+            assignment_revision_at_submit=1,
+            due_at_at_submit=None,
+        )
+        with factory(tenant_id) as uow:
+            uow.attempts.insert(created)
+            uow.commit()
+
+        response_locked = threading.Event()
+        release_response = threading.Event()
+        submit_done = threading.Event()
+        errors: dict[str, BaseException | None] = {"insert": None, "submit": None}
+
+        def _insert() -> None:
+            try:
+                with factory(tenant_id) as uow:
+                    uow.connection.execute(
+                        text(_RESPONSE_INSERT),
+                        {
+                            "tenant_id": tenant_id,
+                            "attempt_id": created.attempt_id.value,
+                            "ts": FIXED_NOW + timedelta(seconds=2),
+                        },
+                    )
+                    response_locked.set()
+                    if not release_response.wait(timeout=20):
+                        raise TimeoutError("test did not release response lock")
+                    uow.commit()
+            except BaseException as exc:
+                errors["insert"] = exc
+            finally:
+                response_locked.set()
+
+        def _submit() -> None:
+            try:
+                with factory(tenant_id) as uow:
+                    uow.persist_pure_submit_transition(
+                        submitted,
+                        submission,
+                        expected_revision=created.aggregate_revision,
+                    )
+                    uow.commit()
+            except BaseException as exc:
+                errors["submit"] = exc
+            finally:
+                submit_done.set()
+
+        insert_thread = threading.Thread(target=_insert)
+        insert_thread.start()
+        assert response_locked.wait(timeout=10)
+        submit_thread = threading.Thread(target=_submit)
+        submit_thread.start()
+        assert not submit_done.wait(timeout=0.5)
+        assert submit_thread.is_alive()
+        release_response.set()
+        insert_thread.join(timeout=15)
+        submit_thread.join(timeout=15)
+        assert errors["insert"] is None
+        assert errors["submit"] is None
+        with factory(tenant_id) as uow:
+            loaded = uow.attempts.get(created.attempt_id)
+            items = uow.responses.list_for_attempt(created.attempt_id)
+            evidence = uow.submissions.get_for_attempt(created.attempt_id)
+        assert loaded is not None
+        assert loaded.lifecycle_state is AttemptLifecycleState.SUBMITTED
+        assert evidence is not None
+        assert len(items) == 1
+        assert items[0].question_id == "q-race"
+        with factory(tenant_id) as uow:
+            with pytest.raises(DBAPIError, match="IN_PROGRESS"):
+                uow.connection.execute(
+                    text(_RESPONSE_INSERT),
+                    {
+                        "tenant_id": tenant_id,
+                        "attempt_id": created.attempt_id.value,
+                        "ts": FIXED_NOW + timedelta(minutes=3),
+                    },
+                )
+                uow.commit()

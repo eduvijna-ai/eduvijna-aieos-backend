@@ -2,6 +2,9 @@
 
 Distinct from LearnerAttempt lifecycle. Captures learner RESPONSES only —
 never raw ContentVersion payload, answer keys, scores, grades, mastery, or AI.
+
+Snapshot items are deeply immutable value objects. Nested dicts are never
+retained as aggregate state. Repository JSONB serialization is explicit.
 """
 
 from __future__ import annotations
@@ -18,7 +21,12 @@ from aieos.domains.learning.domain.identities import (
     SubmissionId,
     require_foreign_uuid,
 )
-from aieos.domains.learning.domain.response_item import AttemptResponseItem
+from aieos.domains.learning.domain.response_item import (
+    MAX_CHOICE_VALUE_LENGTH,
+    MAX_QUESTION_ID_LENGTH,
+    MAX_TEXT_VALUE_LENGTH,
+    AttemptResponseItem,
+)
 from aieos.domains.learning.domain.response_kind import (
     AttemptResponseKind,
     parse_attempt_response_kind,
@@ -64,12 +72,87 @@ def _require_class_ref(value: str) -> str:
     return stripped
 
 
+def _require_snapshot_question_id(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidLearnerSubmissionError(
+            "response_snapshot question_id must be a non-empty string"
+        )
+    stripped = value.strip()
+    if len(stripped) > MAX_QUESTION_ID_LENGTH:
+        raise InvalidLearnerSubmissionError(
+            f"response_snapshot question_id must be at most "
+            f"{MAX_QUESTION_ID_LENGTH} characters"
+        )
+    return stripped
+
+
+def _require_snapshot_value(
+    kind: AttemptResponseKind, raw_value: object
+) -> str | bool:
+    if kind is AttemptResponseKind.TRUE_FALSE:
+        if type(raw_value) is not bool:
+            raise InvalidLearnerSubmissionError(
+                "TRUE_FALSE snapshot value must be a boolean"
+            )
+        return raw_value
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise InvalidLearnerSubmissionError(
+            f"{kind.value} snapshot value must be a non-empty string"
+        )
+    stripped = raw_value.strip()
+    max_length = (
+        MAX_CHOICE_VALUE_LENGTH
+        if kind is AttemptResponseKind.MULTIPLE_CHOICE
+        else MAX_TEXT_VALUE_LENGTH
+    )
+    if len(stripped) > max_length:
+        raise InvalidLearnerSubmissionError(
+            f"{kind.value} snapshot value must be at most {max_length} characters"
+        )
+    return stripped
+
+
+@dataclass(frozen=True, slots=True)
+class SubmissionResponseItem:
+    """One deeply immutable learner-response evidence row.
+
+    JSONB persistence must call ``as_persistable_mapping``; callers never
+    receive a shared mutable alias of construction input.
+    """
+
+    question_id: str
+    response_kind: AttemptResponseKind
+    value: str | bool
+
+    def __post_init__(self) -> None:
+        set_ = object.__setattr__
+        set_(self, "question_id", _require_snapshot_question_id(self.question_id))
+        set_(
+            self,
+            "response_kind",
+            parse_attempt_response_kind(self.response_kind),
+        )
+        set_(
+            self,
+            "value",
+            _require_snapshot_value(self.response_kind, self.value),
+        )
+
+    def as_persistable_mapping(self) -> dict[str, str | bool]:
+        """Explicit JSON object for PostgreSQL JSONB. Always a fresh dict."""
+        return {
+            "question_id": self.question_id,
+            "response_kind": self.response_kind.value,
+            "value": self.value,
+        }
+
+
 def canonical_response_snapshot(
     items: Sequence[AttemptResponseItem],
-) -> tuple[dict[str, str | bool], ...]:
+) -> tuple[SubmissionResponseItem, ...]:
     """Deterministic learner-response-only snapshot, sorted by question_id."""
     seen: set[str] = set()
-    rows: list[dict[str, str | bool]] = []
+    rows: list[SubmissionResponseItem] = []
     for item in items:
         if not isinstance(item, AttemptResponseItem):
             raise InvalidLearnerSubmissionError(
@@ -81,29 +164,39 @@ def canonical_response_snapshot(
             )
         seen.add(item.question_id)
         rows.append(
-            {
-                "question_id": item.question_id,
-                "response_kind": item.response_kind.value,
-                "value": item.snapshot_value(),
-            }
+            SubmissionResponseItem(
+                question_id=item.question_id,
+                response_kind=item.response_kind,
+                value=item.snapshot_value(),
+            )
         )
-    rows.sort(key=lambda row: str(row["question_id"]))
+    rows.sort(key=lambda row: row.question_id)
     return tuple(rows)
 
 
-def validate_response_snapshot(value: object) -> tuple[dict[str, str | bool], ...]:
+def _snapshot_entry_mapping(entry: object) -> Mapping[str, Any]:
+    if isinstance(entry, SubmissionResponseItem):
+        return entry.as_persistable_mapping()
+    if isinstance(entry, Mapping):
+        return dict(entry)
+    raise InvalidLearnerSubmissionError("response_snapshot entries must be objects")
+
+
+def validate_response_snapshot(value: object) -> tuple[SubmissionResponseItem, ...]:
+    """Revalidate snapshot bounds on construction and reconstruction.
+
+    Does not depend on already-valid AttemptResponseItem objects. Copies every
+    field so caller-owned mappings/lists cannot alias into evidence.
+    """
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise InvalidLearnerSubmissionError(
             "response_snapshot must be a JSON array of response objects"
         )
-    rows: list[dict[str, str | bool]] = []
+    rows: list[SubmissionResponseItem] = []
     seen: set[str] = set()
     for entry in value:
-        if not isinstance(entry, Mapping):
-            raise InvalidLearnerSubmissionError(
-                "response_snapshot entries must be objects"
-            )
-        keys = set(entry.keys())
+        mapping = _snapshot_entry_mapping(entry)
+        keys = set(mapping.keys())
         forbidden = keys & _FORBIDDEN_SNAPSHOT_KEYS
         if forbidden:
             raise InvalidLearnerSubmissionError(
@@ -115,39 +208,19 @@ def validate_response_snapshot(value: object) -> tuple[dict[str, str | bool], ..
                 "response_snapshot entries must contain exactly "
                 "question_id, response_kind, and value"
             )
-        question_id = entry["question_id"]
-        if not isinstance(question_id, str) or not question_id.strip():
-            raise InvalidLearnerSubmissionError(
-                "response_snapshot question_id must be a non-empty string"
-            )
-        question_id = question_id.strip()
-        if question_id in seen:
+        item = SubmissionResponseItem(
+            question_id=mapping["question_id"],
+            response_kind=mapping["response_kind"],
+            value=mapping["value"],
+        )
+        if item.question_id in seen:
             raise InvalidLearnerSubmissionError(
                 "response_snapshot cannot contain duplicate question_id"
             )
-        seen.add(question_id)
-        kind = parse_attempt_response_kind(entry["response_kind"])
-        raw_value: Any = entry["value"]
-        if kind is AttemptResponseKind.TRUE_FALSE:
-            if type(raw_value) is not bool:
-                raise InvalidLearnerSubmissionError(
-                    "TRUE_FALSE snapshot value must be a boolean"
-                )
-        else:
-            if not isinstance(raw_value, str) or not raw_value.strip():
-                raise InvalidLearnerSubmissionError(
-                    f"{kind.value} snapshot value must be a non-empty string"
-                )
-            raw_value = raw_value.strip()
-        rows.append(
-            {
-                "question_id": question_id,
-                "response_kind": kind.value,
-                "value": raw_value,
-            }
-        )
-    expected_order = sorted(row["question_id"] for row in rows)
-    actual_order = [row["question_id"] for row in rows]
+        seen.add(item.question_id)
+        rows.append(item)
+    expected_order = sorted(row.question_id for row in rows)
+    actual_order = [row.question_id for row in rows]
     if actual_order != expected_order:
         raise InvalidLearnerSubmissionError(
             "response_snapshot must be sorted by question_id"
@@ -167,7 +240,7 @@ class LearnerSubmission:
     content_id: UUID
     content_version_id: UUID
     class_ref: str
-    response_snapshot: tuple[dict[str, str | bool], ...]
+    response_snapshot: tuple[SubmissionResponseItem, ...]
     submitted_at: datetime
     assignment_revision_at_submit: int
     due_at_at_submit: datetime | None
