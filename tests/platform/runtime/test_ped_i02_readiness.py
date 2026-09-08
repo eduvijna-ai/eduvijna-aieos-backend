@@ -236,6 +236,7 @@ class TestRealReadiness:
                 "teaching",
                 "ai",
                 "assessment",
+                "learning",
                 "security",
             ):
                 assert (
@@ -258,7 +259,7 @@ class TestRealReadiness:
                         JOIN pg_roles r ON r.oid = n.nspowner
                         WHERE n.nspname IN
                           ('content', 'api', 'workflow', 'integration',
-                           'teaching', 'ai', 'assessment', 'security')
+                           'teaching', 'ai', 'assessment', 'learning', 'security')
                         """
                     )
                 )
@@ -271,6 +272,7 @@ class TestRealReadiness:
                 "teaching",
                 "ai",
                 "assessment",
+                "learning",
             ):
                 assert owners[schema] == SCHEMA_OWNER_ROLE
             assert owners["security"] == SECURITY_SCHEMA_OWNER_ROLE
@@ -282,7 +284,7 @@ class TestRealReadiness:
                         JOIN pg_roles r ON r.oid = n.nspowner
                         WHERE n.nspname IN
                           ('content', 'api', 'workflow', 'integration',
-                           'teaching', 'ai', 'assessment', 'security')
+                           'teaching', 'ai', 'assessment', 'learning', 'security')
                           AND r.rolname = current_user
                         """
                     )
@@ -358,7 +360,7 @@ class TestRealReadiness:
         config = _config_for_runtime_url(postgres18["runtime_url"])
         probe = SqlAlchemyApiReadinessProbe(runtime_engine, config)
         assert probe.check().code is ReadinessCode.READY
-        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
         with bootstrap_engine.connect() as conn:
             with conn.begin():
                 original = conn.execute(

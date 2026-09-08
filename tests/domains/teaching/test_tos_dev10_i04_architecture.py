@@ -27,8 +27,8 @@ ASSISTANT_APP = (
 
 
 def test_current_head_is_tosd100001() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
-    assert EXPECTED_MIGRATION_HEAD == "tosd100001"
+    assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
+    assert EXPECTED_MIGRATION_HEAD == "a360s010001"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd100001"' in source
     assert list(MIGRATIONS.glob("tosd100002*.py")) == []

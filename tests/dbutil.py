@@ -22,8 +22,8 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
 
     Production downgrade paths remain fail-closed and never delete audit
     evidence. The shared pytest PostgreSQL is session-scoped; immutable
-    asset.*, teaching.*, assessment.*, and teacher_memories rows would otherwise
-    block unrelated downgrades.
+    asset.*, teaching.*, assessment.*, teacher_memories, and learning.* rows
+    would otherwise block unrelated downgrades.
     """
     with engine.begin() as conn:
         exists = conn.execute(
@@ -177,3 +177,70 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                     "FORCE ROW LEVEL SECURITY"
                 )
             )
+        learning_exists = conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'learning' AND table_name = 'attempts'"
+                ")"
+            )
+        ).scalar()
+        if learning_exists:
+            for table, disable_triggers in (
+                (
+                    "attempt_response_items",
+                    (
+                        "learning_attempt_response_items_in_progress_delete",
+                    ),
+                ),
+                (
+                    "submissions",
+                    (
+                        "learning_submissions_immutable_delete",
+                    ),
+                ),
+                ("attempts", ()),
+            ):
+                for trigger in disable_triggers:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE learning.{table} "
+                            f"DISABLE TRIGGER {trigger}"
+                        )
+                    )
+                conn.execute(
+                    text(
+                        f"ALTER TABLE learning.{table} DISABLE ROW LEVEL SECURITY"
+                    )
+                )
+            conn.execute(text("DELETE FROM learning.attempt_response_items"))
+            conn.execute(text("DELETE FROM learning.submissions"))
+            conn.execute(text("DELETE FROM learning.attempts"))
+            for table, enable_triggers in (
+                (
+                    "attempt_response_items",
+                    (
+                        "learning_attempt_response_items_in_progress_delete",
+                    ),
+                ),
+                (
+                    "submissions",
+                    ("learning_submissions_immutable_delete",),
+                ),
+                ("attempts", ()),
+            ):
+                for trigger in enable_triggers:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE learning.{table} "
+                            f"ENABLE TRIGGER {trigger}"
+                        )
+                    )
+                conn.execute(
+                    text(f"ALTER TABLE learning.{table} ENABLE ROW LEVEL SECURITY")
+                )
+                conn.execute(
+                    text(
+                        f"ALTER TABLE learning.{table} FORCE ROW LEVEL SECURITY"
+                    )
+                )

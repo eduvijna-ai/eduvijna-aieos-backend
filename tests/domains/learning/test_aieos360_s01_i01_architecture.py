@@ -81,26 +81,20 @@ class TestProductionIsolation:
 
 class TestNoPersistenceOrStudentApi:
     def test_i01_21_no_learner_roster_persistence(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
-        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")
             if path.name != "__init__.py"
         )
-        assert versions[-1].startswith("tosd100001_")
-        assert not any("learner" in name.lower() for name in versions)
+        assert "a360s010001_learning_attempt_submission.py" in versions
         assert not any("roster" in name.lower() for name in versions)
         assert not any("student" in name.lower() for name in versions)
-        assert not (LEARNING_ROOT / "infrastructure").exists()
-        for path in _py_files(LEARNING_ROOT):
-            modules = _import_modules(path)
-            assert not any(
-                module == "sqlalchemy" or module.startswith("sqlalchemy.")
-                for module in modules
-            )
-            text = path.read_text(encoding="utf-8")
-            assert "Table(" not in text
+        membership = LEARNING_ROOT / "application" / "learner_membership.py"
+        membership_text = membership.read_text(encoding="utf-8")
+        assert "Table(" not in membership_text
+        assert "sqlalchemy" not in membership_text
 
     def test_i01_22_no_student_http_route_added(self) -> None:
         schema = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
@@ -111,12 +105,19 @@ class TestNoPersistenceOrStudentApi:
         assert digest == EXPECTED_OPENAPI_SHA256
         assert not (LEARNING_ROOT / "api").exists()
 
-    def test_i01_23_no_learner_attempt_or_submission_implementation(self) -> None:
-        for path in _py_files(LEARNING_ROOT):
-            text = path.read_text(encoding="utf-8")
-            assert "class LearnerAttempt" not in text
-            assert "class LearnerSubmission" not in text
-            assert "attempt_response" not in text.lower()
+    def test_i01_23_membership_facade_does_not_define_attempt_commands(self) -> None:
+        membership = (
+            LEARNING_ROOT / "application" / "learner_membership.py"
+        ).read_text(encoding="utf-8")
+        errors = (LEARNING_ROOT / "application" / "errors.py").read_text(
+            encoding="utf-8"
+        )
+        assert "class LearnerAttempt" not in membership
+        assert "class LearnerSubmission" not in membership
+        assert "start_learner_attempt" not in membership
+        assert "submit_learner_attempt" not in membership
+        assert "start_learner_attempt" not in errors
+        assert "submit_learner_attempt" not in errors
 
     def test_i01_24_teaching_assignment_sources_unmodified_by_learning_imports(
         self,

@@ -105,4 +105,5 @@ markers = [
     "tos_dev10_i03s1: TOS-DEV10-I03S1 Principal kind HUMAN/WORKLOAD security substrate",
     "tos_dev10_i04: TOS-DEV10-I04 Teacher OS Contextual AI Assistant v1 + demo loader",
     "aieos360_s01_i01: AIEOS360-S01-I01 learner membership façade + NON_PRODUCTION student substrate",
+    "aieos360_s01_i02: AIEOS360-S01-I02 Learning attempt/submission persistence and RLS",
 ]

@@ -438,12 +438,12 @@ def _make_domain_version(
 
 class TestMigrationHeadAndSchema:
     def test_single_alembic_head_is_tosd060001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "tosd100001"
-        assert EXPECTED_MIGRATION_HEAD == "tosd100001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "tosd100001"
+                == "a360s010001"
             )
         versions = sorted(
             p.name
@@ -554,7 +554,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd100001"
+                    == "a360s010001"
                 )
                 prov = conn.execute(
                     text(
@@ -590,7 +590,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd100001"
+                    == "a360s010001"
                 )
         finally:
             _ensure_head(postgres18, bootstrap_engine)
@@ -615,7 +615,7 @@ class TestMigrationHeadAndSchema:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "tosd100001"
+                    == "a360s010001"
                 )
                 count = conn.execute(
                     text(

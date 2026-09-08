@@ -21,3 +21,35 @@ class SchoolContextUnavailable(LearningApplicationError):
 
 class SchoolContextContractError(LearningApplicationError):
     """School Context learner-membership provider returned an invalid response."""
+
+
+class PersistenceOperationFailed(LearningApplicationError):
+    """Infrastructure/transaction/connection/driver failure, not a business conflict."""
+
+
+class PersistenceInvariantViolation(LearningApplicationError):
+    """A Learning persistence invariant failed (database check or visibility)."""
+
+
+class AttemptNotFound(LearningApplicationError):
+    """LearnerAttempt is not visible in the execution tenant."""
+
+
+class AttemptConcurrencyConflict(LearningApplicationError):
+    """expected_aggregate_revision did not match the stored LearnerAttempt head."""
+
+
+class AttemptAlreadySubmitted(LearningApplicationError):
+    """SUBMITTED LearnerAttempt rejects mutation, reopen, and a second submit."""
+
+
+class InvalidAttemptState(LearningApplicationError):
+    """The attempt lifecycle does not permit the requested persistence operation."""
+
+
+class InvalidResponse(LearningApplicationError):
+    """An AttemptResponseItem failed its typed exclusive-value contract."""
+
+
+class SubmissionImmutable(LearningApplicationError):
+    """LearnerSubmission evidence rejects UPDATE/DELETE, including privileged paths."""

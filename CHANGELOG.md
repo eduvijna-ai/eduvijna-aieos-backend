@@ -9,6 +9,26 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- AIEOS360-S01-I02R1 — LearnerSubmission snapshot is deeply immutable
+  (`SubmissionResponseItem` value objects; no nested mutable dicts) and
+  reconstructed snapshots revalidate S01 bounds. Response-item DB guard
+  `SELECT ... FOR UPDATE`s the parent `learning.attempts` row so
+  response-vs-submit cannot use stale IN_PROGRESS authority. Alembic head
+  remains `a360s010001`. OpenAPI unchanged.
+
+### Added
+
+- AIEOS360-S01-I02 — Learning-domain LearnerAttempt + typed
+  AttemptResponseItems + immutable LearnerSubmission PostgreSQL SoR
+  (`learning.attempts`, `learning.attempt_response_items`,
+  `learning.submissions`, Alembic `a360s010001`). Tenant RLS, one-IN_PROGRESS
+  partial uniqueness, future-capable attempt_number uniqueness, response
+  mutation guard, submission immutability, and Learning UoW/CAS. S01 remains
+  one-attempt product policy; no Student HTTP, no authoritative eligibility
+  orchestration, no Learning NATS publication. OpenAPI unchanged.
+
+### Fixed
+
 - AIEOS360-S01-I01R1 — Student development authentication and synthetic
   principal seeding are internally fixed to Student A/B only. Removed
   caller-supplied token→PrincipalId mapping and `principal_ids` seed

@@ -566,6 +566,75 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                         f"TO {RUNTIME_USER}"
                     )
                 )
+            has_learning = conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'learning'
+                          AND table_name = 'attempts'
+                    )
+                    """
+                )
+            ).scalar_one()
+            if has_learning:
+                conn.execute(
+                    text(f"GRANT USAGE ON SCHEMA learning TO {RUNTIME_USER}")
+                )
+                conn.execute(
+                    text(
+                        f"GRANT SELECT, INSERT, UPDATE ON learning.attempts "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(f"REVOKE DELETE ON learning.attempts FROM {RUNTIME_USER}")
+                )
+                conn.execute(
+                    text(
+                        f"GRANT SELECT, INSERT, UPDATE, DELETE ON "
+                        f"learning.attempt_response_items TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT SELECT, INSERT ON learning.submissions "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"REVOKE UPDATE, DELETE ON learning.submissions "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"GRANT EXECUTE ON FUNCTION learning.current_tenant_id() "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "GRANT EXECUTE ON FUNCTION "
+                        "learning.reject_response_item_when_attempt_not_in_progress() "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "GRANT EXECUTE ON FUNCTION "
+                        "learning.reject_submitted_attempt_mutation() "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "GRANT EXECUTE ON FUNCTION "
+                        "learning.reject_submission_mutation() "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
             # TOS-DEV03: AI GenerationRun execution SoR (no DELETE, RLS enforced).
             conn.execute(text(f"GRANT USAGE ON SCHEMA ai TO {RUNTIME_USER}"))
             conn.execute(
