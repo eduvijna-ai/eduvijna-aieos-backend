@@ -7,6 +7,13 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- AIEOS360-S01-I01R1 — Student development authentication and synthetic
+  principal seeding are internally fixed to Student A/B only. Removed
+  caller-supplied token→PrincipalId mapping and `principal_ids` seed
+  argument. Teacher OS `DevelopmentPrincipalAuthenticator` unchanged.
+
 ### Added
 
 - AIEOS360-S01-I01 — Learner membership current-authority read façade under

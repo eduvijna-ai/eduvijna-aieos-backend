@@ -64,6 +64,7 @@ class TestProductionIsolation:
             text = path.read_text(encoding="utf-8")
             assert "aieos.development" not in text
             assert "DevelopmentSchoolContextLearnerMembershipReader" not in text
+            assert "DevelopmentStudentPrincipalAuthenticator" not in text
             assert "learner_school_context" not in text
             assert "learner_principals" not in text
 
@@ -75,6 +76,7 @@ class TestProductionIsolation:
             assert "STUDENT_A_PRINCIPAL_ID" not in text
             assert "STUDENT_B_PRINCIPAL_ID" not in text
             assert "dev-student-a" not in text
+            assert "dev-student-b" not in text
 
 
 class TestNoPersistenceOrStudentApi:
@@ -141,3 +143,11 @@ class TestNoPersistenceOrStudentApi:
         assert 'CLASS_REF_5B = "class-5b"' in constants_text
         assert "teacher_principal_id" not in adapter_text
         assert "list_assignable_classes" not in adapter_text
+        auth_text = (SRC_ROOT / "development" / "auth_adapters.py").read_text(
+            encoding="utf-8"
+        )
+        assert "class DevelopmentStudentPrincipalAuthenticator" in auth_text
+        assert "class DevelopmentMappedPrincipalAuthenticator" not in auth_text
+        assert "token_to_principal" not in auth_text
+        seed_text = constants_text
+        assert "principal_ids" not in seed_text

@@ -94,10 +94,12 @@ The Teacher OS development principal is **not** a learner member.
 ## Development authentication
 
 Teacher OS continues to use `DevelopmentPrincipalAuthenticator` (fixed teacher
-principal). A separate `DevelopmentMappedPrincipalAuthenticator` maps explicit
-opaque bearer aliases (`dev-student-a` / `dev-student-b`) to preconfigured
-PrincipalIds. Unknown token → unauthenticated. The bearer value is never a
-Principal UUID. Production authentication is unchanged.
+principal). A separate `DevelopmentStudentPrincipalAuthenticator` has an
+internally fixed alias map (`dev-student-a` → Student A, `dev-student-b` →
+Student B). Callers cannot supply a PrincipalId or token map. Unknown token →
+unauthenticated. The bearer value is never a Principal UUID. Production
+authentication is unchanged. `ensure_synthetic_student_principals` seeds only
+those two fixture identities.
 
 ## Production composition
 

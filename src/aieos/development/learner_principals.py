@@ -9,7 +9,6 @@ Must never be imported by production runtime composition.
 from __future__ import annotations
 
 import uuid
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -52,20 +51,14 @@ __all__ = [
 ]
 
 
-def ensure_synthetic_student_principals(
-    bootstrap_engine: Engine,
-    *,
-    principal_ids: tuple[UUID, ...] = (
-        STUDENT_A_PRINCIPAL_ID,
-        STUDENT_B_PRINCIPAL_ID,
-    ),
-) -> None:
-    """Upsert ACTIVE HUMAN Student principals via bootstrap role.
+def ensure_synthetic_student_principals(bootstrap_engine: Engine) -> None:
+    """Upsert exactly Student A and Student B as ACTIVE HUMAN principals.
 
+    No caller-supplied PrincipalId. Does not seed the Teacher principal.
     Reuses existing ``security.principals``. No student-profile table.
     """
     with bootstrap_engine.begin() as conn:
-        for principal_id in principal_ids:
+        for principal_id in (STUDENT_A_PRINCIPAL_ID, STUDENT_B_PRINCIPAL_ID):
             conn.execute(
                 text(
                     """

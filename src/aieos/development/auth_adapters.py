@@ -8,9 +8,14 @@ Naming intentionally avoids architecture-forbidden production-fake substrings.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from uuid import UUID
 
+from aieos.development.learner_principals import (
+    DEVELOPMENT_STUDENT_A_TOKEN,
+    DEVELOPMENT_STUDENT_B_TOKEN,
+    STUDENT_A_PRINCIPAL_ID,
+    STUDENT_B_PRINCIPAL_ID,
+)
 from aieos.domains.content.application.errors import ReviewForbidden
 from aieos.domains.content.application.ports import (
     CONTENT_REVIEW_DECIDE,
@@ -34,29 +39,33 @@ class DevelopmentPrincipalAuthenticator:
         return TrustedRequestIdentity(principal_id=self.principal_id)
 
 
-class DevelopmentMappedPrincipalAuthenticator:
-    """Development-only explicit bearer alias → PrincipalId mapping.
+class DevelopmentStudentPrincipalAuthenticator:
+    """NON_PRODUCTION Student development authenticator.
 
-    Unknown or missing token → unauthenticated. The bearer value is never
-    treated as a Principal UUID. Must never be imported by production
-    composition. Does not replace ``DevelopmentPrincipalAuthenticator`` for
-    Teacher OS.
+    Internally fixed aliases only:
+
+    ``dev-student-a`` → Student A PrincipalId
+    ``dev-student-b`` → Student B PrincipalId
+
+    Constructor accepts no mapping, PrincipalId, or token configuration.
+    Unknown or missing Bearer → unauthenticated. Bearer text is never
+    interpreted as a Principal UUID. Does not replace
+    ``DevelopmentPrincipalAuthenticator`` for Teacher OS.
     """
 
-    def __init__(self, token_to_principal: Mapping[str, UUID]) -> None:
-        self._token_to_principal = dict(token_to_principal)
+    def __init__(self) -> None:
+        return None
 
     def authenticate(self, request) -> TrustedRequestIdentity:
         authorization = request.headers.get("Authorization")
         if authorization is None or not authorization.startswith("Bearer "):
             raise UnauthenticatedError("unauthenticated")
         token = authorization[len("Bearer ") :]
-        if not token or any(ch.isspace() for ch in token):
-            raise UnauthenticatedError("unauthenticated")
-        principal_id = self._token_to_principal.get(token)
-        if principal_id is None:
-            raise UnauthenticatedError("unauthenticated")
-        return TrustedRequestIdentity(principal_id=principal_id)
+        if token == DEVELOPMENT_STUDENT_A_TOKEN:
+            return TrustedRequestIdentity(principal_id=STUDENT_A_PRINCIPAL_ID)
+        if token == DEVELOPMENT_STUDENT_B_TOKEN:
+            return TrustedRequestIdentity(principal_id=STUDENT_B_PRINCIPAL_ID)
+        raise UnauthenticatedError("unauthenticated")
 
 
 class DevelopmentTenantSecurityResolver:

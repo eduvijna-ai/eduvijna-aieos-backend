@@ -1,14 +1,16 @@
-"""AIEOS360-S01-I01 — development mapped authenticator (Teacher OS unchanged)."""
+"""AIEOS360-S01-I01R1 — fixed Student development authenticator."""
 
 from __future__ import annotations
 
+import inspect
 from uuid import uuid4
 
 import pytest
 
+from aieos.development import auth_adapters
 from aieos.development.auth_adapters import (
-    DevelopmentMappedPrincipalAuthenticator,
     DevelopmentPrincipalAuthenticator,
+    DevelopmentStudentPrincipalAuthenticator,
 )
 from aieos.development.learner_principals import (
     DEVELOPMENT_STUDENT_A_TOKEN,
@@ -33,41 +35,62 @@ class _Request:
             self.headers["Authorization"] = authorization
 
 
-def _mapped() -> DevelopmentMappedPrincipalAuthenticator:
-    return DevelopmentMappedPrincipalAuthenticator(
-        {
-            DEVELOPMENT_STUDENT_A_TOKEN: STUDENT_A_PRINCIPAL_ID,
-            DEVELOPMENT_STUDENT_B_TOKEN: STUDENT_B_PRINCIPAL_ID,
-        }
-    )
-
-
-class TestDevelopmentMappedPrincipalAuthenticator:
-    def test_known_alias_returns_configured_principal(self) -> None:
-        auth = _mapped()
-        identity = auth.authenticate(_Request(f"Bearer {DEVELOPMENT_STUDENT_A_TOKEN}"))
+class TestDevelopmentStudentPrincipalAuthenticator:
+    def test_r1_01_dev_student_a_maps_to_student_a(self) -> None:
+        identity = DevelopmentStudentPrincipalAuthenticator().authenticate(
+            _Request(f"Bearer {DEVELOPMENT_STUDENT_A_TOKEN}")
+        )
         assert identity.principal_id == STUDENT_A_PRINCIPAL_ID
-        identity_b = auth.authenticate(
+
+    def test_r1_02_dev_student_b_maps_to_student_b(self) -> None:
+        identity = DevelopmentStudentPrincipalAuthenticator().authenticate(
             _Request(f"Bearer {DEVELOPMENT_STUDENT_B_TOKEN}")
         )
-        assert identity_b.principal_id == STUDENT_B_PRINCIPAL_ID
+        assert identity.principal_id == STUDENT_B_PRINCIPAL_ID
 
-    def test_unknown_token_unauthenticated(self) -> None:
+    def test_r1_03_unknown_token_unauthenticated(self) -> None:
         with pytest.raises(UnauthenticatedError):
-            _mapped().authenticate(_Request("Bearer unknown-token"))
+            DevelopmentStudentPrincipalAuthenticator().authenticate(
+                _Request("Bearer unknown-token")
+            )
 
-    def test_arbitrary_uuid_bearer_is_not_a_principal(self) -> None:
+    def test_r1_04_arbitrary_uuid_bearer_unauthenticated(self) -> None:
         with pytest.raises(UnauthenticatedError):
-            _mapped().authenticate(_Request(f"Bearer {uuid4()}"))
+            DevelopmentStudentPrincipalAuthenticator().authenticate(
+                _Request(f"Bearer {uuid4()}")
+            )
+
+    def test_r1_05_caller_cannot_configure_arbitrary_principal_mapping(self) -> None:
+        assert not hasattr(auth_adapters, "DevelopmentMappedPrincipalAuthenticator")
+        parameters = inspect.signature(
+            DevelopmentStudentPrincipalAuthenticator.__init__
+        ).parameters
+        assert tuple(parameters) == ("self",)
+        with pytest.raises(TypeError):
+            DevelopmentStudentPrincipalAuthenticator(  # type: ignore[call-arg]
+                {DEVELOPMENT_STUDENT_A_TOKEN: uuid4()}
+            )
+        with pytest.raises(TypeError):
+            DevelopmentStudentPrincipalAuthenticator(  # type: ignore[call-arg]
+                principal_id=uuid4()
+            )
+        with pytest.raises(UnauthenticatedError):
+            DevelopmentStudentPrincipalAuthenticator().authenticate(
+                _Request(f"Bearer {STUDENT_A_PRINCIPAL_ID}")
+            )
 
     def test_missing_authorization_unauthenticated(self) -> None:
         with pytest.raises(UnauthenticatedError):
-            _mapped().authenticate(_Request(None))
+            DevelopmentStudentPrincipalAuthenticator().authenticate(_Request(None))
 
 
 class TestTeacherDevelopmentAuthenticatorUnchanged:
-    def test_fixed_principal_ignores_bearer(self) -> None:
+    def test_r1_06_fixed_principal_ignores_bearer(self) -> None:
         principal_id = uuid4()
         auth = DevelopmentPrincipalAuthenticator(principal_id)
         identity = auth.authenticate(_Request("Bearer anything"))
         assert identity.principal_id == principal_id
+        identity_student_alias = auth.authenticate(
+            _Request(f"Bearer {DEVELOPMENT_STUDENT_A_TOKEN}")
+        )
+        assert identity_student_alias.principal_id == principal_id
