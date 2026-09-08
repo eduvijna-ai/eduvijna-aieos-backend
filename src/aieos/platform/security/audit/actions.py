@@ -46,6 +46,9 @@ class SecurityAuditAction(StrEnum):
     ASSESSMENT_CLASSROOM_RECORD = "assessment.classroom.record"
     ASSESSMENT_CLASSROOM_CORRECT = "assessment.classroom.correct"
     ASSESSMENT_CLASSROOM_VOID = "assessment.classroom.void"
+    LEARNING_ATTEMPT_START = "learning.attempt.start"
+    LEARNING_ATTEMPT_SAVE_RESPONSES = "learning.attempt.save_responses"
+    LEARNING_ATTEMPT_SUBMIT = "learning.attempt.submit"
 
 
 class SecurityAuditExecutionChannel(StrEnum):
@@ -118,6 +121,13 @@ _ASSESSMENT_INCREMENT_ACTIONS = frozenset(
         SecurityAuditAction.ASSESSMENT_CLASSROOM_VOID,
     }
 )
+_LEARNING_CREATE_ACTIONS = frozenset({SecurityAuditAction.LEARNING_ATTEMPT_START})
+_LEARNING_INCREMENT_ACTIONS = frozenset(
+    {
+        SecurityAuditAction.LEARNING_ATTEMPT_SAVE_RESPONSES,
+        SecurityAuditAction.LEARNING_ATTEMPT_SUBMIT,
+    }
+)
 
 
 def is_content_create_action(action: SecurityAuditAction) -> bool:
@@ -184,6 +194,18 @@ def is_assessment_audit_action(action: SecurityAuditAction) -> bool:
     return is_assessment_create_action(action) or is_assessment_increment_action(
         action
     )
+
+
+def is_learning_create_action(action: SecurityAuditAction) -> bool:
+    return action in _LEARNING_CREATE_ACTIONS
+
+
+def is_learning_increment_action(action: SecurityAuditAction) -> bool:
+    return action in _LEARNING_INCREMENT_ACTIONS
+
+
+def is_learning_audit_action(action: SecurityAuditAction) -> bool:
+    return is_learning_create_action(action) or is_learning_increment_action(action)
 
 
 def is_create_action(action: SecurityAuditAction) -> bool:

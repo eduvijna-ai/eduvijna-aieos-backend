@@ -15,10 +15,6 @@ from aieos.platform.runtime.activation import (
     load_api_mutation_activation_gate,
     load_api_mutation_activation_gate_from_process_environment,
 )
-from aieos.platform.runtime.composition import (
-    ApiRuntimeDependencies,
-    compose_api_application,
-)
 from aieos.platform.runtime.config import (
     load_api_runtime_config,
     load_api_runtime_config_from_process_environment,
@@ -65,3 +61,20 @@ __all__ = [
     "load_api_runtime_config",
     "load_api_runtime_config_from_process_environment",
 ]
+
+
+def __getattr__(name: str):
+    # Lazy: composition imports create_app. Student Learning command UoW lives
+    # in this package and must be importable without initializing the HTTP app.
+    if name in {"ApiRuntimeDependencies", "compose_api_application"}:
+        from aieos.platform.runtime.composition import (
+            ApiRuntimeDependencies,
+            compose_api_application,
+        )
+
+        values = {
+            "ApiRuntimeDependencies": ApiRuntimeDependencies,
+            "compose_api_application": compose_api_application,
+        }
+        return values[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

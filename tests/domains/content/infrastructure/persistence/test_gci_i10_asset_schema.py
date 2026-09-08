@@ -369,5 +369,5 @@ class TestVersionAssetRefSchema:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010001"
+                == "a360s010002"
             )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -372,6 +373,35 @@ class SqlAlchemyTeachingAssignmentRepository:
             assignments_table.c.updated_at.desc(),
             assignments_table.c.assignment_id.desc(),
         ).limit(limit)
+        try:
+            rows = self._connection.execute(statement).mappings().all()
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        return [teaching_assignment_from_row(row) for row in rows]
+
+    def list_for_class_refs(
+        self,
+        *,
+        class_refs: Sequence[str],
+        limit: int,
+    ) -> list[TeachingAssignment]:
+        """Student current-assignment query. Tenant + class_ref IN, no teacher ownership."""
+        normalized = tuple(ref for ref in class_refs if ref)
+        if not normalized:
+            return []
+        statement = (
+            select(assignments_table)
+            .where(
+                assignments_table.c.tenant_id == self._execution_tenant_id,
+                assignments_table.c.class_ref.in_(normalized),
+                assignments_table.c.lifecycle_state == "ACTIVE",
+            )
+            .order_by(
+                assignments_table.c.updated_at.desc(),
+                assignments_table.c.assignment_id.desc(),
+            )
+            .limit(limit)
+        )
         try:
             rows = self._connection.execute(statement).mappings().all()
         except Exception as exc:

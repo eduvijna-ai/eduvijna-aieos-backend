@@ -7,6 +7,17 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- AIEOS360-S01-I03 — Student assignment consumption and authoritative
+  LearnerAttempt start/save/submit application + HTTP (`/api/v1/student-os/*`,
+  `/api/v1/learning/*`). Composed Student Learning command Unit of Work locks
+  TeachingAssignment then LearnerAttempt on one connection. Positive-allowlist
+  learner projection for worksheet/quiz/homework @1. Outbox facts for start and
+  submit only; production NATS Learning PUB remains unauthorized. Audit
+  vocabulary Alembic `a360s010002`. One-attempt S01 policy; due_at past remains
+  consumable while ACTIVE.
+
 ### Fixed
 
 - AIEOS360-S01-I02R1 — LearnerSubmission snapshot is deeply immutable

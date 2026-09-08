@@ -81,8 +81,8 @@ class TestProductionIsolation:
 
 class TestNoPersistenceOrStudentApi:
     def test_i01_21_no_learner_roster_persistence(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")
@@ -96,14 +96,14 @@ class TestNoPersistenceOrStudentApi:
         assert "Table(" not in membership_text
         assert "sqlalchemy" not in membership_text
 
-    def test_i01_22_no_student_http_route_added(self) -> None:
+    def test_i01_22_student_http_routes_exist_in_current_snapshot(self) -> None:
         schema = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
         paths = schema.get("paths") or {}
-        assert not any("student-os" in path for path in paths)
-        assert not any("/learning/" in path for path in paths)
+        assert any("student-os" in path for path in paths)
+        assert any("/learning/" in path for path in paths)
         digest = hashlib.sha256(OPENAPI_SNAPSHOT.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert not (LEARNING_ROOT / "api").exists()
+        assert (LEARNING_ROOT / "api").is_dir()
 
     def test_i01_23_membership_facade_does_not_define_attempt_commands(self) -> None:
         membership = (

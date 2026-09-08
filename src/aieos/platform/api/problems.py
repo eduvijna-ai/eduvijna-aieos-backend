@@ -138,6 +138,33 @@ from aieos.domains.teaching.application.errors import (
     WorkGenerationPreconditionRequired,
     WorkGenerationRevisionConflict,
 )
+from aieos.domains.learning.application.errors import (
+    AssignmentClosedOrCancelled,
+    AssignmentNotCurrentlyConsumable,
+    AssignmentNotFound as LearningAssignmentNotFound,
+    AssignmentNotYetAvailable,
+    AttemptAlreadySubmitted,
+    AttemptConcurrencyConflict,
+    AttemptInProgressConflict,
+    AttemptNotFound,
+    ContentNotLearnerConsumable,
+    ExactContentVersionNotFound,
+    HumanPrincipalRequired,
+    IdempotencyKeyReused as LearningIdempotencyKeyReused,
+    InvalidAttemptState,
+    InvalidLearnerRequest,
+    InvalidResponse,
+    LearnerAttemptForbidden,
+    LearnerClassMembershipDenied,
+    LearningApplicationError,
+    PersistenceInvariantViolation as LearningPersistenceInvariantViolation,
+    PersistenceOperationFailed as LearningPersistenceOperationFailed,
+    ResponseValidationFailed,
+    SchoolContextContractError as LearningSchoolContextContractError,
+    SchoolContextUnavailable as LearningSchoolContextUnavailable,
+    SecondAttemptNotAuthorized,
+    SubmissionImmutable,
+)
 from aieos.platform.api.context import (
     InvalidTenantHeaderError,
     bind_response_context,
@@ -955,6 +982,154 @@ _ASSESSMENT_PROBLEMS: dict[
 }
 
 
+_LEARNING_PROBLEMS: dict[type[LearningApplicationError], tuple[int, str, str, str]] = {
+    AttemptNotFound: (
+        404,
+        "attempt_not_found",
+        "LearnerAttempt not found",
+        "The requested LearnerAttempt is not visible",
+    ),
+    LearnerAttemptForbidden: (
+        404,
+        "attempt_not_found",
+        "LearnerAttempt not found",
+        "The requested LearnerAttempt is not visible",
+    ),
+    LearningAssignmentNotFound: (
+        404,
+        "assignment_not_found",
+        "Assignment not found",
+        "The requested assignment is not visible",
+    ),
+    LearnerClassMembershipDenied: (
+        404,
+        "assignment_not_found",
+        "Assignment not found",
+        "The requested assignment is not visible",
+    ),
+    AssignmentNotCurrentlyConsumable: (
+        409,
+        "assignment_not_currently_consumable",
+        "Assignment not currently consumable",
+        "The assignment is not currently consumable",
+    ),
+    AssignmentNotYetAvailable: (
+        409,
+        "assignment_not_yet_available",
+        "Assignment not yet available",
+        "The assignment is not yet available",
+    ),
+    AssignmentClosedOrCancelled: (
+        409,
+        "assignment_closed_or_cancelled",
+        "Assignment closed or cancelled",
+        "The assignment is CLOSED or CANCELLED",
+    ),
+    AttemptInProgressConflict: (
+        409,
+        "attempt_in_progress_conflict",
+        "Attempt already in progress",
+        "An IN_PROGRESS LearnerAttempt already exists",
+    ),
+    SecondAttemptNotAuthorized: (
+        409,
+        "second_attempt_not_authorized",
+        "Second attempt not authorized",
+        "A second LearnerAttempt is not authorized",
+    ),
+    AttemptAlreadySubmitted: (
+        409,
+        "attempt_already_submitted",
+        "Attempt already submitted",
+        "The LearnerAttempt is already SUBMITTED",
+    ),
+    LearningIdempotencyKeyReused: (
+        409,
+        "idempotency_key_reused",
+        "Idempotency key reused",
+        "Idempotency-Key was already used with a different request",
+    ),
+    AttemptConcurrencyConflict: (
+        412,
+        "resource_revision_mismatch",
+        "Resource revision conflict",
+        "If-Match does not match the current aggregate revision",
+    ),
+    ResponseValidationFailed: (
+        422,
+        "response_validation_failed",
+        "Response validation failed",
+        "The response set is invalid for the exact assigned learner resource",
+    ),
+    InvalidResponse: (
+        422,
+        "invalid_response",
+        "Invalid response",
+        "The response item failed its typed contract",
+    ),
+    InvalidLearnerRequest: (
+        422,
+        "invalid_learner_request",
+        "Invalid learner request",
+        "The learner request failed validation",
+    ),
+    InvalidAttemptState: (
+        409,
+        "invalid_attempt_state",
+        "Invalid attempt state",
+        "The LearnerAttempt lifecycle does not permit this operation",
+    ),
+    ContentNotLearnerConsumable: (
+        422,
+        "content_not_learner_consumable",
+        "Content not learner-consumable",
+        "The exact assigned ContentVersion is not a learner-facing contract",
+    ),
+    ExactContentVersionNotFound: (
+        404,
+        "content_version_not_found",
+        "ContentVersion not found",
+        "The exact assigned ContentVersion is not visible",
+    ),
+    HumanPrincipalRequired: (
+        403,
+        "forbidden",
+        "Forbidden",
+        "The principal is not authorized",
+    ),
+    LearningSchoolContextUnavailable: (
+        503,
+        "school_context_unavailable",
+        "School Context unavailable",
+        "School Context is temporarily unavailable",
+    ),
+    LearningSchoolContextContractError: (
+        503,
+        "school_context_unavailable",
+        "School Context unavailable",
+        "School Context is temporarily unavailable",
+    ),
+    LearningPersistenceInvariantViolation: (
+        500,
+        "persistence_invariant_violation",
+        "Persistence invariant violation",
+        "A Learning persistence invariant was violated",
+    ),
+    LearningPersistenceOperationFailed: (
+        503,
+        "persistence_operation_failed",
+        "Persistence operation failed",
+        "Learning persistence operation failed",
+    ),
+    SubmissionImmutable: (
+        409,
+        "submission_immutable",
+        "Submission immutable",
+        "LearnerSubmission evidence cannot be rewritten",
+    ),
+}
+
+
 def install_exception_handlers(app) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -1053,6 +1228,28 @@ def install_exception_handlers(app) -> None:
         request: Request, exc: AssessmentApplicationError
     ) -> JSONResponse:
         mapping = _ASSESSMENT_PROBLEMS.get(type(exc))
+        if mapping is None:
+            status, code, title, detail = (
+                500,
+                "internal_error",
+                "Internal error",
+                "An unexpected error occurred",
+            )
+        else:
+            status, code, title, detail = mapping
+        return problem_response(
+            request,
+            status=status,
+            code=code,
+            title=title,
+            detail=detail,
+        )
+
+    @app.exception_handler(LearningApplicationError)
+    async def learning_application_handler(
+        request: Request, exc: LearningApplicationError
+    ) -> JSONResponse:
+        mapping = _LEARNING_PROBLEMS.get(type(exc))
         if mapping is None:
             status, code, title, detail = (
                 500,

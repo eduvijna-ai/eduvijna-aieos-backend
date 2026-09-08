@@ -48,11 +48,12 @@ BOUNDARY_DOC = REPO_ROOT / "docs" / "GCI-I04-NON-PRODUCTION-MUTATION-BOUNDARY.md
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 SNAPSHOT = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 EXPECTED_OPENAPI_SHA256 = (
-    "D5CC3A53C789406C69D0207CB0A8778C2730FBE9544C567503EB256BDA92CEFB"
+    "39D6972073ED5A37C318D6E3BC3BD198CEBACD9F038B2241F2467CDD11B1AB3B"
 )
 
 _EXPECTED_MIGRATIONS = [
     "a360s010001_learning_attempt_submission.py",
+        "a360s010002_learning_attempt_audit_vocab.py",
     "adra045001_dispatcher_candidate_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",
@@ -290,6 +291,9 @@ class TestMutationInventory:
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",
+            "learning.attempt.start",
+            "learning.attempt.save_responses",
+            "learning.attempt.submit",
         }
         assert _FROZEN_ACTIONS == expected
         assert SecurityAuditExecutionChannel.WORKFLOW_ACTIVITY.value == "WORKFLOW_ACTIVITY"

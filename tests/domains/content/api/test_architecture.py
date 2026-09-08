@@ -17,6 +17,7 @@ APP_DOMAIN_FORBIDDEN = API_FORBIDDEN + ("fastapi", "starlette", "pydantic", "nat
 
 _EXPECTED_MIGRATIONS = [
     "a360s010001_learning_attempt_submission.py",
+        "a360s010002_learning_attempt_audit_vocab.py",
     "adra045001_dispatcher_candidate_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",

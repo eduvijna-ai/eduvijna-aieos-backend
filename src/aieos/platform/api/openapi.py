@@ -31,6 +31,9 @@ _MUTATION_IDEMPOTENCY_IDS = {
     "teaching_execution_observation_correct",
     "teacher_os_memory_create",
     "teacher_os_memory_update",
+    "learning_attempt_start",
+    "learning_attempt_save_responses",
+    "learning_attempt_submit",
 }
 _IF_MATCH_OPERATION_IDS = {
     "content_version_append",
@@ -46,6 +49,8 @@ _IF_MATCH_OPERATION_IDS = {
     "teaching_execution_cancel",
     "teaching_execution_observation_correct",
     "teacher_os_memory_update",
+    "learning_attempt_save_responses",
+    "learning_attempt_submit",
 }
 _GET_OPERATION_IDS = {
     "content_get",
@@ -66,6 +71,10 @@ _GET_OPERATION_IDS = {
     "teacher_os_teach_context_get",
     "teacher_os_memory_get",
     "platform_ai_providers_get",
+    "student_os_home",
+    "student_os_assignment_list",
+    "student_os_assignment_get",
+    "learning_attempt_get",
 }
 
 _IDEMPOTENCY_PARAM = {
@@ -198,6 +207,10 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
                     "teacher_os_memory_get",
                     "teacher_os_memory_create",
                     "teacher_os_memory_update",
+                    "learning_attempt_start",
+                    "learning_attempt_get",
+                    "learning_attempt_save_responses",
+                    "learning_attempt_submit",
                 }:
                     headers["ETag"] = {
                         "description": "Opaque aggregate revision validator",
@@ -216,6 +229,11 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
                 if status == "201" and operation_id == "teaching_execution_start":
                     headers["Location"] = {
                         "description": "Canonical TeachingExecution URL",
+                        "schema": {"type": "string"},
+                    }
+                if status == "201" and operation_id == "learning_attempt_start":
+                    headers["Location"] = {
+                        "description": "Canonical LearnerAttempt URL",
                         "schema": {"type": "string"},
                     }
                 if status == "201" and operation_id == "content_version_append":

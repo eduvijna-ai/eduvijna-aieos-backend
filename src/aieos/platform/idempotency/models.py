@@ -37,6 +37,9 @@ ASSESSMENT_CLASSROOM_CORRECT_V1 = "assessment_classroom_correct.v1"
 ASSESSMENT_CLASSROOM_VOID_V1 = "assessment_classroom_void.v1"
 TEACHER_OS_MEMORY_CREATE_V1 = "teacher_os_memory_create.v1"
 TEACHER_OS_MEMORY_UPDATE_V1 = "teacher_os_memory_update.v1"
+LEARNING_ATTEMPT_START_V1 = "learning_attempt_start.v1"
+LEARNING_ATTEMPT_SAVE_RESPONSES_V1 = "learning_attempt_save_responses.v1"
+LEARNING_ATTEMPT_SUBMIT_V1 = "learning_attempt_submit.v1"
 
 
 @dataclass(frozen=True, slots=True)

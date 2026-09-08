@@ -33,8 +33,8 @@ def _openapi() -> dict:
 
 class TestNoClassRosterOrAssignmentPersistence:
     def test_alembic_head_is_current(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

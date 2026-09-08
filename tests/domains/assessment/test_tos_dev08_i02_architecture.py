@@ -42,8 +42,8 @@ FORBIDDEN_EVENTS = (
 
 class TestI02ArchitectureGuards:
     def test_current_alembic_head_tosd080002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010001"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010001"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080002"' in text
         assert 'down_revision: str | None = "tosd080001"' in text
@@ -120,7 +120,7 @@ class TestI02ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-    "D5CC3A53C789406C69D0207CB0A8778C2730FBE9544C567503EB256BDA92CEFB"
+    "39D6972073ED5A37C318D6E3BC3BD198CEBACD9F038B2241F2467CDD11B1AB3B"
         )
         schema = OPENAPI.read_text(encoding="utf-8")
         assert "/api/v1/assessment/classroom-assessments" in schema
