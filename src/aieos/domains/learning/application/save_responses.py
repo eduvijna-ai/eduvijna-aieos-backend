@@ -10,6 +10,7 @@ from aieos.domains.learning.application.audit import insert_required_learning_au
 from aieos.domains.learning.application.command_support import (
     assignment_or_not_found,
     conceal_membership_denied,
+    established_idempotent_replay,
     load_learner_resource,
     require_attempt_matches_assignment,
     require_human_learner,
@@ -21,10 +22,8 @@ from aieos.domains.learning.application.errors import (
     AttemptAlreadySubmitted,
     AttemptConcurrencyConflict,
     AttemptNotFound,
-    IdempotencyKeyReused,
     InvalidLearnerRequest,
     LearnerClassMembershipDenied,
-    PersistenceInvariantViolation,
     ResponseValidationFailed,
 )
 from aieos.domains.learning.application.learner_membership import (
@@ -36,6 +35,9 @@ from aieos.domains.learning.application.models import (
     MutationAuditProvenance,
     ResponseWrite,
     attempt_read_model,
+)
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWorkFactory,
 )
 from aieos.domains.learning.domain.errors import InvalidAttemptResponseError
 from aieos.domains.learning.domain.identities import AggregateRevision, AttemptId
@@ -50,9 +52,6 @@ from aieos.platform.idempotency.models import (
     IdempotencyScope,
 )
 from aieos.platform.resources import ResourceRef
-from aieos.platform.runtime.student_learning_command import (
-    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
-)
 from aieos.platform.security.audit import SecurityAuditAction
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
@@ -129,7 +128,7 @@ def validate_response_writes(
 class SaveResponsesService:
     def __init__(
         self,
-        uow_factory: SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+        uow_factory: StudentLearningCommandUnitOfWorkFactory,
         membership: SchoolContextLearnerMembershipAuthority,
         classification: CurrentPrincipalClassificationAuthority,
         *,
@@ -170,6 +169,15 @@ class SaveResponsesService:
             key_sha256=hash_idempotency_key(idempotency_key),
         )
         with self._uow_factory(execution_tenant_id) as preview:
+            replayed = established_idempotent_replay(
+                preview,
+                scope=scope,
+                fingerprint=fingerprint,
+                principal_id=principal_id,
+                missing_message="idempotent save outcome is not visible",
+            )
+            if replayed is not None:
+                return replayed
             previewed = preview.attempts.get(typed_attempt_id)
             if previewed is None:
                 raise AttemptNotFound("LearnerAttempt is not visible")
@@ -184,19 +192,15 @@ class SaveResponsesService:
 
         with self._uow_factory(execution_tenant_id) as uow:
             uow.idempotency.acquire_scope(scope)
-            existing = uow.idempotency.get(scope)
-            if existing is not None:
-                if existing.request_fingerprint_sha256 != fingerprint:
-                    raise IdempotencyKeyReused("idempotency key already bound")
-                replayed = uow.attempts.get(AttemptId(existing.result_content_id))
-                if replayed is None:
-                    raise PersistenceInvariantViolation(
-                        "idempotent save outcome is not visible"
-                    )
-                responses = tuple(
-                    uow.responses.list_for_attempt(replayed.attempt_id)
-                )
-                return attempt_read_model(replayed, responses)
+            replayed = established_idempotent_replay(
+                uow,
+                scope=scope,
+                fingerprint=fingerprint,
+                principal_id=principal_id,
+                missing_message="idempotent save outcome is not visible",
+            )
+            if replayed is not None:
+                return replayed
 
             previewed = uow.attempts.get(typed_attempt_id)
             if previewed is None:

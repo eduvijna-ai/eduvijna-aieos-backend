@@ -39,6 +39,9 @@ from aieos.platform.runtime.readiness import SqlAlchemyApiReadinessProbe
 from aieos.platform.runtime.remediation_assessment_source import (
     SqlAlchemyRemediationAssessmentSource,
 )
+from aieos.platform.runtime.student_learning_command import (
+    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+)
 from aieos.platform.security.authorization import (
     CurrentPrincipalClassificationAuthority,
 )
@@ -91,6 +94,9 @@ def compose_local_api_runtime_dependencies(
             config.release_identity
         ),
         principal_classification_authority=CurrentPrincipalClassificationAuthority(
+            engine
+        ),
+        student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
             engine
         ),
     )

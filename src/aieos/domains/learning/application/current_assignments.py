@@ -3,6 +3,9 @@
 Visibility is current HUMAN learner + membership ClassRefs + tenant +
 ACTIVE TeachingAssignment with available_from <= now. Teacher ownership
 is not used. due_at in the past remains consumable while ACTIVE.
+
+List SQL applies tenant, ClassRef, ACTIVE, and available_from filters
+before LIMIT. Continuation uses updated_at DESC, assignment_id DESC.
 """
 
 from __future__ import annotations
@@ -22,14 +25,15 @@ from aieos.domains.learning.application.learner_membership import (
 )
 from aieos.domains.learning.application.models import (
     ATTEMPT_SUMMARY_IN_PROGRESS,
+    AssignmentConsumptionView,
     StudentAssignmentListResult,
     StudentAssignmentReadModel,
     StudentHomeReadModel,
-    currently_consumable,
     derive_attempt_summary,
 )
-from aieos.platform.runtime.student_learning_command import (
-    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWork,
+    StudentLearningCommandUnitOfWorkFactory,
 )
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
@@ -38,23 +42,92 @@ from aieos.platform.security.authorization.principal_classification import (
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
 HOME_SLICE = 5
-_CANDIDATE_FETCH_LIMIT = 500
 
 
 def _now(now: datetime | None) -> datetime:
     return now if now is not None else datetime.now(UTC)
 
 
+def _attempt_id_for(related: tuple) -> UUID | None:
+    in_progress = next(
+        (
+            item
+            for item in related
+            if item.lifecycle_state.value == ATTEMPT_SUMMARY_IN_PROGRESS
+        ),
+        None,
+    )
+    submitted = next(
+        (item for item in related if item.lifecycle_state.value == "SUBMITTED"),
+        None,
+    )
+    if in_progress is not None:
+        return in_progress.attempt_id.value
+    if submitted is not None:
+        return submitted.attempt_id.value
+    return None
+
+
+def _read_model(
+    assignment: AssignmentConsumptionView,
+    related: tuple,
+    resource=None,
+) -> StudentAssignmentReadModel:
+    return StudentAssignmentReadModel(
+        assignment_id=assignment.assignment_id,
+        class_ref=assignment.class_ref,
+        available_from=assignment.available_from,
+        due_at=assignment.due_at,
+        lifecycle_state=assignment.lifecycle_state,
+        currently_consumable=True,
+        content_id=assignment.content_id,
+        content_version_id=assignment.content_version_id,
+        attempt_summary=derive_attempt_summary(related),
+        attempt_id=_attempt_id_for(related),
+        updated_at=assignment.updated_at,
+        resource=resource,
+    )
+
+
+def _page_models(
+    uow: StudentLearningCommandUnitOfWork,
+    principal_id: UUID,
+    page: list[AssignmentConsumptionView],
+    *,
+    include_resource: bool,
+) -> list[StudentAssignmentReadModel]:
+    attempts = uow.attempts.list_for_learner(
+        principal_id, [item.assignment_id for item in page]
+    )
+    by_assignment: dict[UUID, list] = {}
+    for attempt in attempts:
+        by_assignment.setdefault(attempt.teaching_assignment_id, []).append(attempt)
+    items: list[StudentAssignmentReadModel] = []
+    for assignment in page:
+        related = tuple(by_assignment.get(assignment.assignment_id, ()))
+        resource = None
+        if include_resource:
+            resource = load_learner_resource(uow, assignment)
+        items.append(_read_model(assignment, related, resource))
+    return items
+
+
 class ListCurrentAssignmentsService:
     def __init__(
         self,
-        uow_factory: SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+        uow_factory: StudentLearningCommandUnitOfWorkFactory,
         membership_reader: SchoolContextLearnerMembershipReader,
         classification: CurrentPrincipalClassificationAuthority,
     ) -> None:
         self._uow_factory = uow_factory
         self._membership_reader = membership_reader
         self._classification = classification
+
+    def _class_refs(self, execution_tenant_id: UUID, principal_id: UUID) -> tuple[str, ...]:
+        memberships = ListCurrentLearnerMembershipsService(self._membership_reader).list(
+            execution_tenant_id, principal_id
+        )
+        return tuple(item.class_ref for item in memberships)
 
     def list(
         self,
@@ -64,80 +137,47 @@ class ListCurrentAssignmentsService:
         limit: int = DEFAULT_LIST_LIMIT,
         now: datetime | None = None,
         include_resource: bool = False,
+        after_updated_at: datetime | None = None,
+        after_assignment_id: UUID | None = None,
     ) -> StudentAssignmentListResult:
         require_human_learner(self._classification, principal_id)
         if limit < 1 or limit > MAX_LIST_LIMIT:
             raise InvalidLearnerRequest("list limit exceeds the maximum of 100")
         observed = _now(now)
-        memberships = ListCurrentLearnerMembershipsService(self._membership_reader).list(
-            execution_tenant_id, principal_id
-        )
-        class_refs = tuple(item.class_ref for item in memberships)
+        class_refs = self._class_refs(execution_tenant_id, principal_id)
         with self._uow_factory(execution_tenant_id) as uow:
-            rows = uow.list_assignments_for_class_refs(
-                class_refs, limit=_CANDIDATE_FETCH_LIMIT
+            rows = uow.list_current_assignments(
+                class_refs,
+                now=observed,
+                limit=limit + 1,
+                after_updated_at=after_updated_at,
+                after_assignment_id=after_assignment_id,
             )
-            visible = [row for row in rows if currently_consumable(row, observed)]
-            has_more = len(visible) > limit
-            page = visible[:limit]
-            attempts = uow.attempts.list_for_learner(
-                principal_id, [item.assignment_id for item in page]
+            has_more = len(rows) > limit
+            page = rows[:limit]
+            items = _page_models(
+                uow, principal_id, page, include_resource=include_resource
             )
-            by_assignment: dict[UUID, list] = {}
-            for attempt in attempts:
-                by_assignment.setdefault(attempt.teaching_assignment_id, []).append(
-                    attempt
-                )
-            items: list[StudentAssignmentReadModel] = []
-            for assignment in page:
-                related = tuple(by_assignment.get(assignment.assignment_id, ()))
-                summary = derive_attempt_summary(related)
-                in_progress = next(
-                    (
-                        item
-                        for item in related
-                        if item.lifecycle_state.value == ATTEMPT_SUMMARY_IN_PROGRESS
-                    ),
-                    None,
-                )
-                submitted = next(
-                    (
-                        item
-                        for item in related
-                        if item.lifecycle_state.value == "SUBMITTED"
-                    ),
-                    None,
-                )
-                attempt_id = None
-                if in_progress is not None:
-                    attempt_id = in_progress.attempt_id.value
-                elif submitted is not None:
-                    attempt_id = submitted.attempt_id.value
-                resource = None
-                if include_resource:
-                    resource = load_learner_resource(uow, assignment)
-                items.append(
-                    StudentAssignmentReadModel(
-                        assignment_id=assignment.assignment_id,
-                        class_ref=assignment.class_ref,
-                        available_from=assignment.available_from,
-                        due_at=assignment.due_at,
-                        lifecycle_state=assignment.lifecycle_state,
-                        currently_consumable=True,
-                        content_id=assignment.content_id,
-                        content_version_id=assignment.content_version_id,
-                        attempt_summary=summary,
-                        attempt_id=attempt_id,
-                        resource=resource,
-                    )
-                )
         return StudentAssignmentListResult(items=tuple(items), has_more=has_more)
+
+    def count(
+        self,
+        execution_tenant_id: UUID,
+        principal_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> int:
+        require_human_learner(self._classification, principal_id)
+        observed = _now(now)
+        class_refs = self._class_refs(execution_tenant_id, principal_id)
+        with self._uow_factory(execution_tenant_id) as uow:
+            return uow.count_current_assignments(class_refs, now=observed)
 
 
 class GetCurrentAssignmentService:
     def __init__(
         self,
-        uow_factory: SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+        uow_factory: StudentLearningCommandUnitOfWorkFactory,
         membership_reader: SchoolContextLearnerMembershipReader,
         classification: CurrentPrincipalClassificationAuthority,
     ) -> None:
@@ -169,38 +209,8 @@ class GetCurrentAssignmentService:
                     principal_id, assignment.assignment_id
                 )
             )
-            summary = derive_attempt_summary(related)
-            in_progress = next(
-                (
-                    item
-                    for item in related
-                    if item.lifecycle_state.value == ATTEMPT_SUMMARY_IN_PROGRESS
-                ),
-                None,
-            )
-            submitted = next(
-                (item for item in related if item.lifecycle_state.value == "SUBMITTED"),
-                None,
-            )
-            attempt_id = None
-            if in_progress is not None:
-                attempt_id = in_progress.attempt_id.value
-            elif submitted is not None:
-                attempt_id = submitted.attempt_id.value
             resource = load_learner_resource(uow, assignment)
-        return StudentAssignmentReadModel(
-            assignment_id=assignment.assignment_id,
-            class_ref=assignment.class_ref,
-            available_from=assignment.available_from,
-            due_at=assignment.due_at,
-            lifecycle_state=assignment.lifecycle_state,
-            currently_consumable=True,
-            content_id=assignment.content_id,
-            content_version_id=assignment.content_version_id,
-            attempt_summary=summary,
-            attempt_id=attempt_id,
-            resource=resource,
-        )
+        return _read_model(assignment, related, resource)
 
 
 class GetStudentHomeService:
@@ -217,10 +227,15 @@ class GetStudentHomeService:
         listed = self._list_service.list(
             execution_tenant_id,
             principal_id,
-            limit=MAX_LIST_LIMIT,
+            limit=HOME_SLICE,
+            now=now,
+        )
+        counted = self._list_service.count(
+            execution_tenant_id,
+            principal_id,
             now=now,
         )
         return StudentHomeReadModel(
-            current_assignment_count=len(listed.items),
-            items=listed.items[:HOME_SLICE],
+            current_assignment_count=counted,
+            items=listed.items,
         )

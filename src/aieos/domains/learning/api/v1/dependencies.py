@@ -18,8 +18,10 @@ from aieos.domains.learning.application.get_attempt import GetAttemptService
 from aieos.domains.learning.application.save_responses import SaveResponsesService
 from aieos.domains.learning.application.start_attempt import StartAttemptService
 from aieos.domains.learning.application.submit_attempt import SubmitAttemptService
+from aieos.platform.api.pagination import CursorCodec
 
 __all__ = [
+    "cursor_codec",
     "get_attempt_service",
     "get_current_assignment_service",
     "get_student_home_service",
@@ -29,6 +31,10 @@ __all__ = [
     "start_attempt_service",
     "submit_attempt_service",
 ]
+
+
+def cursor_codec(request: Request) -> CursorCodec:
+    return request.app.state.cursor_codec
 
 
 def _require(request: Request, name: str):

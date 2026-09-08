@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from aieos.domains.learning.api.v1.dependencies import (
+    cursor_codec,
     get_attempt_service,
     get_current_assignment_service,
     get_student_home_service,
@@ -50,6 +51,7 @@ from aieos.domains.learning.application.submit_attempt import SubmitAttemptServi
 from aieos.platform.api.etag import encode_revision_etag
 from aieos.platform.api.idempotency_key import parse_idempotency_key
 from aieos.platform.api.if_match import parse_if_match
+from aieos.platform.api.pagination import CursorCodec, StudentAssignmentCursor
 from aieos.platform.api.problems import ProblemDetails
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.security.context import TrustedSecurityContext
@@ -183,17 +185,43 @@ def student_os_assignment_list(
     service: Annotated[
         ListCurrentAssignmentsService, Depends(list_current_assignments_service)
     ],
+    codec: Annotated[CursorCodec, Depends(cursor_codec)],
     limit: Annotated[int | None, Query(ge=1)] = None,
+    cursor: str | None = None,
 ) -> StudentAssignmentListResponse:
     if limit is not None and limit > MAX_LIST_LIMIT:
         raise InvalidLearnerRequest("list limit exceeds the maximum of 100")
     page_size = DEFAULT_LIST_LIMIT if limit is None else limit
+    after_updated_at = None
+    after_assignment_id = None
+    if cursor is not None:
+        decoded = codec.decode_student_assignments(
+            cursor, expected_tenant_id=context.tenant_id
+        )
+        after_updated_at = decoded.updated_at
+        after_assignment_id = decoded.assignment_id
     result = service.list(
-        context.tenant_id, context.principal_id, limit=page_size
+        context.tenant_id,
+        context.principal_id,
+        limit=page_size,
+        after_updated_at=after_updated_at,
+        after_assignment_id=after_assignment_id,
     )
+    items = [_assignment_response(item) for item in result.items]
+    next_cursor = None
+    if result.has_more and result.items:
+        last = result.items[-1]
+        next_cursor = codec.encode_student_assignments(
+            StudentAssignmentCursor(
+                tenant_id=context.tenant_id,
+                updated_at=last.updated_at,
+                assignment_id=last.assignment_id,
+            )
+        )
     return StudentAssignmentListResponse(
-        items=[_assignment_response(item) for item in result.items],
-        has_more=result.has_more,
+        items=items,
+        next_cursor=next_cursor,
+        has_more=next_cursor is not None,
     )
 
 

@@ -21,11 +21,11 @@ from aieos.domains.learning.application.learner_membership import (
     SchoolContextLearnerMembershipAuthority,
 )
 from aieos.domains.learning.application.models import AttemptReadModel, attempt_read_model
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWorkFactory,
+)
 from aieos.domains.learning.domain.identities import AttemptId
 from aieos.domains.learning.domain.lifecycle import AttemptLifecycleState
-from aieos.platform.runtime.student_learning_command import (
-    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
-)
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
 )
@@ -34,7 +34,7 @@ from aieos.platform.security.authorization.principal_classification import (
 class GetAttemptService:
     def __init__(
         self,
-        uow_factory: SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+        uow_factory: StudentLearningCommandUnitOfWorkFactory,
         membership: SchoolContextLearnerMembershipAuthority,
         classification: CurrentPrincipalClassificationAuthority,
     ) -> None:

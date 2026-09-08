@@ -16,7 +16,7 @@ grading, Temporal, MCP, `max_attempts`, or `ABANDONED`.
 | LearnerAttempt / LearnerSubmission | Remain Learning SoR |
 | Cross-domain PostgreSQL FK | **None** |
 | Composed command transaction | `SqlAlchemyStudentLearningCommandUnitOfWork` |
-| Membership | Current School Context check **before** the DB transaction |
+| Membership | Current School Context check **outside** the local command transaction; established idempotent replay does not re-require it |
 | Lock order | TeachingAssignment `get_for_update` **then** LearnerAttempt `get_for_update` |
 | Learner-safe projection | Positive allowlist only |
 | S01 attempts | **ONE ATTEMPT ONLY** |
@@ -52,7 +52,12 @@ Visibility: ACTIVE HUMAN + current membership ClassRefs + tenant +
 `lifecycle_state = ACTIVE` + `available_from <= now`. Teacher ownership is
 not used. `due_at` in the past remains consumable while ACTIVE. CLOSED and
 CANCELLED are not current. Attempt summary is a **read-only derivation**:
-`NOT_STARTED` / `IN_PROGRESS` / `SUBMITTED`. Pagination: default 20, max 100.
+`NOT_STARTED` / `IN_PROGRESS` / `SUBMITTED`. Pagination is a signed cursor
+over `updated_at DESC, assignment_id DESC` (default 20, max 100). SQL applies
+authority filters **before** `LIMIT`. `GET /student-os/assignments` accepts
+`limit` and `cursor` and returns `items` plus `next_cursor`. Student Home
+`current_assignment_count` is the exact current-authority count; the item
+slice remains `HOME_SLICE`.
 
 ## One-attempt start / save / submit
 
@@ -98,7 +103,25 @@ Alembic `a360s010002` extends `security.audit_records` CHECKs only:
 - `learning.attempt.save_responses` (increment)
 - `learning.attempt.submit` (increment)
 
-No new learning tables. Teaching/content schemas unchanged.
+Chief Architect authorized `a360s010002` during I03 exact-head review because
+the existing closed security audit CHECK vocabulary requires a forward
+migration for the frozen I03 mutation-audit actions. This is **not** a new
+ADR. No learning/teaching/content table DDL. No `a360s010003`.
+
+## Idempotent replay
+
+An exact successful Idempotency-Key replay is an established-outcome replay,
+not a fresh current-authority mutation. Trusted tenant, authenticated current
+HUMAN Principal, same learner identity, and target ownership remain required.
+Current membership and Assignment ACTIVE/available authority are **not**
+re-required merely to replay an already-committed exact outcome. Fresh
+commands still require live authority. Another learner can never replay the
+outcome.
+
+Membership is not evaluated while a local PostgreSQL transaction or
+idempotency row lock is held. A short local lookup either replays or proceeds
+to live membership, then a fresh command transaction acquires the idempotency
+scope and rechecks before mutating.
 
 ## Explicit non-goals (S01-I04+)
 

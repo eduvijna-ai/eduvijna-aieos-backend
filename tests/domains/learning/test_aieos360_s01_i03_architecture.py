@@ -159,6 +159,9 @@ class TestArchitectureIsolation:
         assert "learning.attempt.start" in sql
         assert "learning.attempt.save_responses" in sql
         assert "learning.attempt.submit" in sql
+        assert "Chief Architect authorized a360s010002" in sql
+        assert "CREATE TABLE learning" not in sql
+        assert "CREATE TABLE teaching" not in sql
 
     def test_event_type_strings_live_outside_learning_domain(self) -> None:
         learning = "\n".join(
@@ -187,6 +190,20 @@ class TestOpenApiContract:
         get_attempt = paths["/api/v1/learning/attempts/{attempt_id}"]["get"]
         assert get_attempt["operationId"] == "learning_attempt_get"
         assert "If-Match" not in _header_names(get_attempt)
+        listed = paths["/api/v1/student-os/assignments"]["get"]
+        assert listed["operationId"] == "student_os_assignment_list"
+        list_params = {
+            p["name"]
+            for p in listed.get("parameters", [])
+            if isinstance(p, dict) and p.get("in") == "query"
+        }
+        assert {"limit", "cursor"} <= list_params
+        list_schema = listed["responses"]["200"]["content"]["application/json"]["schema"]
+        assert list_schema is not None
+        list_model = schema["components"]["schemas"]["StudentAssignmentListResponse"]
+        assert "next_cursor" in list_model["properties"]
+        assert "items" in list_model["properties"]
+        assert "has_more" in list_model["properties"]
 
     def test_openapi_snapshot_matches_release_pin(self) -> None:
         schema = _schema()

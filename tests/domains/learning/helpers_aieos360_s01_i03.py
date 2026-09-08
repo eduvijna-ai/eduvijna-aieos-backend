@@ -68,6 +68,9 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 )
 from aieos.platform.api.app import create_app
 from aieos.platform.events.models import MutationEventContext
+from aieos.platform.runtime.student_learning_command import (
+    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
+)
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.domains.education.test_tos_dev04_i03_content_payloads import (
     valid_homework_payload,
@@ -597,6 +600,9 @@ def build_student_client(
             teacher_principal_id=principal_id,
         ),
         learner_membership_reader=reader,  # type: ignore[arg-type]
+        student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
+            runtime_engine
+        ),
     )
     return TestClient(app, raise_server_exceptions=False)
 
@@ -804,6 +810,24 @@ def fetch_submissions(
     if attempt_id is not None:
         sql += " AND attempt_id = :aid"
         params["aid"] = attempt_id
+    with bootstrap_engine.connect() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def fetch_attempts(
+    bootstrap_engine: Engine, *, tenant_id: UUID, assignment_id: UUID | None = None
+) -> list[dict]:
+    sql = """
+        SELECT attempt_id, learner_principal_id, teaching_assignment_id,
+               lifecycle_state, aggregate_revision
+        FROM learning.attempts
+        WHERE tenant_id = :tid
+    """
+    params: dict = {"tid": tenant_id}
+    if assignment_id is not None:
+        sql += " AND teaching_assignment_id = :aid"
+        params["aid"] = assignment_id
     with bootstrap_engine.connect() as conn:
         rows = conn.execute(text(sql), params).mappings().all()
     return [dict(row) for row in rows]

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.engine import Connection
 
 from aieos.domains.teaching.application.errors import PersistenceInvariantViolation
@@ -383,9 +384,12 @@ class SqlAlchemyTeachingAssignmentRepository:
         self,
         *,
         class_refs: Sequence[str],
+        now: datetime,
         limit: int,
+        after_updated_at: datetime | None = None,
+        after_assignment_id: UUID | None = None,
     ) -> list[TeachingAssignment]:
-        """Student current-assignment query. Tenant + class_ref IN, no teacher ownership."""
+        """Student current-assignment query. Filters authority in SQL before LIMIT."""
         normalized = tuple(ref for ref in class_refs if ref)
         if not normalized:
             return []
@@ -395,6 +399,7 @@ class SqlAlchemyTeachingAssignmentRepository:
                 assignments_table.c.tenant_id == self._execution_tenant_id,
                 assignments_table.c.class_ref.in_(normalized),
                 assignments_table.c.lifecycle_state == "ACTIVE",
+                assignments_table.c.available_from <= now,
             )
             .order_by(
                 assignments_table.c.updated_at.desc(),
@@ -402,11 +407,47 @@ class SqlAlchemyTeachingAssignmentRepository:
             )
             .limit(limit)
         )
+        if after_updated_at is not None and after_assignment_id is not None:
+            statement = statement.where(
+                or_(
+                    assignments_table.c.updated_at < after_updated_at,
+                    and_(
+                        assignments_table.c.updated_at == after_updated_at,
+                        assignments_table.c.assignment_id < after_assignment_id,
+                    ),
+                )
+            )
         try:
             rows = self._connection.execute(statement).mappings().all()
         except Exception as exc:
             reraise_as_application_error(exc)
         return [teaching_assignment_from_row(row) for row in rows]
+
+    def count_current_for_class_refs(
+        self,
+        *,
+        class_refs: Sequence[str],
+        now: datetime,
+    ) -> int:
+        """Exact current-assignment count using the same SQL authority as the list."""
+        normalized = tuple(ref for ref in class_refs if ref)
+        if not normalized:
+            return 0
+        statement = (
+            select(func.count())
+            .select_from(assignments_table)
+            .where(
+                assignments_table.c.tenant_id == self._execution_tenant_id,
+                assignments_table.c.class_ref.in_(normalized),
+                assignments_table.c.lifecycle_state == "ACTIVE",
+                assignments_table.c.available_from <= now,
+            )
+        )
+        try:
+            counted = self._connection.execute(statement).scalar_one()
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        return int(counted)
 
 
 def teaching_execution_from_row(

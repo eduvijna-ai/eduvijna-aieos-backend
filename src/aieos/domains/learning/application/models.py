@@ -60,6 +60,7 @@ class AssignmentConsumptionView:
     available_from: datetime
     due_at: datetime | None
     aggregate_revision: int
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +121,7 @@ class StudentAssignmentReadModel:
     content_version_id: UUID
     attempt_summary: str
     attempt_id: UUID | None
+    updated_at: datetime
     resource: LearnerResource | None = None
 
 

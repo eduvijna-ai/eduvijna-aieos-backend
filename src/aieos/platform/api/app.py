@@ -140,6 +140,9 @@ from aieos.domains.learning.application.learner_membership import (
     SchoolContextLearnerMembershipReader,
     UnconfiguredSchoolContextLearnerMembershipReader,
 )
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWorkFactory,
+)
 from aieos.domains.learning.application.save_responses import SaveResponsesService
 from aieos.domains.learning.application.start_attempt import StartAttemptService
 from aieos.domains.learning.application.submit_attempt import SubmitAttemptService
@@ -159,9 +162,6 @@ from aieos.platform.api.context import RequestContextMiddleware
 from aieos.platform.api.openapi import build_openapi
 from aieos.platform.api.pagination import CursorCodec
 from aieos.platform.api.problems import install_exception_handlers
-from aieos.platform.runtime.student_learning_command import (
-    SqlAlchemyStudentLearningCommandUnitOfWorkFactory,
-)
 from aieos.platform.security.authenticator import RequestIdentityAuthenticator
 from aieos.platform.security.authorization import (
     CurrentPrincipalClassificationAuthority,
@@ -230,6 +230,7 @@ def create_app(
         HumanPrincipalClassificationGate | None
     ) = None,
     learner_membership_reader: SchoolContextLearnerMembershipReader | None = None,
+    student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -559,11 +560,7 @@ def create_app(
     membership_authority = SchoolContextLearnerMembershipAuthorityService(
         membership_reader
     )
-    student_uow_factory = None
-    if isinstance(getattr(teaching_uow_factory, "_engine", None), Engine):
-        student_uow_factory = SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
-            teaching_uow_factory._engine
-        )
+    student_uow_factory = student_learning_uow_factory
     if student_uow_factory is not None:
         app.state.list_current_assignments_service = ListCurrentAssignmentsService(
             student_uow_factory,

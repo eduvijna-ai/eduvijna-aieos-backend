@@ -20,6 +20,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- AIEOS360-S01-I03R1 — Exact Idempotency-Key replay is an established-outcome
+  replay (membership/ACTIVE authority not re-required); TRUE_FALSE HTTP input
+  is StrictBool; current-assignment list uses signed cursor pagination with
+  `available_from` filtered in SQL before LIMIT; Student Home reports an exact
+  current-assignment count; Learning application depends on a UoW port with
+  explicit runtime composition. Chief Architect authorized `a360s010002`
+  during I03 exact-head review for closed security-audit CHECK vocabulary.
+  Alembic head remains `a360s010002`.
+
 - AIEOS360-S01-I02R1 — LearnerSubmission snapshot is deeply immutable
   (`SubmissionResponseItem` value objects; no nested mutable dicts) and
   reconstructed snapshots revalidate S01 bounds. Response-item DB guard

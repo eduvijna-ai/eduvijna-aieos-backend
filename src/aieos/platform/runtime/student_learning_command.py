@@ -4,8 +4,10 @@ One SQLAlchemy Connection/transaction binds TeachingAssignment lock/read,
 Learning attempt/response/submission writes, Content exact-version load,
 platform idempotency, security mutation audit, and transactional outbox.
 
-Does not import Teaching or Learning Units of Work. Membership is evaluated
-before this transaction begins.
+Does not import Teaching or Learning Units of Work. Established idempotent
+replays are looked up in a short local transaction; live membership is
+evaluated outside any local PostgreSQL transaction. Fresh mutations recheck
+idempotency under the row lock inside one command transaction.
 """
 
 from __future__ import annotations
@@ -149,13 +151,33 @@ class SqlAlchemyStudentLearningCommandUnitOfWork:
             return None
         return _assignment_view(loaded)
 
-    def list_assignments_for_class_refs(
-        self, class_refs: Sequence[str], *, limit: int
+    def list_current_assignments(
+        self,
+        class_refs: Sequence[str],
+        *,
+        now: datetime,
+        limit: int,
+        after_updated_at: datetime | None = None,
+        after_assignment_id: UUID | None = None,
     ) -> list[AssignmentConsumptionView]:
         rows = self.assignments.list_for_class_refs(
-            class_refs=class_refs, limit=limit
+            class_refs=class_refs,
+            now=now,
+            limit=limit,
+            after_updated_at=after_updated_at,
+            after_assignment_id=after_assignment_id,
         )
         return [_assignment_view(row) for row in rows]
+
+    def count_current_assignments(
+        self,
+        class_refs: Sequence[str],
+        *,
+        now: datetime,
+    ) -> int:
+        return self.assignments.count_current_for_class_refs(
+            class_refs=class_refs, now=now
+        )
 
     def load_exact_assigned_content(
         self, content_id: UUID, content_version_id: UUID
@@ -305,4 +327,5 @@ def _assignment_view(assignment) -> AssignmentConsumptionView:
         available_from=assignment.available_from,
         due_at=assignment.due_at,
         aggregate_revision=int(assignment.aggregate_revision),
+        updated_at=assignment.updated_at,
     )

@@ -12,8 +12,10 @@ from aieos.domains.learning.application.errors import (
     AssignmentNotYetAvailable,
     ContentNotLearnerConsumable,
     ExactContentVersionNotFound,
+    IdempotencyKeyReused,
     LearnerAttemptForbidden,
     LearnerClassMembershipDenied,
+    PersistenceInvariantViolation,
 )
 from aieos.domains.learning.application.learner_membership import (
     SchoolContextLearnerMembershipAuthority,
@@ -24,10 +26,14 @@ from aieos.domains.learning.application.models import (
     ASSIGNMENT_LIFECYCLE_CANCELLED,
     ASSIGNMENT_LIFECYCLE_CLOSED,
     AssignmentConsumptionView,
+    AttemptReadModel,
     LearnerResource,
+    attempt_read_model,
     currently_consumable,
 )
 from aieos.domains.learning.domain.attempt import LearnerAttempt
+from aieos.domains.learning.domain.identities import AttemptId
+from aieos.platform.idempotency.models import IdempotencyScope
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
 )
@@ -60,6 +66,34 @@ def conceal_membership_denied(exc: LearnerClassMembershipDenied) -> AssignmentNo
 def require_owner(attempt: LearnerAttempt, learner_principal_id: UUID) -> None:
     if attempt.learner_principal_id != learner_principal_id:
         raise LearnerAttemptForbidden("LearnerAttempt is not visible")
+
+
+def established_idempotent_replay(
+    uow,
+    *,
+    scope: IdempotencyScope,
+    fingerprint: str,
+    principal_id: UUID,
+    missing_message: str,
+) -> AttemptReadModel | None:
+    """Replay an already-committed exact outcome without live current authority.
+
+    Caller must already have authenticated the current HUMAN Principal and
+    bound the idempotency scope to that same learner. Does not acquire the
+    idempotency row lock; the fresh-mutation path rechecks under acquire_scope.
+    """
+
+    existing = uow.idempotency.get(scope)
+    if existing is None:
+        return None
+    if existing.request_fingerprint_sha256 != fingerprint:
+        raise IdempotencyKeyReused("idempotency key already bound")
+    replayed = uow.attempts.get(AttemptId(existing.result_content_id))
+    if replayed is None:
+        raise PersistenceInvariantViolation(missing_message)
+    require_owner(replayed, principal_id)
+    responses = tuple(uow.responses.list_for_attempt(replayed.attempt_id))
+    return attempt_read_model(replayed, responses)
 
 
 def require_locked_assignment_consumable(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 class LearnerObjectiveResponse(BaseModel):
@@ -58,6 +58,7 @@ class StudentAssignmentListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[StudentAssignmentResponse]
+    next_cursor: str | None
     has_more: bool
 
 
@@ -103,7 +104,7 @@ class AttemptResponseWriteRequest(BaseModel):
     response_kind: str = Field(min_length=1)
     choice_value: str | None = None
     text_value: str | None = None
-    boolean_value: bool | None = None
+    boolean_value: StrictBool | None = None
 
 
 class AttemptResponsesReplaceRequest(BaseModel):

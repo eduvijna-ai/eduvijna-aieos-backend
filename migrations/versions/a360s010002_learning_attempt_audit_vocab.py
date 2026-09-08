@@ -1,13 +1,17 @@
 """AIEOS360-S01-I03 learning attempt audit vocabulary.
 
-Extends security.audit_records CHECK lists for learner mutations:
+Chief Architect authorized a360s010002 during I03 exact-head review because
+the existing closed security audit CHECK vocabulary requires a forward
+migration for the frozen I03 mutation-audit actions:
 
   * learning.attempt.start          (create family: before NULL, after 0)
   * learning.attempt.save_responses (increment: after = before + 1)
   * learning.attempt.submit         (increment)
 
-Does not create learning tables or change teaching/content schemas.
-Learning tables remain those created by a360s010001.
+This is not a new ADR. Scope is strictly security.audit_records
+action/revision vocabulary expansion. Does not create learning tables or
+change teaching/content schemas. Learning tables remain those created by
+a360s010001.
 
 Revision ID: a360s010002
 Revises: a360s010001

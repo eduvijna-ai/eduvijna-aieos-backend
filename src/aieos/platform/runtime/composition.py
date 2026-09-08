@@ -17,6 +17,9 @@ from aieos.domains.content.application.ports import (
     ReviewCommentPolicy,
 )
 from aieos.domains.content.domain.schema import ContentSchemaRegistry
+from aieos.domains.learning.application.ports import (
+    StudentLearningCommandUnitOfWorkFactory,
+)
 from aieos.domains.teaching.application.ports import (
     TeachingUnitOfWorkFactory,
     TeachingWorkAuthorization,
@@ -65,6 +68,7 @@ class ApiRuntimeDependencies:
     mutation_activation_gate: ApiMutationActivationGate
     principal_classification_authority: HumanPrincipalClassificationGate
     teaching_authorization: TeachingWorkAuthorization | None = None
+    student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None
 
 
 def compose_api_application(
@@ -98,6 +102,7 @@ def compose_api_application(
         principal_classification_authority=(
             dependencies.principal_classification_authority
         ),
+        student_learning_uow_factory=dependencies.student_learning_uow_factory,
     )
     app.state.release_identity = ReleaseIdentity(
         application_version=config.release_identity.application_version,
