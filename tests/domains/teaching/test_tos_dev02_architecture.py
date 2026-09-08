@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -117,10 +118,15 @@ class TestNoTeachingIntentSystemOfRecord:
                 ):
                     continue
                 table = first.value.lower()
+                mission_table = (
+                    table == "mission"
+                    or table.startswith("mission_")
+                    or table.endswith("_mission")
+                )
                 forbidden = (
-                    "intent" in table or "mission" in table
+                    "intent" in table or mission_table
                     if in_teaching
-                    else "teaching_intent" in table or "mission" in table
+                    else "teaching_intent" in table or mission_table
                 )
                 if forbidden:
                     offenders.append(f"{path.name}:{table}")
@@ -178,7 +184,9 @@ class TestNoTeachingIntentSystemOfRecord:
 class TestMissionIsAProjection:
     def test_no_migration_creates_a_mission_table(self) -> None:
         sql = _all_migration_sql()
-        assert "mission" not in sql
+        assert "create table teaching.mission" not in sql
+        assert "create table teaching.missions" not in sql
+        assert not re.search(r"\bmission\b", sql)
 
     def test_teaching_migration_creates_exactly_one_table(self) -> None:
         sql = _migration_sql()

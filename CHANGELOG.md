@@ -7,6 +7,17 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- AIEOS360-S01-I02 — Learning-domain LearnerAttempt + typed
+  AttemptResponseItems + immutable LearnerSubmission PostgreSQL SoR
+  (`learning.attempts`, `learning.attempt_response_items`,
+  `learning.submissions`, Alembic `a360s010001`). Tenant RLS, one-IN_PROGRESS
+  partial uniqueness, future-capable attempt_number uniqueness, response
+  mutation guard, submission immutability, and Learning UoW/CAS. S01 remains
+  one-attempt product policy; no Student HTTP, no authoritative eligibility
+  orchestration, no Learning NATS publication. OpenAPI unchanged.
+
 ### Fixed
 
 - AIEOS360-S01-I01R1 — Student development authentication and synthetic

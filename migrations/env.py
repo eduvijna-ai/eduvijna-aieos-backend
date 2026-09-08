@@ -21,6 +21,9 @@ from aieos.domains.teaching.infrastructure.persistence import models as _teachin
 from aieos.domains.assessment.infrastructure.persistence import (  # noqa: F401
     models as _assessment_models,
 )
+from aieos.domains.learning.infrastructure.persistence import (  # noqa: F401
+    models as _learning_models,
+)
 from aieos.platform.ai.infrastructure.persistence import (
     models as _generation_run_models,  # noqa: F401
 )
