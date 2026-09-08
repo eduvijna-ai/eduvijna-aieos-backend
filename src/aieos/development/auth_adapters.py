@@ -8,6 +8,7 @@ Naming intentionally avoids architecture-forbidden production-fake substrings.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from uuid import UUID
 
 from aieos.domains.content.application.errors import ReviewForbidden
@@ -31,6 +32,31 @@ class DevelopmentPrincipalAuthenticator:
 
     def authenticate(self, request) -> TrustedRequestIdentity:
         return TrustedRequestIdentity(principal_id=self.principal_id)
+
+
+class DevelopmentMappedPrincipalAuthenticator:
+    """Development-only explicit bearer alias → PrincipalId mapping.
+
+    Unknown or missing token → unauthenticated. The bearer value is never
+    treated as a Principal UUID. Must never be imported by production
+    composition. Does not replace ``DevelopmentPrincipalAuthenticator`` for
+    Teacher OS.
+    """
+
+    def __init__(self, token_to_principal: Mapping[str, UUID]) -> None:
+        self._token_to_principal = dict(token_to_principal)
+
+    def authenticate(self, request) -> TrustedRequestIdentity:
+        authorization = request.headers.get("Authorization")
+        if authorization is None or not authorization.startswith("Bearer "):
+            raise UnauthenticatedError("unauthenticated")
+        token = authorization[len("Bearer ") :]
+        if not token or any(ch.isspace() for ch in token):
+            raise UnauthenticatedError("unauthenticated")
+        principal_id = self._token_to_principal.get(token)
+        if principal_id is None:
+            raise UnauthenticatedError("unauthenticated")
+        return TrustedRequestIdentity(principal_id=principal_id)
 
 
 class DevelopmentTenantSecurityResolver:

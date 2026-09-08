@@ -9,6 +9,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S01-I01 — Learner membership current-authority read façade under
+  Learning (`SchoolContextLearnerMembershipReader` /
+  `SchoolContextLearnerMembershipAuthorityService`) plus a NON_PRODUCTION
+  synthetic Student A/B HUMAN Principal and class-5a / class-5b membership
+  adapter. ERP/SIS remains roster master; AIEOS is a replaceable check-time
+  façade (no roster SoR, no Student HTTP, no LearnerAttempt/Submission).
+  Production stays fail-closed without a real provider. Teacher OS development
+  fixed-principal authentication is unchanged. Alembic head remains
+  `tosd100001`. OpenAPI unchanged.
 - TOS-CX01-I03 — Groq first-class Model Gateway provider (`provider_id=groq`,
   development model `openai/gpt-oss-120b`) via Groq's OpenAI-compatible Chat
   Completions structured-output path. Explicit `AIEOS_AI_PROVIDER=groq|openai`
