@@ -43,8 +43,8 @@ class TestA360s010002Static:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010002"' in sql
         assert 'down_revision: str | None = "a360s010001"' in sql
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
 
     def test_r1_26_27_28_29_scope_is_security_audit_vocabulary_only(self) -> None:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
@@ -54,7 +54,7 @@ class TestA360s010002Static:
         assert "ALTER TABLE teaching." not in sql
         assert "ALTER TABLE content." not in sql
         assert "DROP TABLE" not in sql
-        names = [path.name for path in MIGRATIONS.glob("a360s010004*.py")]
+        names = [path.name for path in MIGRATIONS.glob("a360s010005*.py")]
         assert names == []
 
     def test_r1_30_33_learning_actions_added_and_existing_vocab_retained(self) -> None:
@@ -118,7 +118,7 @@ class TestA360s010002Postgres:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010003"
+                    == "a360s010004"
                 )
         finally:
             clear_i03_side_effects(bootstrap_engine)

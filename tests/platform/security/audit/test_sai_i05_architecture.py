@@ -48,13 +48,14 @@ BOUNDARY_DOC = REPO_ROOT / "docs" / "GCI-I04-NON-PRODUCTION-MUTATION-BOUNDARY.md
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 SNAPSHOT = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 EXPECTED_OPENAPI_SHA256 = (
-    "4691D6BADA2157D436435BB5CCDD6797EA670D1A87543D42CA39A478F940F330"
+    "58980E749666377D15EBB5F6337CB19F014A037275D0F369B0CFC2E43E89AFBD"
 )
 
 _EXPECTED_MIGRATIONS = [
     "a360s010001_learning_attempt_submission.py",
         "a360s010002_learning_attempt_audit_vocab.py",
         "a360s010003_learner_assessment_evaluation.py",
+        "a360s010004_learner_evaluation_audit_vocab.py",
     "adra045001_dispatcher_candidate_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",
@@ -292,6 +293,7 @@ class TestMutationInventory:
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",
+            "assessment.learner_evaluation.ensure",
             "learning.attempt.start",
             "learning.attempt.save_responses",
             "learning.attempt.submit",

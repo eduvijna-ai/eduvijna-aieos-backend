@@ -34,6 +34,8 @@ _MUTATION_IDEMPOTENCY_IDS = {
     "learning_attempt_start",
     "learning_attempt_save_responses",
     "learning_attempt_submit",
+    "assessment_learner_evaluation_ensure",
+    "assessment_assignment_evaluations_ensure",
 }
 _IF_MATCH_OPERATION_IDS = {
     "content_version_append",

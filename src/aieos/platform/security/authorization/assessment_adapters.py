@@ -16,6 +16,7 @@ from aieos.domains.assessment.application.ports import (
     ASSESSMENT_CLASSROOM_READ,
     ASSESSMENT_CLASSROOM_RECORD,
     ASSESSMENT_CLASSROOM_VOID,
+    ASSESSMENT_LEARNER_EVALUATION_ENSURE,
 )
 from aieos.platform.security.authorization.decisions import AuthorityDecision
 from aieos.platform.security.authorization.kernel import (
@@ -32,6 +33,7 @@ AIEOS_ASSESSMENT_CAPABILITIES: frozenset[str] = frozenset(
         ASSESSMENT_CLASSROOM_VOID,
         ASSESSMENT_CLASSROOM_READ,
         ASSESSMENT_CLASSROOM_LIST,
+        ASSESSMENT_LEARNER_EVALUATION_ENSURE,
     }
 )
 

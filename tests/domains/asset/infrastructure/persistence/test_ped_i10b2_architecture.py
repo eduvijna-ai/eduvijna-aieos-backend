@@ -32,7 +32,7 @@ MIGRATIONS = REPO_ROOT / "migrations" / "versions"
 COMPOSITION = REPO_ROOT / "src" / "aieos" / "platform" / "runtime" / "composition.py"
 OPENAPI = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 EXPECTED_OPENAPI_SHA256 = (
-    "4691D6BADA2157D436435BB5CCDD6797EA670D1A87543D42CA39A478F940F330"
+    "58980E749666377D15EBB5F6337CB19F014A037275D0F369B0CFC2E43E89AFBD"
 )
 _FORBIDDEN_IMPORT_ROOTS = frozenset(
     {
@@ -203,7 +203,7 @@ class TestArchitectureScope:
         dumped = OPENAPI.read_bytes()
         digest = hashlib.sha256(dumped).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
 
     def test_exactly_one_new_migration_and_no_wildcard_resource_match(self) -> None:
         asset_migrations = [

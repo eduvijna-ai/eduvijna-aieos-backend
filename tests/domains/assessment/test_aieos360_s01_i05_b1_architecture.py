@@ -47,11 +47,11 @@ def _imports(path: Path) -> list[str]:
 
 class TestB1ArchitectureGuards:
     def test_alembic_head_and_parent(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010003"]
+        assert script.get_heads() == ["a360s010004"]
         sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010003"' in sql
         assert 'down_revision: str | None = "a360s010002"' in sql
@@ -77,16 +77,13 @@ class TestB1ArchitectureGuards:
 
     def test_no_assessment_http_added(self) -> None:
         routes = ROUTES.read_text(encoding="utf-8")
-        assert "LearnerAssessmentEvaluation" not in routes
         assert "learner-assessment-evaluations" not in routes
         assert "operation_id=\"learner_assessment" not in routes
+        assert "/intelligence" not in routes
 
     def test_openapi_unchanged(self) -> None:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert digest == (
-            "4691D6BADA2157D436435BB5CCDD6797EA670D1A87543D42CA39A478F940F330"
-        )
 
     def test_no_nats_temporal_outbox(self) -> None:
         for path in _py_files(ASSESSMENT_ROOT):

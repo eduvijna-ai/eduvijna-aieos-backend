@@ -114,3 +114,15 @@ class TeachingWorkForbidden(AssessmentApplicationError):
 
 class CompositionConflict(AssessmentApplicationError):
     """Execution and assignment composition facts do not mutually agree."""
+
+
+class LearnerSubmissionNotFound(AssessmentApplicationError):
+    """Immutable LearnerSubmission is not visible in the execution tenant."""
+
+
+class EvaluationLineageConflict(AssessmentApplicationError):
+    """Submission, assignment, and exact ContentVersion lineage disagree."""
+
+
+class EvaluationContentUnsupported(AssessmentApplicationError):
+    """Exact ContentVersion is not a governed evaluation-capable payload."""

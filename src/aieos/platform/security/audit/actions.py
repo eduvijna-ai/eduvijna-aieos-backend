@@ -46,6 +46,7 @@ class SecurityAuditAction(StrEnum):
     ASSESSMENT_CLASSROOM_RECORD = "assessment.classroom.record"
     ASSESSMENT_CLASSROOM_CORRECT = "assessment.classroom.correct"
     ASSESSMENT_CLASSROOM_VOID = "assessment.classroom.void"
+    ASSESSMENT_LEARNER_EVALUATION_ENSURE = "assessment.learner_evaluation.ensure"
     LEARNING_ATTEMPT_START = "learning.attempt.start"
     LEARNING_ATTEMPT_SAVE_RESPONSES = "learning.attempt.save_responses"
     LEARNING_ATTEMPT_SUBMIT = "learning.attempt.submit"
@@ -113,7 +114,10 @@ _TEACHING_INCREMENT_ACTIONS = frozenset(
     }
 )
 _ASSESSMENT_CREATE_ACTIONS = frozenset(
-    {SecurityAuditAction.ASSESSMENT_CLASSROOM_RECORD}
+    {
+        SecurityAuditAction.ASSESSMENT_CLASSROOM_RECORD,
+        SecurityAuditAction.ASSESSMENT_LEARNER_EVALUATION_ENSURE,
+    }
 )
 _ASSESSMENT_INCREMENT_ACTIONS = frozenset(
     {

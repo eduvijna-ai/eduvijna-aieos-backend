@@ -57,6 +57,8 @@ FROZEN_API_MUTATION_OPERATION_IDS: frozenset[str] = frozenset(
         "assessment_classroom_record",
         "assessment_classroom_correct",
         "assessment_classroom_void",
+        "assessment_learner_evaluation_ensure",
+        "assessment_assignment_evaluations_ensure",
         "teacher_os_memory_create",
         "teacher_os_memory_update",
         "learning_attempt_start",

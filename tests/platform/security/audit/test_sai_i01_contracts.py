@@ -145,6 +145,7 @@ class TestActionsAndChannels:
             "assessment.classroom.record",
             "assessment.classroom.correct",
             "assessment.classroom.void",
+            "assessment.learner_evaluation.ensure",
             "learning.attempt.start",
             "learning.attempt.save_responses",
             "learning.attempt.submit",

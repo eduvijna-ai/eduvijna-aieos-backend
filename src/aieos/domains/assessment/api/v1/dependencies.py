@@ -8,6 +8,9 @@ from __future__ import annotations
 from fastapi import Request
 
 from aieos.domains.content.api.v1.dependencies import resolve_trusted_context
+from aieos.domains.assessment.application.evaluation_ensure import (
+    EnsureLearnerAssessmentEvaluationService,
+)
 from aieos.domains.assessment.application.mutations import (
     CorrectClassroomAssessmentService,
     VoidClassroomAssessmentService,
@@ -25,6 +28,7 @@ __all__ = [
     "record_classroom_assessment_service",
     "resolve_trusted_context",
     "void_classroom_assessment_service",
+    "ensure_learner_assessment_evaluation_service",
 ]
 
 
@@ -89,3 +93,17 @@ def list_classroom_assessments_service(
     request: Request,
 ) -> ListClassroomAssessmentsService:
     return request.app.state.list_classroom_assessments_service
+
+
+def ensure_learner_assessment_evaluation_service(
+    request: Request,
+) -> EnsureLearnerAssessmentEvaluationService:
+    _require_school_context(request)
+    service = request.app.state.ensure_learner_assessment_evaluation_service
+    if service is None:
+        from aieos.domains.assessment.application.errors import SchoolContextUnavailable
+
+        raise SchoolContextUnavailable(
+            "LearnerAssessmentEvaluation commands are not composed in this runtime"
+        )
+    return service

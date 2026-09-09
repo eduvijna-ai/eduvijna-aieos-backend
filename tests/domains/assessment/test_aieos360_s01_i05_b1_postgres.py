@@ -231,12 +231,12 @@ class TestMigrationAndShape:
             provision_runtime_grants(bootstrap_engine)
 
     def test_34_resulting_head_is_a360s010003(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010003"
+                == "a360s010004"
             )
         text_sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010003"' in text_sql
