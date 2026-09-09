@@ -11,6 +11,7 @@ from uuid import UUID
 
 from aieos.domains.assessment.application.errors import AssessmentCapabilityForbidden
 from aieos.domains.assessment.application.ports import (
+    ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
     ASSESSMENT_CLASSROOM_CORRECT,
     ASSESSMENT_CLASSROOM_LIST,
     ASSESSMENT_CLASSROOM_READ,
@@ -34,6 +35,7 @@ AIEOS_ASSESSMENT_CAPABILITIES: frozenset[str] = frozenset(
         ASSESSMENT_CLASSROOM_READ,
         ASSESSMENT_CLASSROOM_LIST,
         ASSESSMENT_LEARNER_EVALUATION_ENSURE,
+        ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
     }
 )
 

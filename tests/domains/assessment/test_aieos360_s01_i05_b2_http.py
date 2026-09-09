@@ -717,12 +717,14 @@ class TestGovernanceHttp:
             headers=headers(world.tenant_id, idempotency_key="gov-2"),
         )
         intelligence = client.get(
-            f"/api/v1/assessment/assignments/{world.assignment.assignment_id.value}/intelligence"
+            f"/api/v1/assessment/assignments/{world.assignment.assignment_id.value}/intelligence",
+            headers={"X-AIEOS-Tenant-ID": str(world.tenant_id)},
         )
         evaluate_get = client.get(
             SINGLE_PATH.format(submission_id=world.submission_id)
         )
         assert single.status_code == 200
         assert batch.status_code == 204
-        assert intelligence.status_code == 404
+        assert intelligence.status_code == 200
         assert evaluate_get.status_code == 405
+        # B3 owns GET /intelligence; B2 only proves evaluate remains POST-only.

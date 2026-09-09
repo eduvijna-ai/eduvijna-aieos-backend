@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from aieos.domains.assessment.api.v1.dependencies import (
     correct_classroom_assessment_service,
     ensure_learner_assessment_evaluation_service,
+    get_assignment_assessment_intelligence_service,
     get_classroom_assessment_service,
     list_classroom_assessments_service,
     record_classroom_assessment_service,
@@ -24,10 +25,18 @@ from aieos.domains.assessment.api.v1.models import (
     LearnerAssessmentEvaluationItemResponse,
     LearnerAssessmentEvaluationResponse,
     LearnerAssessmentObjectiveEvidenceResponse,
+    TeacherAssessmentIntelligenceFrequentlyMissedResponse,
+    TeacherAssessmentIntelligenceLearnerResponse,
+    TeacherAssessmentIntelligenceObjectiveRollupResponse,
+    TeacherAssessmentIntelligenceQuestionDistributionResponse,
+    TeacherAssessmentIntelligenceResponse,
 )
 from aieos.domains.assessment.application.audit import api_mutation_audit_provenance
 from aieos.domains.assessment.application.evaluation_ensure import (
     EnsureLearnerAssessmentEvaluationService,
+)
+from aieos.domains.assessment.application.intelligence import (
+    GetAssignmentAssessmentIntelligenceService,
 )
 from aieos.domains.assessment.application.models import (
     ClassroomAssessmentReadModel,
@@ -35,6 +44,7 @@ from aieos.domains.assessment.application.models import (
     LearnerAssessmentEvaluationReadModel,
     ListClassroomAssessmentsQuery,
     RecordClassroomAssessmentCommand,
+    TeacherAssessmentIntelligenceReadModel,
 )
 from aieos.domains.assessment.application.mutations import (
     CorrectClassroomAssessmentService,
@@ -361,3 +371,100 @@ def assessment_assignment_evaluations_ensure(
         audit_provenance=api_mutation_audit_provenance(ctx.principal_id),
     )
     return Response(status_code=204)
+
+
+def _to_intelligence_response(
+    model: TeacherAssessmentIntelligenceReadModel,
+) -> TeacherAssessmentIntelligenceResponse:
+    return TeacherAssessmentIntelligenceResponse(
+        teaching_assignment_id=model.teaching_assignment_id,
+        class_ref=model.class_ref,
+        content_id=model.content_id,
+        content_version_id=model.content_version_id,
+        evaluation_policy_id=model.evaluation_policy_id,
+        evaluation_policy_version=model.evaluation_policy_version,
+        submitted_learner_count=model.submitted_learner_count,
+        evaluated_learner_count=model.evaluated_learner_count,
+        learners=[
+            TeacherAssessmentIntelligenceLearnerResponse(
+                learner_principal_id=learner.learner_principal_id,
+                submission_id=learner.submission_id,
+                evaluation_state=learner.evaluation_state,
+                evaluation_id=learner.evaluation_id,
+                evaluation_policy_id=learner.evaluation_policy_id,
+                evaluation_policy_version=learner.evaluation_policy_version,
+                evaluated_at=learner.evaluated_at,
+                items=[
+                    LearnerAssessmentEvaluationItemResponse(
+                        question_id=item.question_id,
+                        question_type=item.question_type,
+                        outcome=item.outcome,
+                        evaluation_method=item.evaluation_method,
+                        objective_ids=list(item.objective_ids),
+                        response_kind=item.response_kind,
+                    )
+                    for item in learner.items
+                ],
+                objective_evidence=[
+                    LearnerAssessmentObjectiveEvidenceResponse(
+                        objective_id=row.objective_id,
+                        result=row.result,
+                    )
+                    for row in learner.objective_evidence
+                ],
+            )
+            for learner in model.learners
+        ],
+        question_distributions=[
+            TeacherAssessmentIntelligenceQuestionDistributionResponse(
+                question_id=row.question_id,
+                correct=row.correct,
+                incorrect=row.incorrect,
+                unanswered=row.unanswered,
+                open_response_unevaluated=row.open_response_unevaluated,
+                unevaluated_policy_reject=row.unevaluated_policy_reject,
+            )
+            for row in model.question_distributions
+        ],
+        frequently_missed_questions=[
+            TeacherAssessmentIntelligenceFrequentlyMissedResponse(
+                question_id=row.question_id,
+                incorrect_count=row.incorrect_count,
+            )
+            for row in model.frequently_missed_questions
+        ],
+        objective_evidence_rollups=[
+            TeacherAssessmentIntelligenceObjectiveRollupResponse(
+                objective_id=row.objective_id,
+                insufficient_evidence=row.insufficient_evidence,
+                demonstrated_on_submitted_items=row.demonstrated_on_submitted_items,
+                mixed_on_submitted_items=row.mixed_on_submitted_items,
+                not_yet_demonstrated_on_submitted_items=(
+                    row.not_yet_demonstrated_on_submitted_items
+                ),
+            )
+            for row in model.objective_evidence_rollups
+        ],
+    )
+
+
+@router.get(
+    "/assessment/assignments/{assignment_id}/intelligence",
+    response_model=TeacherAssessmentIntelligenceResponse,
+    operation_id="assessment_assignment_intelligence",
+    responses=_GET_RESPONSES,
+)
+def assessment_assignment_intelligence(
+    assignment_id: UUID,
+    ctx: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        GetAssignmentAssessmentIntelligenceService,
+        Depends(get_assignment_assessment_intelligence_service),
+    ],
+) -> TeacherAssessmentIntelligenceResponse:
+    result = service.get(
+        ctx.tenant_id,
+        ctx.principal_id,
+        assignment_id=assignment_id,
+    )
+    return _to_intelligence_response(result)

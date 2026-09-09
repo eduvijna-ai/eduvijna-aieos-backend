@@ -360,6 +360,31 @@ class SqlAlchemyLearnerAssessmentEvaluationRepository:
             return None
         return self._hydrate(row)
 
+    def list_for_teaching_assignment(
+        self, teaching_assignment_id: UUID
+    ) -> tuple[LearnerAssessmentEvaluation, ...]:
+        try:
+            rows = (
+                self._connection.execute(
+                    select(learner_assessment_evaluations_table)
+                    .where(
+                        learner_assessment_evaluations_table.c.tenant_id
+                        == self._execution_tenant_id,
+                        learner_assessment_evaluations_table.c.teaching_assignment_id
+                        == teaching_assignment_id,
+                    )
+                    .order_by(
+                        learner_assessment_evaluations_table.c.evaluated_at,
+                        learner_assessment_evaluations_table.c.evaluation_id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        return tuple(self._hydrate(row) for row in rows)
+
     def _insert_parent(
         self, evaluation: LearnerAssessmentEvaluation
     ) -> EvaluationId | None:

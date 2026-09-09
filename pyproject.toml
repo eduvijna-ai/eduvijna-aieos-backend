@@ -110,4 +110,5 @@ markers = [
     "aieos360_s01_i03r1: AIEOS360-S01-I03R1 replay, pagination, and composition corrections",
     "aieos360_s01_i05_b1: AIEOS360-S01-I05-B1 Assessment evaluation persistence and deterministic evaluator",
     "aieos360_s01_i05_b2: AIEOS360-S01-I05-B2 Assessment evaluation application/API composition",
+    "aieos360_s01_i05_b3: AIEOS360-S01-I05-B3 Teacher Assessment Intelligence GET projection",
 ]

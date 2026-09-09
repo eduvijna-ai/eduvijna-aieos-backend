@@ -34,6 +34,7 @@ ASSESSMENT_CLASSROOM_VOID = "assessment.classroom.void"
 ASSESSMENT_CLASSROOM_READ = "assessment.classroom.read"
 ASSESSMENT_CLASSROOM_LIST = "assessment.classroom.list"
 ASSESSMENT_LEARNER_EVALUATION_ENSURE = "assessment.learner_evaluation.ensure"
+ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ = "assessment.assignment.intelligence.read"
 
 AIEOS_ASSESSMENT_CAPABILITIES = frozenset(
     {
@@ -43,6 +44,7 @@ AIEOS_ASSESSMENT_CAPABILITIES = frozenset(
         ASSESSMENT_CLASSROOM_READ,
         ASSESSMENT_CLASSROOM_LIST,
         ASSESSMENT_LEARNER_EVALUATION_ENSURE,
+        ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
     }
 )
 
@@ -108,6 +110,10 @@ class LearnerAssessmentEvaluationRepository(Protocol):
         evaluation_policy_id: str,
         evaluation_policy_version: int,
     ) -> LearnerAssessmentEvaluation | None: ...
+
+    def list_for_teaching_assignment(
+        self, teaching_assignment_id: UUID
+    ) -> tuple[LearnerAssessmentEvaluation, ...]: ...
 
 
 class SecurityMutationAuditRepository(Protocol):
