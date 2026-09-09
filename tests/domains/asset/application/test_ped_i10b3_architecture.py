@@ -29,7 +29,7 @@ COMPOSITION = REPO_ROOT / "src" / "aieos" / "platform" / "runtime" / "compositio
 OPENAPI = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 _APPROVED_BLOBSTORE_REL = "src/aieos/domains/asset/infrastructure/blobstore"
 EXPECTED_OPENAPI_SHA256 = (
-    "4691D6BADA2157D436435BB5CCDD6797EA670D1A87543D42CA39A478F940F330"
+    "58980E749666377D15EBB5F6337CB19F014A037275D0F369B0CFC2E43E89AFBD"
 )
 CONTENT_ROOT = REPO_ROOT / "src" / "aieos" / "domains" / "content"
 
@@ -213,7 +213,7 @@ class TestArchitectureScope:
     def test_no_migration_and_alembic_head_unchanged(self) -> None:
         assert not any(p.name.startswith("pedi10b3") for p in MIGRATIONS.glob("*.py"))
         assert (MIGRATIONS / "pedi10b2001_asset_authority_sor.py").is_file()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
 
     def test_no_asset_persistence_or_content_or_composition_change(self) -> None:
         models = (

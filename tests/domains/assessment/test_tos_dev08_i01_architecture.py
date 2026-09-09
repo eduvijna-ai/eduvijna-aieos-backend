@@ -54,8 +54,8 @@ def _imports(path: Path) -> list[str]:
 
 class TestI01ArchitectureGuards:
     def test_current_alembic_head_tosd080001(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080001"' in text
         assert 'down_revision: str | None = "tosd070002"' in text
@@ -155,7 +155,7 @@ class TestI01ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-    "4691D6BADA2157D436435BB5CCDD6797EA670D1A87543D42CA39A478F940F330"
+    "58980E749666377D15EBB5F6337CB19F014A037275D0F369B0CFC2E43E89AFBD"
         )
 
     def test_i01_domain_has_no_audit_or_idempotency_wiring(self) -> None:

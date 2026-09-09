@@ -53,3 +53,40 @@ class ClassroomAssessmentListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[ClassroomAssessmentResponse]
+
+
+class LearnerAssessmentEvaluationItemResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str
+    question_type: str
+    outcome: str
+    evaluation_method: str
+    objective_ids: list[str]
+    response_kind: str | None = None
+
+
+class LearnerAssessmentObjectiveEvidenceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    objective_id: str
+    result: str
+
+
+class LearnerAssessmentEvaluationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evaluation_id: UUID
+    learner_principal_id: UUID
+    submission_id: UUID
+    attempt_id: UUID
+    teaching_assignment_id: UUID
+    content_id: UUID
+    content_version_id: UUID
+    class_ref: str
+    evaluation_policy_id: str
+    evaluation_policy_version: int
+    evaluated_at: datetime
+    created_at: datetime
+    items: list[LearnerAssessmentEvaluationItemResponse]
+    objective_evidence: list[LearnerAssessmentObjectiveEvidenceResponse]

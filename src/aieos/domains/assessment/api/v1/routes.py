@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from aieos.domains.assessment.api.v1.dependencies import (
     correct_classroom_assessment_service,
+    ensure_learner_assessment_evaluation_service,
     get_classroom_assessment_service,
     list_classroom_assessments_service,
     record_classroom_assessment_service,
@@ -20,11 +21,18 @@ from aieos.domains.assessment.api.v1.models import (
     ClassroomAssessmentListResponse,
     ClassroomAssessmentRecordRequest,
     ClassroomAssessmentResponse,
+    LearnerAssessmentEvaluationItemResponse,
+    LearnerAssessmentEvaluationResponse,
+    LearnerAssessmentObjectiveEvidenceResponse,
 )
 from aieos.domains.assessment.application.audit import api_mutation_audit_provenance
+from aieos.domains.assessment.application.evaluation_ensure import (
+    EnsureLearnerAssessmentEvaluationService,
+)
 from aieos.domains.assessment.application.models import (
     ClassroomAssessmentReadModel,
     CorrectClassroomAssessmentCommand,
+    LearnerAssessmentEvaluationReadModel,
     ListClassroomAssessmentsQuery,
     RecordClassroomAssessmentCommand,
 )
@@ -258,3 +266,98 @@ def assessment_classroom_void(
     )
     response.headers["ETag"] = encode_revision_etag(result.aggregate_revision)
     return _to_response(result)
+
+
+def _to_evaluation_response(
+    model: LearnerAssessmentEvaluationReadModel,
+) -> LearnerAssessmentEvaluationResponse:
+    return LearnerAssessmentEvaluationResponse(
+        evaluation_id=model.evaluation_id,
+        learner_principal_id=model.learner_principal_id,
+        submission_id=model.submission_id,
+        attempt_id=model.attempt_id,
+        teaching_assignment_id=model.teaching_assignment_id,
+        content_id=model.content_id,
+        content_version_id=model.content_version_id,
+        class_ref=model.class_ref,
+        evaluation_policy_id=model.evaluation_policy_id,
+        evaluation_policy_version=model.evaluation_policy_version,
+        evaluated_at=model.evaluated_at,
+        created_at=model.created_at,
+        items=[
+            LearnerAssessmentEvaluationItemResponse(
+                question_id=item.question_id,
+                question_type=item.question_type,
+                outcome=item.outcome,
+                evaluation_method=item.evaluation_method,
+                objective_ids=list(item.objective_ids),
+                response_kind=item.response_kind,
+            )
+            for item in model.items
+        ],
+        objective_evidence=[
+            LearnerAssessmentObjectiveEvidenceResponse(
+                objective_id=row.objective_id,
+                result=row.result,
+            )
+            for row in model.objective_evidence
+        ],
+    )
+
+
+@router.post(
+    "/assessment/submissions/{submission_id}/actions/evaluate",
+    response_model=LearnerAssessmentEvaluationResponse,
+    status_code=200,
+    operation_id="assessment_learner_evaluation_ensure",
+    responses=_MUTATION_RESPONSES,
+)
+def assessment_learner_evaluation_ensure(
+    submission_id: UUID,
+    request: Request,
+    ctx: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        EnsureLearnerAssessmentEvaluationService,
+        Depends(ensure_learner_assessment_evaluation_service),
+    ],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> LearnerAssessmentEvaluationResponse:
+    key = parse_idempotency_key(idempotency_key)
+    result = service.ensure_submission(
+        ctx.tenant_id,
+        ctx.principal_id,
+        submission_id=submission_id,
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, ctx),
+        audit_provenance=api_mutation_audit_provenance(ctx.principal_id),
+    )
+    return _to_evaluation_response(result)
+
+
+@router.post(
+    "/assessment/assignments/{assignment_id}/actions/ensure-evaluations",
+    status_code=204,
+    operation_id="assessment_assignment_evaluations_ensure",
+    response_class=Response,
+    responses=_MUTATION_RESPONSES,
+)
+def assessment_assignment_evaluations_ensure(
+    assignment_id: UUID,
+    request: Request,
+    ctx: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        EnsureLearnerAssessmentEvaluationService,
+        Depends(ensure_learner_assessment_evaluation_service),
+    ],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> Response:
+    key = parse_idempotency_key(idempotency_key)
+    service.ensure_assignment(
+        ctx.tenant_id,
+        ctx.principal_id,
+        assignment_id=assignment_id,
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, ctx),
+        audit_provenance=api_mutation_audit_provenance(ctx.principal_id),
+    )
+    return Response(status_code=204)

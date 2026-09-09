@@ -8,8 +8,13 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
+from aieos.domains.assessment.application.evaluation_views import (
+    EvaluationAssignmentView,
+    EvaluationSubmissionView,
+)
 from aieos.domains.assessment.domain.classroom_assessment import ClassroomAssessment
 from aieos.domains.assessment.domain.evaluation import LearnerAssessmentEvaluation
+from aieos.domains.assessment.domain.evaluation_input import EvaluationContentQuestion
 from aieos.domains.assessment.domain.identities import (
     AggregateRevision,
     AssessmentId,
@@ -28,6 +33,7 @@ ASSESSMENT_CLASSROOM_CORRECT = "assessment.classroom.correct"
 ASSESSMENT_CLASSROOM_VOID = "assessment.classroom.void"
 ASSESSMENT_CLASSROOM_READ = "assessment.classroom.read"
 ASSESSMENT_CLASSROOM_LIST = "assessment.classroom.list"
+ASSESSMENT_LEARNER_EVALUATION_ENSURE = "assessment.learner_evaluation.ensure"
 
 AIEOS_ASSESSMENT_CAPABILITIES = frozenset(
     {
@@ -36,6 +42,7 @@ AIEOS_ASSESSMENT_CAPABILITIES = frozenset(
         ASSESSMENT_CLASSROOM_VOID,
         ASSESSMENT_CLASSROOM_READ,
         ASSESSMENT_CLASSROOM_LIST,
+        ASSESSMENT_LEARNER_EVALUATION_ENSURE,
     }
 )
 
@@ -150,6 +157,28 @@ class AssessmentTeachingCompositionPort(Protocol):
         teacher_principal_id: UUID,
     ) -> None: ...
 
+    def load_assignment_lineage(
+        self, assignment_id: UUID
+    ) -> EvaluationAssignmentView: ...
+
+
+class AssessmentLearnerSubmissionPort(Protocol):
+    """Read-only immutable LearnerSubmission facts for evaluation composition."""
+
+    def get(self, submission_id: UUID) -> EvaluationSubmissionView | None: ...
+
+    def list_for_teaching_assignment(
+        self, teaching_assignment_id: UUID
+    ) -> tuple[EvaluationSubmissionView, ...]: ...
+
+
+class AssessmentExactContentPort(Protocol):
+    """Exact immutable ContentVersion question universe. Not published pointer."""
+
+    def load_evaluation_questions(
+        self, *, content_id: UUID, content_version_id: UUID
+    ) -> tuple[EvaluationContentQuestion, ...]: ...
+
 
 class AssessmentUnitOfWork(Protocol):
     classroom_assessments: ClassroomAssessmentRepository
@@ -158,6 +187,8 @@ class AssessmentUnitOfWork(Protocol):
     audit: SecurityMutationAuditRepository
     content_authority: AssessmentContentAuthorityPort
     teaching_composition: AssessmentTeachingCompositionPort
+    learner_submissions: AssessmentLearnerSubmissionPort
+    exact_content: AssessmentExactContentPort
 
     def __enter__(self) -> AssessmentUnitOfWork: ...
 

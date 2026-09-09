@@ -9,6 +9,19 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S01-I05-B2 — Assessment evaluation application/API composition.
+  Explicit POST commands ensure current-policy
+  `LearnerAssessmentEvaluation` for one immutable submission or for existing
+  submissions of one TeachingAssignment. Current teacher ClassRef authority
+  is required; historical learner membership and historical assignment
+  ownership are not authorization. Exact immutable ContentVersion is graded;
+  current publication pointer movement is ignored. Server-selected
+  deterministic policy v1. Capability and audit action
+  `assessment.learner_evaluation.ensure`. Alembic `a360s010004` extends
+  security audit CHECK vocabulary only. HTTP 200 single ensure / 204 batch
+  ensure. No B3 intelligence, no Improve, no NATS / Temporal, no roster
+  denominator.
+
 - AIEOS360-S01-I05-B1 — Assessment-owned immutable
   `LearnerAssessmentEvaluation` persistence
   (`assessment.learner_assessment_evaluations`,

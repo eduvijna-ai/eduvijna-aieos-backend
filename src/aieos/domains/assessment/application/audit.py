@@ -16,6 +16,7 @@ from aieos.platform.security.audit import (
 )
 
 RESOURCE_ASSESSMENT_CLASSROOM = "assessment.classroom"
+RESOURCE_ASSESSMENT_LEARNER_EVALUATION = "assessment.learner_evaluation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,39 @@ def insert_required_assessment_audit(
         ),
         resource_revision_before=resource_revision_before,
         resource_revision_after=resource_revision_after,
+        related_resource_refs=related_resource_refs,
+        mutation_event_context=mutation_event_context,
+        executing_principal_id=audit_provenance.executing_principal_id,
+        execution_channel=audit_provenance.execution_channel,
+        occurred_at=occurred_at,
+        delegation_id=audit_provenance.delegation_id,
+        trace_id=audit_provenance.trace_id,
+    )
+    uow.audit.insert(record)
+
+
+def evaluation_primary_ref(evaluation_id: UUID, revision_after: int) -> ResourceRef:
+    return ResourceRef(
+        RESOURCE_ASSESSMENT_LEARNER_EVALUATION, evaluation_id, revision_after
+    )
+
+
+def insert_required_evaluation_audit(
+    uow: AssessmentUnitOfWork,
+    *,
+    tenant_id: UUID,
+    evaluation_id: UUID,
+    related_resource_refs: tuple[ResourceRef, ...],
+    mutation_event_context: MutationEventContext,
+    audit_provenance: MutationAuditProvenance,
+    occurred_at: datetime,
+) -> None:
+    record = build_security_mutation_audit_record(
+        tenant_id=tenant_id,
+        action=SecurityAuditAction.ASSESSMENT_LEARNER_EVALUATION_ENSURE,
+        primary_resource_ref=evaluation_primary_ref(evaluation_id, 0),
+        resource_revision_before=None,
+        resource_revision_after=0,
         related_resource_refs=related_resource_refs,
         mutation_event_context=mutation_event_context,
         executing_principal_id=audit_provenance.executing_principal_id,

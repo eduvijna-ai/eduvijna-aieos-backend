@@ -23,6 +23,9 @@ from aieos.domains.assessment.application.errors import (
     TeachingWorkForbidden,
     TeachingWorkNotFound,
 )
+from aieos.domains.assessment.application.evaluation_views import (
+    EvaluationAssignmentView,
+)
 from aieos.domains.teaching.domain.audience_type import AudienceType
 from aieos.domains.teaching.domain.execution_lifecycle import ExecutionLifecycleState
 from aieos.domains.teaching.domain.identities import (
@@ -159,3 +162,21 @@ class SqlAlchemyAssessmentTeachingCompositionAdapter:
             raise TeachingWorkForbidden(
                 "TeachingWork is owned by a different teacher"
             )
+
+    def load_assignment_lineage(
+        self, assignment_id: UUID
+    ) -> EvaluationAssignmentView:
+        assignment = self._assignments.get(AssignmentId(assignment_id))
+        if assignment is None:
+            raise TeachingAssignmentNotFound(
+                "TeachingAssignment is not visible in the execution tenant"
+            )
+        return EvaluationAssignmentView(
+            assignment_id=assignment.assignment_id.value,
+            tenant_id=assignment.tenant_id,
+            class_ref=assignment.class_ref,
+            content_id=assignment.content_id,
+            content_version_id=assignment.content_version_id,
+            teacher_principal_id=assignment.teacher_principal_id,
+            lifecycle_state=str(assignment.lifecycle_state),
+        )

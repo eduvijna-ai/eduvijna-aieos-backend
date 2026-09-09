@@ -35,6 +35,12 @@ TEACHING_EXECUTION_OBSERVATION_CORRECT_V1 = (
 ASSESSMENT_CLASSROOM_RECORD_V1 = "assessment_classroom_record.v1"
 ASSESSMENT_CLASSROOM_CORRECT_V1 = "assessment_classroom_correct.v1"
 ASSESSMENT_CLASSROOM_VOID_V1 = "assessment_classroom_void.v1"
+ASSESSMENT_LEARNER_EVALUATION_ENSURE_V1 = (
+    "assessment_learner_evaluation_ensure.v1"
+)
+ASSESSMENT_ASSIGNMENT_EVALUATIONS_ENSURE_V1 = (
+    "assessment_assignment_evaluations_ensure.v1"
+)
 TEACHER_OS_MEMORY_CREATE_V1 = "teacher_os_memory_create.v1"
 TEACHER_OS_MEMORY_UPDATE_V1 = "teacher_os_memory_update.v1"
 LEARNING_ATTEMPT_START_V1 = "learning_attempt_start.v1"

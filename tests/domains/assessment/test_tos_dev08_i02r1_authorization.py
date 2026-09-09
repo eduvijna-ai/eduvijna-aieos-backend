@@ -16,6 +16,7 @@ from aieos.domains.assessment.application.ports import (
     ASSESSMENT_CLASSROOM_READ,
     ASSESSMENT_CLASSROOM_RECORD,
     ASSESSMENT_CLASSROOM_VOID,
+    ASSESSMENT_LEARNER_EVALUATION_ENSURE,
     AIEOS_ASSESSMENT_CAPABILITIES,
 )
 from aieos.domains.education.schema import QUIZ_CONTENT_TYPE
@@ -89,6 +90,7 @@ class TestAssessmentCapabilityCatalog:
                 ASSESSMENT_CLASSROOM_VOID,
                 ASSESSMENT_CLASSROOM_READ,
                 ASSESSMENT_CLASSROOM_LIST,
+                ASSESSMENT_LEARNER_EVALUATION_ENSURE,
             }
         )
         assert "assessment.*" not in AIEOS_ASSESSMENT_CAPABILITIES

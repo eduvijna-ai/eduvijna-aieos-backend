@@ -17,6 +17,12 @@ from aieos.domains.assessment.infrastructure.persistence.content_authority impor
 from aieos.domains.assessment.infrastructure.persistence.errors import (
     reraise_as_application_error,
 )
+from aieos.domains.assessment.infrastructure.persistence.exact_content import (
+    SqlAlchemyAssessmentExactContentAdapter,
+)
+from aieos.domains.assessment.infrastructure.persistence.learning_submissions import (
+    SqlAlchemyAssessmentLearnerSubmissionAdapter,
+)
 from aieos.domains.assessment.infrastructure.persistence.repositories import (
     SqlAlchemyClassroomAssessmentRepository,
     SqlAlchemyLearnerAssessmentEvaluationRepository,
@@ -43,6 +49,8 @@ class SqlAlchemyAssessmentUnitOfWork:
         self.audit: AssessmentSecurityMutationAuditRepository
         self.content_authority: SqlAlchemyAssessmentContentAuthorityAdapter
         self.teaching_composition: SqlAlchemyAssessmentTeachingCompositionAdapter
+        self.learner_submissions: SqlAlchemyAssessmentLearnerSubmissionAdapter
+        self.exact_content: SqlAlchemyAssessmentExactContentAdapter
 
     def __enter__(self) -> SqlAlchemyAssessmentUnitOfWork:
         try:
@@ -68,6 +76,12 @@ class SqlAlchemyAssessmentUnitOfWork:
                 self._connection, self._execution_tenant_id
             )
             self.teaching_composition = SqlAlchemyAssessmentTeachingCompositionAdapter(
+                self._connection, self._execution_tenant_id
+            )
+            self.learner_submissions = SqlAlchemyAssessmentLearnerSubmissionAdapter(
+                self._connection, self._execution_tenant_id
+            )
+            self.exact_content = SqlAlchemyAssessmentExactContentAdapter(
                 self._connection, self._execution_tenant_id
             )
             return self

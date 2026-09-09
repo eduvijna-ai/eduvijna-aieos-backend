@@ -23,6 +23,15 @@ OPENAPI_SNAPSHOT = REPO_ROOT / "contracts" / "openapi" / "aieos-v1.json"
 MIGRATION = MIGRATIONS / "tosd020001_teaching_work.py"
 
 
+def _path_has_mission_segment(path: str) -> bool:
+    """True when a path segment is exactly mission/missions (not a substring)."""
+    return any(
+        segment in {"mission", "missions"}
+        for segment in path.strip("/").split("/")
+        if segment
+    )
+
+
 def _docstring_ids(tree: ast.AST) -> set[int]:
     """Identify docstring nodes so prose never satisfies a DDL assertion."""
     ids: set[int] = set()
@@ -320,7 +329,27 @@ class TestOpenApiContract:
             assert "teaching/intents" not in path
             for method in ("post", "patch", "put", "delete"):
                 if method in path_item:
-                    assert "mission" not in path, (method, path)
+                    assert not _path_has_mission_segment(path), (method, path)
+
+    def test_mission_mutation_guard_is_path_segment_aware(self) -> None:
+        evaluate = (
+            "/api/v1/assessment/submissions/{submission_id}/actions/evaluate"
+        )
+        # Legitimate B2 path contains the character substring "mission" inside
+        # "submissions" but must not be treated as a mission mutation.
+        assert not _path_has_mission_segment(evaluate)
+        # Exact path segments remain prohibited for mutation surfaces.
+        assert _path_has_mission_segment("/api/v1/teacher-os/today/mission")
+        assert _path_has_mission_segment("/api/v1/missions/{mission_id}")
+        assert _path_has_mission_segment("/api/v1/classes/{id}/mission")
+        # Frozen GET mission surface remains permitted by the OpenAPI scan
+        # because the mutation guard only inspects POST/PATCH/PUT/DELETE.
+        spec = _openapi()
+        mission_get = spec["paths"]["/api/v1/teacher-os/today/mission"]
+        assert "get" in mission_get
+        assert not any(
+            method in mission_get for method in ("post", "patch", "put", "delete")
+        )
 
     def test_mutations_require_idempotency_and_refine_requires_if_match(self) -> None:
         spec = _openapi()
