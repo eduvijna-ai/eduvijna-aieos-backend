@@ -422,7 +422,7 @@ class TestTosd070002Downgrade:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "a360s010002"
+                    == "a360s010003"
                 )
                 assert (
                     _count_action(

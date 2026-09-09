@@ -17,3 +17,7 @@ class InvalidAggregateRevisionError(AssessmentDomainError):
 
 class InvalidClassroomAssessmentError(AssessmentDomainError):
     """A ClassroomAssessment aggregate field or lifecycle transition failed."""
+
+
+class InvalidLearnerAssessmentEvaluationError(AssessmentDomainError):
+    """A LearnerAssessmentEvaluation contract or evaluator input failed."""

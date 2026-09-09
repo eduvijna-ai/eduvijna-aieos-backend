@@ -149,8 +149,8 @@ class TestArchitectureIsolation:
         assert "student agent" not in learning.lower()
 
     def test_alembic_head_and_i03_migration_is_audit_only(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
         sql = I03_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010002"' in sql
         assert 'down_revision: str | None = "a360s010001"' in sql

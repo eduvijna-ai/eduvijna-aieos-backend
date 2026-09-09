@@ -519,6 +519,35 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                         f"FROM {RUNTIME_USER}"
                     )
                 )
+                has_evaluations = conn.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables
+                            WHERE table_schema = 'assessment'
+                              AND table_name = 'learner_assessment_evaluations'
+                        )
+                        """
+                    )
+                ).scalar_one()
+                if has_evaluations:
+                    for table in (
+                        "learner_assessment_evaluations",
+                        "learner_assessment_evaluation_items",
+                        "learner_assessment_objective_evidence",
+                    ):
+                        conn.execute(
+                            text(
+                                f"GRANT SELECT, INSERT ON assessment.{table} "
+                                f"TO {RUNTIME_USER}"
+                            )
+                        )
+                        conn.execute(
+                            text(
+                                f"REVOKE UPDATE, DELETE ON assessment.{table} "
+                                f"FROM {RUNTIME_USER}"
+                            )
+                        )
                 conn.execute(
                     text(
                         f"GRANT EXECUTE ON FUNCTION assessment.current_tenant_id() "

@@ -30,8 +30,8 @@ ASSESSMENT_SOURCE = (
 
 
 def test_current_head_and_only_i02_migration() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+    assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+    assert EXPECTED_MIGRATION_HEAD == "a360s010003"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd090002"' in source
     assert 'down_revision: str | None = "tosd090001"' in source

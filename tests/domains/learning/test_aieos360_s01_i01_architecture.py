@@ -81,8 +81,8 @@ class TestProductionIsolation:
 
 class TestNoPersistenceOrStudentApi:
     def test_i01_21_no_learner_roster_persistence(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

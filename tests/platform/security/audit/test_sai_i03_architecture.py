@@ -25,6 +25,7 @@ BOUNDARY_DOC = REPO_ROOT / "docs" / "GCI-I04-NON-PRODUCTION-MUTATION-BOUNDARY.md
 _EXPECTED_MIGRATIONS = [
     "a360s010001_learning_attempt_submission.py",
         "a360s010002_learning_attempt_audit_vocab.py",
+        "a360s010003_learner_assessment_evaluation.py",
     "adra045001_dispatcher_candidate_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",

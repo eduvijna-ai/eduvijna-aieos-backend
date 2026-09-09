@@ -131,8 +131,8 @@ class TestMigrationAndSchema:
     def test_i02_21_upgrade_from_tosd100001_to_a360s010001(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
         cfg = alembic_config(postgres18["migrator_url"])
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")
@@ -804,7 +804,7 @@ class TestDowngradeSafety:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010002"
+                    == "a360s010003"
                 )
             with factory(tenant_id) as uow:
                 assert uow.attempts.get(created.attempt_id) is not None

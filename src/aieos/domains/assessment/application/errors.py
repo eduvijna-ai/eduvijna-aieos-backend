@@ -18,6 +18,10 @@ class PersistenceInvariantViolation(AssessmentApplicationError):
     """An Assessment persistence invariant failed (database check or visibility)."""
 
 
+class EvaluationImmutable(AssessmentApplicationError):
+    """Issued LearnerAssessmentEvaluation rows cannot be updated or deleted."""
+
+
 class IdempotencyKeyReused(AssessmentApplicationError):
     """Same Idempotency-Key bound to different canonical material."""
 

@@ -108,4 +108,5 @@ markers = [
     "aieos360_s01_i02: AIEOS360-S01-I02 Learning attempt/submission persistence and RLS",
     "aieos360_s01_i03: AIEOS360-S01-I03 Student assignment consumption and attempt API",
     "aieos360_s01_i03r1: AIEOS360-S01-I03R1 replay, pagination, and composition corrections",
+    "aieos360_s01_i05_b1: AIEOS360-S01-I05-B1 Assessment evaluation persistence and deterministic evaluator",
 ]

@@ -32,8 +32,8 @@ MEMORY_APP = (
 
 
 def test_current_head_is_tosd100001() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+    assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+    assert EXPECTED_MIGRATION_HEAD == "a360s010003"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd100001"' in source
     assert 'down_revision: str | None = "pedi090002"' in source
