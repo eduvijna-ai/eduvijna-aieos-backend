@@ -42,12 +42,26 @@ from aieos.domains.assessment.domain.evaluation_vocabulary import (
     ObjectiveEvidenceResult,
 )
 from aieos.domains.teaching.application import errors as teaching_errors
+from aieos.domains.teaching.application.owner_resolution import (
+    HumanPrincipalClassificationGate,
+)
 from aieos.domains.teaching.application.school_context import (
     SchoolContextClassAuthority,
 )
+from aieos.platform.security.context import UnauthorizedError
 
 CURRENT_EVALUATION_POLICY_ID = DETERMINISTIC_LEARNER_ASSESSMENT_POLICY_ID
 CURRENT_EVALUATION_POLICY_VERSION = DETERMINISTIC_LEARNER_ASSESSMENT_POLICY_VERSION
+
+
+def _require_current_human_principal(
+    classification: HumanPrincipalClassificationGate,
+    principal_id: UUID,
+) -> None:
+    try:
+        classification.require_current_human_principal(principal_id)
+    except UnauthorizedError:
+        raise
 
 
 def _require_current_class_ref(
@@ -260,10 +274,12 @@ class GetAssignmentAssessmentIntelligenceService:
         uow_factory: AssessmentUnitOfWorkFactory,
         class_authority: SchoolContextClassAuthority,
         authorization: ClassroomAssessmentAuthorization,
+        classification: HumanPrincipalClassificationGate,
     ) -> None:
         self._uow_factory = uow_factory
         self._class_authority = class_authority
         self._authorization = authorization
+        self._classification = classification
 
     def get(
         self,
@@ -277,6 +293,8 @@ class GetAssignmentAssessmentIntelligenceService:
             principal_id=principal_id,
             capability=ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
         )
+        # HUMAN before any learner evidence; ClassRef still mandatory after.
+        _require_current_human_principal(self._classification, principal_id)
         with self._uow_factory(execution_tenant_id) as preview:
             preview_assignment = preview.teaching_composition.load_assignment_lineage(
                 assignment_id

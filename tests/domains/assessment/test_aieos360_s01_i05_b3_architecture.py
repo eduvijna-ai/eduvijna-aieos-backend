@@ -88,6 +88,12 @@ class TestB3ArchitectureGuards:
         assert "temporal" not in text.lower()
         assert "outbox" not in text.lower()
         assert "mastery" not in text.lower()
+        assert "require_current_human_principal" in text
+        assert "HumanPrincipalClassificationGate" in text
+        # HUMAN must precede learner evidence reads.
+        human_idx = text.index("_require_current_human_principal")
+        evidence_idx = text.index("learner_submissions.list_for_teaching_assignment")
+        assert human_idx < evidence_idx
 
     def test_openapi_contains_intelligence_and_matches_pin(self) -> None:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()

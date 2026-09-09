@@ -22,19 +22,21 @@ from aieos.domains.assessment.infrastructure.persistence.uow import (
     SqlAlchemyAssessmentUnitOfWorkFactory,
 )
 from aieos.domains.learning.domain.response_item import AttemptResponseItem
+from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.domains.assessment.helpers_dev08_i02 import headers as classroom_headers
 from tests.domains.assessment.helpers_s01_i05_b2 import (
     BATCH_PATH,
     SINGLE_PATH,
-    build_client,
+    build_client as build_b2_client,
     count_evaluations,
     headers,
     insert_submitted,
     placeholder_mc,
-    seed_world,
+    seed_world as seed_b2_world,
     worksheet_payload,
     FIXED_NOW,
 )
+from tests.platform.security.authorization.helpers import seed_principal
 
 INTELLIGENCE_PATH = (
     "/api/v1/assessment/assignments/{assignment_id}/intelligence"
@@ -42,6 +44,128 @@ INTELLIGENCE_PATH = (
 INTELLIGENCE_ACTION = "assessment.assignment.intelligence.read"
 OBSOLETE_POLICY_ID = "aieos.learner_assessment.obsolete-test"
 OBSOLETE_POLICY_VERSION = 99
+
+
+def seed_human_principal(bootstrap_engine: Engine, principal_id: UUID) -> None:
+    seed_principal(
+        bootstrap_engine, principal_id, principal_kind=PrincipalKind.HUMAN
+    )
+
+
+def seed_workload_principal(bootstrap_engine: Engine, principal_id: UUID) -> None:
+    seed_principal(
+        bootstrap_engine, principal_id, principal_kind=PrincipalKind.WORKLOAD
+    )
+
+
+def seed_unclassified_principal(bootstrap_engine: Engine, principal_id: UUID) -> None:
+    seed_principal(bootstrap_engine, principal_id, principal_kind=None)
+
+
+def seed_world(
+    bootstrap_engine: Engine,
+    runtime_engine: Engine,
+    **kwargs,
+):
+    world = seed_b2_world(bootstrap_engine, runtime_engine, **kwargs)
+    seed_human_principal(bootstrap_engine, world.teacher_id)
+    return world
+
+
+def build_client(
+    runtime_engine: Engine,
+    tenant_id: UUID,
+    principal_id: UUID,
+    *,
+    school_context_reader: object | None = None,
+    assessment_authorization: object | None = None,
+    unauthenticated: bool = False,
+    with_school_context: bool = True,
+    principal_classification_authority: object | None = None,
+):
+    if principal_classification_authority is None:
+        return build_b2_client(
+            runtime_engine,
+            tenant_id,
+            principal_id,
+            school_context_reader=school_context_reader,
+            assessment_authorization=assessment_authorization,
+            unauthenticated=unauthenticated,
+            with_school_context=with_school_context,
+        )
+    # Compose with an explicit classification authority (deny / unavailable cases).
+    from aieos.development.schemas import (
+        build_development_schema_registry,
+        development_content_type_names,
+    )
+    from aieos.domains.assessment.infrastructure.persistence.uow import (
+        SqlAlchemyAssessmentUnitOfWorkFactory,
+    )
+    from aieos.domains.content.application.catalog import StaticContentTypeCatalog
+    from aieos.domains.content.infrastructure.persistence.uow import (
+        SqlAlchemyContentUnitOfWorkFactory,
+    )
+    from aieos.domains.teaching.infrastructure.persistence.uow import (
+        SqlAlchemyTeachingUnitOfWorkFactory,
+    )
+    from aieos.platform.api.app import create_app
+    from aieos.platform.runtime.remediation_assessment_source import (
+        SqlAlchemyRemediationAssessmentSource,
+    )
+    from fastapi.testclient import TestClient
+    from tests.domains.assessment.helpers_dev08_i02 import (
+        CURSOR_KEY,
+        IDEMPOTENCY_RETENTION,
+        MutableSchoolContextClassReader,
+        _AllowTeachingWorkAuthorization,
+    )
+    from tests.fakes import (
+        AllowAssetCurrentGovernance,
+        AllowAssetReferenceValidation,
+        AllowClassroomAssessmentAuthorization,
+        AllowPublicationAuthorization,
+        AllowPublicationGovernance,
+        AllowReviewAuthorization,
+        AllowReviewCommentPolicy,
+        FixedPrincipalAuthenticator,
+        StubSecurityContextResolver,
+    )
+
+    if not with_school_context:
+        reader = None
+    else:
+        reader = school_context_reader or MutableSchoolContextClassReader(
+            tenant_id=tenant_id,
+            teacher_principal_id=principal_id,
+        )
+    auth = assessment_authorization or AllowClassroomAssessmentAuthorization()
+    app = create_app(
+        uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(
+            runtime_engine,
+            remediation_assessment_source_factory=SqlAlchemyRemediationAssessmentSource,
+        ),
+        assessment_uow_factory=SqlAlchemyAssessmentUnitOfWorkFactory(runtime_engine),
+        assessment_authorization=auth,
+        request_identity_authenticator=FixedPrincipalAuthenticator(
+            principal_id, unauthenticated=unauthenticated
+        ),
+        security_resolver=StubSecurityContextResolver(tenant_id, principal_id),
+        content_types=StaticContentTypeCatalog(development_content_type_names()),
+        cursor_signing_key=CURSOR_KEY,
+        schema_registry=build_development_schema_registry(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+        review_authorization=AllowReviewAuthorization(),
+        review_comment_policy=AllowReviewCommentPolicy(),
+        publication_authorization=AllowPublicationAuthorization(),
+        publication_governance=AllowPublicationGovernance(),
+        asset_reference_validation=AllowAssetReferenceValidation(),
+        asset_current_governance=AllowAssetCurrentGovernance(),
+        school_context_class_reader=reader,
+        teaching_authorization=_AllowTeachingWorkAuthorization(),
+        principal_classification_authority=principal_classification_authority,
+    )
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def read_headers(tenant_id: UUID) -> dict[str, str]:
@@ -165,6 +289,9 @@ __all__ = [
     "mc_correct",
     "mc_incorrect",
     "read_headers",
+    "seed_human_principal",
+    "seed_unclassified_principal",
+    "seed_workload_principal",
     "seed_world",
     "short_answer",
     "worksheet_payload",

@@ -112,7 +112,7 @@ class TestI01ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-            "58980E749666377D15EBB5F6337CB19F014A037275D0F369B0CFC2E43E89AFBD"
+            "7B51CE21725651B8D556B9DD6D264473DF0A2E7CAF30D722E1CC776C651FAFBB"
         )
 
     def test_generic_create_guards_remediate_class(self) -> None:

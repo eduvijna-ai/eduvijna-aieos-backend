@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from aieos.domains.assessment.application.errors import AssessmentCapabilityForbidden
 from aieos.domains.assessment.application.ports import (
+    ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
     ASSESSMENT_CLASSROOM_CORRECT,
     ASSESSMENT_CLASSROOM_LIST,
     ASSESSMENT_CLASSROOM_READ,
@@ -81,7 +82,7 @@ def _seed_content(bootstrap_engine, tenant_id, principal_id):
 
 
 class TestAssessmentCapabilityCatalog:
-    def test_auth15_exact_five_capabilities(self) -> None:
+    def test_auth15_exact_assessment_capabilities(self) -> None:
         assert AIEOS_ASSESSMENT_CAPABILITIES == ADAPTER_ASSESSMENT_CAPABILITIES
         assert AIEOS_ASSESSMENT_CAPABILITIES == frozenset(
             {
@@ -91,6 +92,7 @@ class TestAssessmentCapabilityCatalog:
                 ASSESSMENT_CLASSROOM_READ,
                 ASSESSMENT_CLASSROOM_LIST,
                 ASSESSMENT_LEARNER_EVALUATION_ENSURE,
+                ASSESSMENT_ASSIGNMENT_INTELLIGENCE_READ,
             }
         )
         assert "assessment.*" not in AIEOS_ASSESSMENT_CAPABILITIES

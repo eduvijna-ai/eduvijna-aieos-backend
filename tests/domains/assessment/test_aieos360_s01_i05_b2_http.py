@@ -40,6 +40,8 @@ from tests.domains.education.test_tos_dev04_i03_content_payloads import (
 )
 from tests.domains.learning.helpers_aieos360_s01_i03 import create_learner_assignment
 from tests.fakes import AllowClassroomAssessmentAuthorization
+from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.platform.security.authorization.helpers import seed_principal
 
 pytestmark = pytest.mark.aieos360_s01_i05_b2
 
@@ -707,6 +709,9 @@ class TestGovernanceHttp:
         self, bootstrap_engine: Engine, runtime_engine: Engine
     ) -> None:
         world = seed_world(bootstrap_engine, runtime_engine)
+        seed_principal(
+            bootstrap_engine, world.teacher_id, principal_kind=PrincipalKind.HUMAN
+        )
         client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
         single = client.post(
             SINGLE_PATH.format(submission_id=world.submission_id),

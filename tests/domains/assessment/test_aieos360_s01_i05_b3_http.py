@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import uuid
+from uuid import UUID
 
 import pytest
 from sqlalchemy.engine import Engine
 
 from aieos.development.learner_principals import CLASS_REF_5B
+from aieos.platform.api.app import _UnavailablePrincipalClassificationAuthority
+from aieos.platform.security.authorization.decisions import PrincipalKind
+from aieos.platform.security.context import UnauthorizedError
 from tests.domains.assessment.helpers_dev08_i02 import MutableSchoolContextClassReader
 from tests.domains.assessment.helpers_s01_i05_b3 import (
     INTELLIGENCE_ACTION,
@@ -21,6 +25,9 @@ from tests.domains.assessment.helpers_s01_i05_b3 import (
     insert_submitted,
     mc_correct,
     mc_incorrect,
+    seed_human_principal,
+    seed_unclassified_principal,
+    seed_workload_principal,
     seed_world,
     short_answer,
     worksheet_payload,
@@ -29,6 +36,20 @@ from tests.domains.learning.helpers_aieos360_s01_i03 import create_learner_assig
 from tests.fakes import AllowClassroomAssessmentAuthorization
 
 pytestmark = pytest.mark.aieos360_s01_i05_b3
+
+
+class _RecordingClassification:
+    """Test double that can deny HUMAN and record calls."""
+
+    def __init__(self, *, kind: PrincipalKind | None = PrincipalKind.HUMAN) -> None:
+        self.kind = kind
+        self.calls: list[UUID] = []
+
+    def require_current_human_principal(self, principal_id: UUID) -> PrincipalKind:
+        self.calls.append(principal_id)
+        if self.kind is None or self.kind is not PrincipalKind.HUMAN:
+            raise UnauthorizedError("principal not authorized")
+        return PrincipalKind.HUMAN
 
 
 class TestIntelligenceAuthorization:
@@ -66,6 +87,161 @@ class TestIntelligenceAuthorization:
             assignment_id=world.assignment.assignment_id.value,
         )
         assert response.status_code == 401
+
+    def test_human_teacher_allowed(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        world = seed_world(
+            bootstrap_engine, runtime_engine, responses=[mc_correct()]
+        )
+        client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
+        ensure_submission(
+            client,
+            tenant_id=world.tenant_id,
+            submission_id=world.submission_id,
+            idempotency_key="b3r1-human-ok",
+        )
+        response = get_intelligence(
+            client,
+            tenant_id=world.tenant_id,
+            assignment_id=world.assignment.assignment_id.value,
+        )
+        assert response.status_code == 200
+        assert response.json()["evaluated_learner_count"] == 1
+
+    def test_workload_principal_denied(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        world = seed_world(bootstrap_engine, runtime_engine)
+        seed_workload_principal(bootstrap_engine, world.teacher_id)
+        client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
+        response = get_intelligence(
+            client,
+            tenant_id=world.tenant_id,
+            assignment_id=world.assignment.assignment_id.value,
+        )
+        # UnauthorizedError → HTTP 403 (platform problem mapping)
+        assert response.status_code == 403
+        assert response.json()["code"] == "forbidden"
+
+    def test_unclassified_principal_denied(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        world = seed_world(bootstrap_engine, runtime_engine)
+        seed_unclassified_principal(bootstrap_engine, world.teacher_id)
+        client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
+        response = get_intelligence(
+            client,
+            tenant_id=world.tenant_id,
+            assignment_id=world.assignment.assignment_id.value,
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "forbidden"
+
+    def test_classification_unavailable_fail_closed(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        world = seed_world(bootstrap_engine, runtime_engine)
+        client = build_client(
+            runtime_engine,
+            world.tenant_id,
+            world.teacher_id,
+            principal_classification_authority=(
+                _UnavailablePrincipalClassificationAuthority()
+            ),
+        )
+        response = get_intelligence(
+            client,
+            tenant_id=world.tenant_id,
+            assignment_id=world.assignment.assignment_id.value,
+        )
+        assert response.status_code == 503
+
+    def test_human_failure_reads_zero_learner_evidence(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        from aieos.domains.assessment.application.intelligence import (
+            GetAssignmentAssessmentIntelligenceService,
+        )
+        from aieos.domains.assessment.infrastructure.persistence.uow import (
+            SqlAlchemyAssessmentUnitOfWorkFactory,
+        )
+        from aieos.domains.teaching.application.school_context import (
+            SchoolContextClassAuthorityService,
+        )
+        from aieos.development.school_context import DevelopmentSchoolContextClassReader
+
+        world = seed_world(
+            bootstrap_engine, runtime_engine, responses=[mc_correct()]
+        )
+        classification = _RecordingClassification(kind=PrincipalKind.WORKLOAD)
+        submission_reads = {"n": 0}
+        evaluation_reads = {"n": 0}
+        inner_factory = SqlAlchemyAssessmentUnitOfWorkFactory(runtime_engine)
+
+        class CountingFactory:
+            def __call__(self, execution_tenant_id: UUID):
+                uow = inner_factory(execution_tenant_id)
+
+                class CountingUow:
+                    def __enter__(self_inner):
+                        self_inner._uow = uow.__enter__()
+                        return self_inner
+
+                    def __exit__(self_inner, *args):
+                        return uow.__exit__(*args)
+
+                    def __getattr__(self_inner, name: str):
+                        return getattr(self_inner._uow, name)
+
+                    @property
+                    def learner_submissions(self_inner):
+                        real = self_inner._uow.learner_submissions
+
+                        class Subs:
+                            def list_for_teaching_assignment(self, assignment_id):
+                                submission_reads["n"] += 1
+                                return real.list_for_teaching_assignment(assignment_id)
+
+                            def get(self, submission_id):
+                                submission_reads["n"] += 1
+                                return real.get(submission_id)
+
+                        return Subs()
+
+                    @property
+                    def learner_assessment_evaluations(self_inner):
+                        real = self_inner._uow.learner_assessment_evaluations
+
+                        class Evals:
+                            def list_for_teaching_assignment(self, assignment_id):
+                                evaluation_reads["n"] += 1
+                                return real.list_for_teaching_assignment(assignment_id)
+
+                        return Evals()
+
+                return CountingUow()
+
+        service = GetAssignmentAssessmentIntelligenceService(
+            CountingFactory(),  # type: ignore[arg-type]
+            SchoolContextClassAuthorityService(
+                DevelopmentSchoolContextClassReader(
+                    tenant_id=world.tenant_id,
+                    teacher_principal_id=world.teacher_id,
+                )
+            ),
+            AllowClassroomAssessmentAuthorization(),
+            classification,
+        )
+        with pytest.raises(UnauthorizedError):
+            service.get(
+                world.tenant_id,
+                world.teacher_id,
+                assignment_id=world.assignment.assignment_id.value,
+            )
+        assert classification.calls == [world.teacher_id]
+        assert submission_reads["n"] == 0
+        assert evaluation_reads["n"] == 0
 
     def test_class_ref_denied_and_school_context_unavailable(
         self, bootstrap_engine: Engine, runtime_engine: Engine
@@ -155,6 +331,7 @@ class TestIntelligenceAuthorization:
             bootstrap_engine, runtime_engine, responses=[mc_correct()]
         )
         other_teacher = uuid.uuid7()
+        seed_human_principal(bootstrap_engine, other_teacher)
         reader = MutableSchoolContextClassReader(
             tenant_id=world.tenant_id,
             teacher_principal_id=other_teacher,

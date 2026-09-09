@@ -550,6 +550,7 @@ def create_app(
                 assessment_uow_factory,
                 class_authority,
                 assessment_authorization,
+                classification,
             )
         )
     else:

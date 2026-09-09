@@ -12,11 +12,22 @@ Derived-on-read Teacher Assessment Intelligence for one TeachingAssignment:
 
 Capability: `assessment.assignment.intelligence.read`
 
+Authorization composition (B3R1):
+
+1. coarse capability ALLOW
+2. current HUMAN principal (`CurrentPrincipalClassificationAuthority.require_current_human_principal`)
+3. TeachingAssignment lineage / ClassRef discovery
+4. current ClassRef assignability
+5. derived-on-read projection
+
+No learner submission/evaluation evidence is read before steps 2–4 succeed.
+
 ## Authority
 
-- Current tenant + capability ALLOW + current ClassRef assignability
+- Current tenant + capability ALLOW + current HUMAN principal + current ClassRef assignability
 - Historical TeachingAssignment ownership is not perpetual learner-evidence access
-- Historical submitted learners remain visible to a currently authorized teacher
+- Historical submitted learners remain visible to a currently authorized HUMAN teacher
+- WORKLOAD / unclassified / classification-unavailable → fail closed
 
 ## Non-goals
 
