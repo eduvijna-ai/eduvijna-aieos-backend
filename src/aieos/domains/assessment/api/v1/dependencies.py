@@ -11,6 +11,9 @@ from aieos.domains.content.api.v1.dependencies import resolve_trusted_context
 from aieos.domains.assessment.application.evaluation_ensure import (
     EnsureLearnerAssessmentEvaluationService,
 )
+from aieos.domains.assessment.application.intelligence import (
+    GetAssignmentAssessmentIntelligenceService,
+)
 from aieos.domains.assessment.application.mutations import (
     CorrectClassroomAssessmentService,
     VoidClassroomAssessmentService,
@@ -23,6 +26,7 @@ from aieos.domains.assessment.application.record import RecordClassroomAssessmen
 
 __all__ = [
     "correct_classroom_assessment_service",
+    "get_assignment_assessment_intelligence_service",
     "get_classroom_assessment_service",
     "list_classroom_assessments_service",
     "record_classroom_assessment_service",
@@ -105,5 +109,19 @@ def ensure_learner_assessment_evaluation_service(
 
         raise SchoolContextUnavailable(
             "LearnerAssessmentEvaluation commands are not composed in this runtime"
+        )
+    return service
+
+
+def get_assignment_assessment_intelligence_service(
+    request: Request,
+) -> GetAssignmentAssessmentIntelligenceService:
+    _require_school_context(request)
+    service = request.app.state.get_assignment_assessment_intelligence_service
+    if service is None:
+        from aieos.domains.assessment.application.errors import SchoolContextUnavailable
+
+        raise SchoolContextUnavailable(
+            "Teacher Assessment Intelligence is not composed in this runtime"
         )
     return service

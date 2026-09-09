@@ -40,6 +40,8 @@ from tests.domains.education.test_tos_dev04_i03_content_payloads import (
 )
 from tests.domains.learning.helpers_aieos360_s01_i03 import create_learner_assignment
 from tests.fakes import AllowClassroomAssessmentAuthorization
+from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.platform.security.authorization.helpers import seed_principal
 
 pytestmark = pytest.mark.aieos360_s01_i05_b2
 
@@ -707,6 +709,9 @@ class TestGovernanceHttp:
         self, bootstrap_engine: Engine, runtime_engine: Engine
     ) -> None:
         world = seed_world(bootstrap_engine, runtime_engine)
+        seed_principal(
+            bootstrap_engine, world.teacher_id, principal_kind=PrincipalKind.HUMAN
+        )
         client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
         single = client.post(
             SINGLE_PATH.format(submission_id=world.submission_id),
@@ -717,12 +722,14 @@ class TestGovernanceHttp:
             headers=headers(world.tenant_id, idempotency_key="gov-2"),
         )
         intelligence = client.get(
-            f"/api/v1/assessment/assignments/{world.assignment.assignment_id.value}/intelligence"
+            f"/api/v1/assessment/assignments/{world.assignment.assignment_id.value}/intelligence",
+            headers={"X-AIEOS-Tenant-ID": str(world.tenant_id)},
         )
         evaluate_get = client.get(
             SINGLE_PATH.format(submission_id=world.submission_id)
         )
         assert single.status_code == 200
         assert batch.status_code == 204
-        assert intelligence.status_code == 404
+        assert intelligence.status_code == 200
         assert evaluate_get.status_code == 405
+        # B3 owns GET /intelligence; B2 only proves evaluate remains POST-only.

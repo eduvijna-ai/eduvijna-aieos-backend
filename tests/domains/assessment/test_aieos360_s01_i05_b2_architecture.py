@@ -78,8 +78,6 @@ class TestB2ArchitectureGuards:
         )
         assert 'operation_id="assessment_learner_evaluation_ensure"' in routes
         assert 'operation_id="assessment_assignment_evaluations_ensure"' in routes
-        assert "/intelligence" not in routes
-        assert 'operation_id="assessment_assignment_intelligence' not in routes
         assert "assessment_learner_evaluation_ensure" in FROZEN_API_MUTATION_OPERATION_IDS
         assert (
             "assessment_assignment_evaluations_ensure"
@@ -132,7 +130,7 @@ class TestB2ArchitectureGuards:
         assert "ALTER TABLE content." not in sql
         assert "assessment.learner_evaluation.ensure" in sql
 
-    def test_67_68_openapi_contains_b2_not_b3(self) -> None:
+    def test_67_68_openapi_contains_b2_commands(self) -> None:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         schema = OPENAPI.read_text(encoding="utf-8")
@@ -143,7 +141,6 @@ class TestB2ArchitectureGuards:
         )
         assert "assessment_learner_evaluation_ensure" in schema
         assert "assessment_assignment_evaluations_ensure" in schema
-        assert "/intelligence" not in schema
 
     def test_72_73_nats_temporal_present_and_unrelated(self) -> None:
         assert NATS_ROOT.is_dir()

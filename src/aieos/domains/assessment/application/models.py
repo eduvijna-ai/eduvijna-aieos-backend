@@ -152,3 +152,63 @@ def learner_assessment_evaluation_read_model(
             for row in evaluation.objective_evidence
         ),
     )
+
+
+# Teacher Assessment Intelligence derived-on-read projection (ADR-AIEOS-059 §12).
+LEARNER_EVALUATION_STATE_NOT_EVALUATED = "NOT_EVALUATED"
+LEARNER_EVALUATION_STATE_CURRENT = "EVALUATED_UNDER_CURRENT_POLICY"
+LEARNER_EVALUATION_STATE_NOT_CURRENT = "NOT_EVALUATED_UNDER_CURRENT_POLICY"
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligenceQuestionOutcomeCounts:
+    question_id: str
+    correct: int
+    incorrect: int
+    unanswered: int
+    open_response_unevaluated: int
+    unevaluated_policy_reject: int
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligenceFrequentlyMissedQuestion:
+    question_id: str
+    incorrect_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligenceObjectiveEvidenceCount:
+    objective_id: str
+    insufficient_evidence: int
+    demonstrated_on_submitted_items: int
+    mixed_on_submitted_items: int
+    not_yet_demonstrated_on_submitted_items: int
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligenceLearnerProjection:
+    learner_principal_id: UUID
+    submission_id: UUID
+    evaluation_state: str
+    evaluation_id: UUID | None
+    evaluation_policy_id: str | None
+    evaluation_policy_version: int | None
+    evaluated_at: datetime | None
+    items: tuple[LearnerAssessmentEvaluationItemReadModel, ...]
+    objective_evidence: tuple[LearnerAssessmentObjectiveEvidenceReadModel, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TeacherAssessmentIntelligenceReadModel:
+    teaching_assignment_id: UUID
+    class_ref: str
+    content_id: UUID
+    content_version_id: UUID
+    evaluation_policy_id: str
+    evaluation_policy_version: int
+    submitted_learner_count: int
+    evaluated_learner_count: int
+    learners: tuple[IntelligenceLearnerProjection, ...]
+    question_distributions: tuple[IntelligenceQuestionOutcomeCounts, ...]
+    frequently_missed_questions: tuple[IntelligenceFrequentlyMissedQuestion, ...]
+    objective_evidence_rollups: tuple[IntelligenceObjectiveEvidenceCount, ...]

@@ -2055,6 +2055,270 @@
         "title": "StudentHomeResponse",
         "type": "object"
       },
+      "TeacherAssessmentIntelligenceFrequentlyMissedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "incorrect_count": {
+            "title": "Incorrect Count",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "incorrect_count"
+        ],
+        "title": "TeacherAssessmentIntelligenceFrequentlyMissedResponse",
+        "type": "object"
+      },
+      "TeacherAssessmentIntelligenceLearnerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluated At"
+          },
+          "evaluation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Id"
+          },
+          "evaluation_policy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Policy Id"
+          },
+          "evaluation_policy_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Policy Version"
+          },
+          "evaluation_state": {
+            "title": "Evaluation State",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerAssessmentEvaluationItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "learner_principal_id": {
+            "format": "uuid",
+            "title": "Learner Principal Id",
+            "type": "string"
+          },
+          "objective_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerAssessmentObjectiveEvidenceResponse"
+            },
+            "title": "Objective Evidence",
+            "type": "array"
+          },
+          "submission_id": {
+            "format": "uuid",
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learner_principal_id",
+          "submission_id",
+          "evaluation_state",
+          "items",
+          "objective_evidence"
+        ],
+        "title": "TeacherAssessmentIntelligenceLearnerResponse",
+        "type": "object"
+      },
+      "TeacherAssessmentIntelligenceObjectiveRollupResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "demonstrated_on_submitted_items": {
+            "title": "Demonstrated On Submitted Items",
+            "type": "integer"
+          },
+          "insufficient_evidence": {
+            "title": "Insufficient Evidence",
+            "type": "integer"
+          },
+          "mixed_on_submitted_items": {
+            "title": "Mixed On Submitted Items",
+            "type": "integer"
+          },
+          "not_yet_demonstrated_on_submitted_items": {
+            "title": "Not Yet Demonstrated On Submitted Items",
+            "type": "integer"
+          },
+          "objective_id": {
+            "title": "Objective Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective_id",
+          "insufficient_evidence",
+          "demonstrated_on_submitted_items",
+          "mixed_on_submitted_items",
+          "not_yet_demonstrated_on_submitted_items"
+        ],
+        "title": "TeacherAssessmentIntelligenceObjectiveRollupResponse",
+        "type": "object"
+      },
+      "TeacherAssessmentIntelligenceQuestionDistributionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "correct": {
+            "title": "Correct",
+            "type": "integer"
+          },
+          "incorrect": {
+            "title": "Incorrect",
+            "type": "integer"
+          },
+          "open_response_unevaluated": {
+            "title": "Open Response Unevaluated",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "unanswered": {
+            "title": "Unanswered",
+            "type": "integer"
+          },
+          "unevaluated_policy_reject": {
+            "title": "Unevaluated Policy Reject",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "question_id",
+          "correct",
+          "incorrect",
+          "unanswered",
+          "open_response_unevaluated",
+          "unevaluated_policy_reject"
+        ],
+        "title": "TeacherAssessmentIntelligenceQuestionDistributionResponse",
+        "type": "object"
+      },
+      "TeacherAssessmentIntelligenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "class_ref": {
+            "title": "Class Ref",
+            "type": "string"
+          },
+          "content_id": {
+            "format": "uuid",
+            "title": "Content Id",
+            "type": "string"
+          },
+          "content_version_id": {
+            "format": "uuid",
+            "title": "Content Version Id",
+            "type": "string"
+          },
+          "evaluated_learner_count": {
+            "title": "Evaluated Learner Count",
+            "type": "integer"
+          },
+          "evaluation_policy_id": {
+            "title": "Evaluation Policy Id",
+            "type": "string"
+          },
+          "evaluation_policy_version": {
+            "title": "Evaluation Policy Version",
+            "type": "integer"
+          },
+          "frequently_missed_questions": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherAssessmentIntelligenceFrequentlyMissedResponse"
+            },
+            "title": "Frequently Missed Questions",
+            "type": "array"
+          },
+          "learners": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherAssessmentIntelligenceLearnerResponse"
+            },
+            "title": "Learners",
+            "type": "array"
+          },
+          "objective_evidence_rollups": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherAssessmentIntelligenceObjectiveRollupResponse"
+            },
+            "title": "Objective Evidence Rollups",
+            "type": "array"
+          },
+          "question_distributions": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherAssessmentIntelligenceQuestionDistributionResponse"
+            },
+            "title": "Question Distributions",
+            "type": "array"
+          },
+          "submitted_learner_count": {
+            "title": "Submitted Learner Count",
+            "type": "integer"
+          },
+          "teaching_assignment_id": {
+            "format": "uuid",
+            "title": "Teaching Assignment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teaching_assignment_id",
+          "class_ref",
+          "content_id",
+          "content_version_id",
+          "evaluation_policy_id",
+          "evaluation_policy_version",
+          "submitted_learner_count",
+          "evaluated_learner_count",
+          "learners",
+          "question_distributions",
+          "frequently_missed_questions",
+          "objective_evidence_rollups"
+        ],
+        "title": "TeacherAssessmentIntelligenceResponse",
+        "type": "object"
+      },
       "TeacherLibraryDetailResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4338,6 +4602,242 @@
           }
         ],
         "summary": "Assessment Assignment Evaluations Ensure",
+        "tags": [
+          "assessment"
+        ]
+      }
+    },
+    "/api/v1/assessment/assignments/{assignment_id}/intelligence": {
+      "get": {
+        "operationId": "assessment_assignment_intelligence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherAssessmentIntelligenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Assessment Assignment Intelligence",
         "tags": [
           "assessment"
         ]

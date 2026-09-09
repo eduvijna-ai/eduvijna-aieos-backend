@@ -77,6 +77,9 @@ _GET_OPERATION_IDS = {
     "student_os_assignment_list",
     "student_os_assignment_get",
     "learning_attempt_get",
+    "assessment_classroom_get",
+    "assessment_classroom_list",
+    "assessment_assignment_intelligence",
 }
 
 _IDEMPOTENCY_PARAM = {

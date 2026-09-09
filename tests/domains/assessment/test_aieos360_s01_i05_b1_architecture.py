@@ -79,9 +79,9 @@ class TestB1ArchitectureGuards:
         routes = ROUTES.read_text(encoding="utf-8")
         assert "learner-assessment-evaluations" not in routes
         assert "operation_id=\"learner_assessment" not in routes
-        assert "/intelligence" not in routes
+        # B1 did not add HTTP; later slices may add Assessment routes on the same file.
 
-    def test_openapi_unchanged(self) -> None:
+    def test_openapi_digest_matches_release_pin(self) -> None:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
 

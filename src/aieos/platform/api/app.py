@@ -69,6 +69,9 @@ from aieos.domains.assessment.application.queries import (
 from aieos.domains.assessment.application.evaluation_ensure import (
     EnsureLearnerAssessmentEvaluationService,
 )
+from aieos.domains.assessment.application.intelligence import (
+    GetAssignmentAssessmentIntelligenceService,
+)
 from aieos.domains.assessment.application.record import RecordClassroomAssessmentService
 from aieos.domains.teaching.application.artifacts import ListTeachingWorkArtifactsService
 from aieos.domains.teaching.application.assignment_create import (
@@ -542,11 +545,20 @@ def create_app(
                 idempotency_retention=idempotency_retention,
             )
         )
+        app.state.get_assignment_assessment_intelligence_service = (
+            GetAssignmentAssessmentIntelligenceService(
+                assessment_uow_factory,
+                class_authority,
+                assessment_authorization,
+                classification,
+            )
+        )
     else:
         app.state.record_classroom_assessment_service = None
         app.state.correct_classroom_assessment_service = None
         app.state.void_classroom_assessment_service = None
         app.state.ensure_learner_assessment_evaluation_service = None
+        app.state.get_assignment_assessment_intelligence_service = None
 
     app.state.compose_teacher_os_assistant_context_service = (
         ComposeTeacherOsAssistantContextService(

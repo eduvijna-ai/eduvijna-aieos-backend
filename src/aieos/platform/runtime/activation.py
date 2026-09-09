@@ -89,6 +89,7 @@ READ_ONLY_OPERATION_IDS: frozenset[str] = frozenset(
         "teacher_os_teach_context_get",
         "assessment_classroom_get",
         "assessment_classroom_list",
+        "assessment_assignment_intelligence",
         "teacher_os_memory_get",
         "platform_ai_providers_get",
         "student_os_home",
