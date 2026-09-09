@@ -86,6 +86,78 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                     "FORCE ROW LEVEL SECURITY"
                 )
             )
+        evaluations_exist = conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'assessment' "
+                "AND table_name = 'learner_assessment_evaluations'"
+                ")"
+            )
+        ).scalar()
+        if evaluations_exist:
+            for table, trigger in (
+                (
+                    "learner_assessment_objective_evidence",
+                    "learner_assessment_objective_evidence_immutable_delete",
+                ),
+                (
+                    "learner_assessment_evaluation_items",
+                    "learner_assessment_evaluation_items_immutable_delete",
+                ),
+                (
+                    "learner_assessment_evaluations",
+                    "learner_assessment_evaluations_immutable_delete",
+                ),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE assessment.{table} DISABLE TRIGGER {trigger}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"ALTER TABLE assessment.{table} DISABLE ROW LEVEL SECURITY"
+                    )
+                )
+            conn.execute(
+                text("DELETE FROM assessment.learner_assessment_objective_evidence")
+            )
+            conn.execute(
+                text("DELETE FROM assessment.learner_assessment_evaluation_items")
+            )
+            conn.execute(
+                text("DELETE FROM assessment.learner_assessment_evaluations")
+            )
+            for table, trigger in (
+                (
+                    "learner_assessment_objective_evidence",
+                    "learner_assessment_objective_evidence_immutable_delete",
+                ),
+                (
+                    "learner_assessment_evaluation_items",
+                    "learner_assessment_evaluation_items_immutable_delete",
+                ),
+                (
+                    "learner_assessment_evaluations",
+                    "learner_assessment_evaluations_immutable_delete",
+                ),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE assessment.{table} ENABLE TRIGGER {trigger}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"ALTER TABLE assessment.{table} ENABLE ROW LEVEL SECURITY"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"ALTER TABLE assessment.{table} FORCE ROW LEVEL SECURITY"
+                    )
+                )
         remediation_origins_exist = conn.execute(
             text(
                 "SELECT EXISTS ("

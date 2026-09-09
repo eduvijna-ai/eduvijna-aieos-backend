@@ -48,6 +48,25 @@ def require_optional_foreign_uuid(value: UUID | None, *, label: str) -> UUID | N
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationId:
+    """Stable LearnerAssessmentEvaluation identity."""
+
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "value", _require_uuid7(self.value, label="evaluation_id")
+        )
+
+    @classmethod
+    def generate(cls) -> EvaluationId:
+        return cls(uuid.uuid7())
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+@dataclass(frozen=True, slots=True)
 class AssessmentId:
     """Stable ClassroomAssessment identity."""
 

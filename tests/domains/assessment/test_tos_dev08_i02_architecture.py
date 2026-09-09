@@ -42,8 +42,8 @@ FORBIDDEN_EVENTS = (
 
 class TestI02ArchitectureGuards:
     def test_current_alembic_head_tosd080002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080002"' in text
         assert 'down_revision: str | None = "tosd080001"' in text
@@ -100,7 +100,10 @@ class TestI02ArchitectureGuards:
         models = (
             ASSESSMENT / "infrastructure" / "persistence" / "models.py"
         ).read_text(encoding="utf-8")
-        assert "ForeignKey" not in models
+        assert "content." not in models
+        assert "learning." not in models
+        assert "teaching." not in models
+        assert "security." not in models
         teaching = (
             ASSESSMENT / "infrastructure" / "persistence" / "teaching_composition.py"
         ).read_text(encoding="utf-8")

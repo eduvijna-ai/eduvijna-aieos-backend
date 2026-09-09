@@ -109,12 +109,12 @@ def _assessment(**overrides) -> ClassroomAssessment:
 
 class TestP01P03MigrationAndShape:
     def test_p01_alembic_head_tosd080001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010002"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010002"
+        assert EXPECTED_ALEMBIC_HEAD == "a360s010003"
+        assert EXPECTED_MIGRATION_HEAD == "a360s010003"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010002"
+                == "a360s010003"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
@@ -134,7 +134,12 @@ class TestP01P03MigrationAndShape:
             for col in insp.get_columns("classroom_assessments", schema="assessment")
         }
         assert columns == EXPECTED_COLUMNS
-        assert insp.get_table_names(schema="assessment") == ["classroom_assessments"]
+        assert set(insp.get_table_names(schema="assessment")) == {
+            "classroom_assessments",
+            "learner_assessment_evaluation_items",
+            "learner_assessment_evaluations",
+            "learner_assessment_objective_evidence",
+        }
         model_cols = {col.name for col in classroom_assessments_table.columns}
         assert model_cols == EXPECTED_COLUMNS
 
@@ -483,7 +488,7 @@ class TestP18P19Downgrade:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "a360s010002"
+                    == "a360s010003"
                 )
             with factory(tenant_id) as uow:
                 loaded = uow.classroom_assessments.get(created.assessment_id)

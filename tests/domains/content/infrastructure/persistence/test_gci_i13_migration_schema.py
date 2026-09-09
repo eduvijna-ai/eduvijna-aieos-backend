@@ -481,7 +481,7 @@ class TestMigrationCycle:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010002"
+                == "a360s010003"
             )
 
     def test_offline_sql_assumes_owner_before_i13_ddl(self) -> None:

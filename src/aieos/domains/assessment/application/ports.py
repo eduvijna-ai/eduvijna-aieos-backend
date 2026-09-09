@@ -9,7 +9,12 @@ from typing import Protocol
 from uuid import UUID
 
 from aieos.domains.assessment.domain.classroom_assessment import ClassroomAssessment
-from aieos.domains.assessment.domain.identities import AggregateRevision, AssessmentId
+from aieos.domains.assessment.domain.evaluation import LearnerAssessmentEvaluation
+from aieos.domains.assessment.domain.identities import (
+    AggregateRevision,
+    AssessmentId,
+    EvaluationId,
+)
 from aieos.domains.assessment.domain.lifecycle import AssessmentLifecycleState
 from aieos.platform.idempotency.ports import IdempotencyRepository
 from aieos.platform.security.audit.models import SecurityMutationAuditRecord
@@ -78,6 +83,26 @@ class ClassroomAssessmentRepository(Protocol):
     ) -> list[ClassroomAssessment]: ...
 
 
+class LearnerAssessmentEvaluationRepository(Protocol):
+    """Insert/read only for immutable LearnerAssessmentEvaluation facts."""
+
+    def insert(
+        self, evaluation: LearnerAssessmentEvaluation
+    ) -> LearnerAssessmentEvaluation: ...
+
+    def get(
+        self, evaluation_id: EvaluationId
+    ) -> LearnerAssessmentEvaluation | None: ...
+
+    def get_by_business_identity(
+        self,
+        *,
+        submission_id: UUID,
+        evaluation_policy_id: str,
+        evaluation_policy_version: int,
+    ) -> LearnerAssessmentEvaluation | None: ...
+
+
 class SecurityMutationAuditRepository(Protocol):
     def insert(self, record: SecurityMutationAuditRecord) -> None: ...
 
@@ -128,6 +153,7 @@ class AssessmentTeachingCompositionPort(Protocol):
 
 class AssessmentUnitOfWork(Protocol):
     classroom_assessments: ClassroomAssessmentRepository
+    learner_assessment_evaluations: LearnerAssessmentEvaluationRepository
     idempotency: IdempotencyRepository
     audit: SecurityMutationAuditRepository
     content_authority: AssessmentContentAuthorityPort

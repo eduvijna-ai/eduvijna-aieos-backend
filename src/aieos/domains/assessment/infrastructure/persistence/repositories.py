@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Connection
 
 from aieos.domains.assessment.application.errors import (
@@ -12,7 +13,16 @@ from aieos.domains.assessment.application.errors import (
     PersistenceInvariantViolation,
 )
 from aieos.domains.assessment.domain.classroom_assessment import ClassroomAssessment
-from aieos.domains.assessment.domain.identities import AggregateRevision, AssessmentId
+from aieos.domains.assessment.domain.evaluation import (
+    LearnerAssessmentEvaluation,
+    LearnerAssessmentEvaluationItem,
+    LearnerAssessmentObjectiveEvidence,
+)
+from aieos.domains.assessment.domain.identities import (
+    AggregateRevision,
+    AssessmentId,
+    EvaluationId,
+)
 from aieos.domains.assessment.domain.lifecycle import (
     AssessmentLifecycleState,
     parse_assessment_lifecycle_state,
@@ -22,6 +32,9 @@ from aieos.domains.assessment.infrastructure.persistence.errors import (
 )
 from aieos.domains.assessment.infrastructure.persistence.models import (
     classroom_assessments_table,
+    learner_assessment_evaluation_items_table,
+    learner_assessment_evaluations_table,
+    learner_assessment_objective_evidence_table,
 )
 
 DEFAULT_LIST_LIMIT = 50
@@ -218,3 +231,230 @@ class SqlAlchemyClassroomAssessmentRepository:
         except Exception as exc:
             reraise_as_application_error(exc)
         return [classroom_assessment_from_row(row) for row in rows]
+
+
+def learner_assessment_evaluation_from_rows(
+    parent,
+    item_rows,
+    evidence_rows,
+) -> LearnerAssessmentEvaluation:
+    try:
+        items = tuple(
+            LearnerAssessmentEvaluationItem(
+                question_id=row["question_id"],
+                question_type=row["question_type"],
+                outcome=row["outcome"],
+                evaluation_method=row["evaluation_method"],
+                objective_ids=tuple(row["objective_ids"] or ()),
+                response_kind=row["response_kind"],
+            )
+            for row in item_rows
+        )
+        evidence = tuple(
+            LearnerAssessmentObjectiveEvidence(
+                objective_id=row["objective_id"],
+                result=row["result"],
+            )
+            for row in evidence_rows
+        )
+        return LearnerAssessmentEvaluation(
+            evaluation_id=EvaluationId(parent["evaluation_id"]),
+            tenant_id=parent["tenant_id"],
+            learner_principal_id=parent["learner_principal_id"],
+            submission_id=parent["submission_id"],
+            attempt_id=parent["attempt_id"],
+            teaching_assignment_id=parent["teaching_assignment_id"],
+            content_id=parent["content_id"],
+            content_version_id=parent["content_version_id"],
+            class_ref=parent["class_ref"],
+            evaluation_policy_id=parent["evaluation_policy_id"],
+            evaluation_policy_version=int(parent["evaluation_policy_version"]),
+            evaluated_at=parent["evaluated_at"],
+            created_at=parent["created_at"],
+            items=items,
+            objective_evidence=evidence,
+        )
+    except Exception as exc:
+        raise PersistenceInvariantViolation(
+            "stored LearnerAssessmentEvaluation row violates the aggregate contract"
+        ) from exc
+
+
+class SqlAlchemyLearnerAssessmentEvaluationRepository:
+    """Insert/read only. No update path for issued evaluation truth."""
+
+    def __init__(self, connection: Connection, execution_tenant_id: UUID) -> None:
+        self._connection = connection
+        self._execution_tenant_id = execution_tenant_id
+
+    def insert(
+        self, evaluation: LearnerAssessmentEvaluation
+    ) -> LearnerAssessmentEvaluation:
+        try:
+            inserted = self._insert_parent(evaluation)
+            if inserted is None:
+                existing = self.get_by_business_identity(
+                    submission_id=evaluation.submission_id,
+                    evaluation_policy_id=evaluation.evaluation_policy_id,
+                    evaluation_policy_version=evaluation.evaluation_policy_version,
+                )
+                if existing is None:
+                    raise PersistenceInvariantViolation(
+                        "evaluation business identity conflict without durable row"
+                    )
+                return existing
+            self._insert_children(evaluation)
+            return evaluation
+        except Exception as exc:
+            reraise_as_application_error(exc)
+
+    def get(
+        self, evaluation_id: EvaluationId
+    ) -> LearnerAssessmentEvaluation | None:
+        try:
+            row = (
+                self._connection.execute(
+                    select(learner_assessment_evaluations_table).where(
+                        learner_assessment_evaluations_table.c.evaluation_id
+                        == evaluation_id.value,
+                        learner_assessment_evaluations_table.c.tenant_id
+                        == self._execution_tenant_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        if row is None:
+            return None
+        return self._hydrate(row)
+
+    def get_by_business_identity(
+        self,
+        *,
+        submission_id: UUID,
+        evaluation_policy_id: str,
+        evaluation_policy_version: int,
+    ) -> LearnerAssessmentEvaluation | None:
+        try:
+            row = (
+                self._connection.execute(
+                    select(learner_assessment_evaluations_table).where(
+                        learner_assessment_evaluations_table.c.tenant_id
+                        == self._execution_tenant_id,
+                        learner_assessment_evaluations_table.c.submission_id
+                        == submission_id,
+                        learner_assessment_evaluations_table.c.evaluation_policy_id
+                        == evaluation_policy_id,
+                        learner_assessment_evaluations_table.c.evaluation_policy_version
+                        == evaluation_policy_version,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        if row is None:
+            return None
+        return self._hydrate(row)
+
+    def _insert_parent(
+        self, evaluation: LearnerAssessmentEvaluation
+    ) -> EvaluationId | None:
+        stmt = (
+            pg_insert(learner_assessment_evaluations_table)
+            .values(
+                evaluation_id=evaluation.evaluation_id.value,
+                tenant_id=evaluation.tenant_id,
+                learner_principal_id=evaluation.learner_principal_id,
+                submission_id=evaluation.submission_id,
+                attempt_id=evaluation.attempt_id,
+                teaching_assignment_id=evaluation.teaching_assignment_id,
+                content_id=evaluation.content_id,
+                content_version_id=evaluation.content_version_id,
+                class_ref=evaluation.class_ref,
+                evaluation_policy_id=evaluation.evaluation_policy_id,
+                evaluation_policy_version=evaluation.evaluation_policy_version,
+                evaluated_at=evaluation.evaluated_at,
+                created_at=evaluation.created_at,
+            )
+            .on_conflict_do_nothing(
+                constraint=(
+                    "uq_assessment_learner_assessment_evaluations_business_identity"
+                )
+            )
+            .returning(learner_assessment_evaluations_table.c.evaluation_id)
+        )
+        row = self._connection.execute(stmt).one_or_none()
+        if row is None:
+            return None
+        return EvaluationId(row[0])
+
+    def _insert_children(self, evaluation: LearnerAssessmentEvaluation) -> None:
+        if evaluation.items:
+            self._connection.execute(
+                learner_assessment_evaluation_items_table.insert(),
+                [
+                    {
+                        "tenant_id": evaluation.tenant_id,
+                        "evaluation_id": evaluation.evaluation_id.value,
+                        "question_id": item.question_id,
+                        "item_ordinal": ordinal,
+                        "question_type": item.question_type,
+                        "outcome": item.outcome.value,
+                        "evaluation_method": item.evaluation_method.value,
+                        "objective_ids": list(item.objective_ids),
+                        "response_kind": item.response_kind,
+                    }
+                    for ordinal, item in enumerate(evaluation.items)
+                ],
+            )
+        if evaluation.objective_evidence:
+            self._connection.execute(
+                learner_assessment_objective_evidence_table.insert(),
+                [
+                    {
+                        "tenant_id": evaluation.tenant_id,
+                        "evaluation_id": evaluation.evaluation_id.value,
+                        "objective_id": row.objective_id,
+                        "result": row.result.value,
+                    }
+                    for row in evaluation.objective_evidence
+                ],
+            )
+
+    def _hydrate(self, parent) -> LearnerAssessmentEvaluation:
+        item_rows = (
+            self._connection.execute(
+                select(learner_assessment_evaluation_items_table)
+                .where(
+                    learner_assessment_evaluation_items_table.c.tenant_id
+                    == self._execution_tenant_id,
+                    learner_assessment_evaluation_items_table.c.evaluation_id
+                    == parent["evaluation_id"],
+                )
+                .order_by(learner_assessment_evaluation_items_table.c.item_ordinal)
+            )
+            .mappings()
+            .all()
+        )
+        evidence_rows = (
+            self._connection.execute(
+                select(learner_assessment_objective_evidence_table)
+                .where(
+                    learner_assessment_objective_evidence_table.c.tenant_id
+                    == self._execution_tenant_id,
+                    learner_assessment_objective_evidence_table.c.evaluation_id
+                    == parent["evaluation_id"],
+                )
+                .order_by(
+                    learner_assessment_objective_evidence_table.c.objective_id
+                )
+            )
+            .mappings()
+            .all()
+        )
+        return learner_assessment_evaluation_from_rows(parent, item_rows, evidence_rows)
+

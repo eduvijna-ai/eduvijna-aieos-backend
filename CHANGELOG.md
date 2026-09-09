@@ -9,6 +9,18 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S01-I05-B1 — Assessment-owned immutable
+  `LearnerAssessmentEvaluation` persistence
+  (`assessment.learner_assessment_evaluations`,
+  `assessment.learner_assessment_evaluation_items`,
+  `assessment.learner_assessment_objective_evidence`) plus named
+  deterministic evaluator policy
+  `aieos.learner_assessment.deterministic` version `1`. Alembic
+  `a360s010003`. No Assessment HTTP, no OpenAPI change, no NATS /
+  Temporal, no Teacher Assessment Intelligence API.
+
+### Added
+
 - AIEOS360-S01-I03 — Student assignment consumption and authoritative
   LearnerAttempt start/save/submit application + HTTP (`/api/v1/student-os/*`,
   `/api/v1/learning/*`). Composed Student Learning command Unit of Work locks

@@ -19,6 +19,7 @@ from aieos.domains.assessment.infrastructure.persistence.errors import (
 )
 from aieos.domains.assessment.infrastructure.persistence.repositories import (
     SqlAlchemyClassroomAssessmentRepository,
+    SqlAlchemyLearnerAssessmentEvaluationRepository,
 )
 from aieos.domains.assessment.infrastructure.persistence.teaching_composition import (
     SqlAlchemyAssessmentTeachingCompositionAdapter,
@@ -35,6 +36,9 @@ class SqlAlchemyAssessmentUnitOfWork:
         self._connection: Connection | None = None
         self._transaction: Transaction | None = None
         self.classroom_assessments: SqlAlchemyClassroomAssessmentRepository
+        self.learner_assessment_evaluations: (
+            SqlAlchemyLearnerAssessmentEvaluationRepository
+        )
         self.idempotency: SqlAlchemyIdempotencyRepository
         self.audit: AssessmentSecurityMutationAuditRepository
         self.content_authority: SqlAlchemyAssessmentContentAuthorityAdapter
@@ -50,6 +54,11 @@ class SqlAlchemyAssessmentUnitOfWork:
             )
             self.classroom_assessments = SqlAlchemyClassroomAssessmentRepository(
                 self._connection, self._execution_tenant_id
+            )
+            self.learner_assessment_evaluations = (
+                SqlAlchemyLearnerAssessmentEvaluationRepository(
+                    self._connection, self._execution_tenant_id
+                )
             )
             self.idempotency = SqlAlchemyIdempotencyRepository(
                 self._connection, self._execution_tenant_id
