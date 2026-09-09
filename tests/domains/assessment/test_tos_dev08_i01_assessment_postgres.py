@@ -27,6 +27,7 @@ from aieos.domains.assessment.infrastructure.persistence.uow import (
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
+from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 from tools.release.common import EXPECTED_MIGRATION_HEAD
 
 
@@ -421,6 +422,9 @@ class TestP18P19Downgrade:
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        # Isolate the historical ClassroomAssessment downgrade from later
+        # AIEOS360 evaluation / Learning / assessment-audit evidence.
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         with bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
@@ -469,6 +473,9 @@ class TestP18P19Downgrade:
         self, postgres18, bootstrap_engine: Engine, runtime_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        # Clear later AIEOS360 evaluation/audit evidence first so this
+        # exercises the ClassroomAssessment nonempty-downgrade boundary.
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         tenant_id = uuid.uuid7()
         factory = SqlAlchemyAssessmentUnitOfWorkFactory(runtime_engine)
         created = _assessment(tenant_id=tenant_id)
