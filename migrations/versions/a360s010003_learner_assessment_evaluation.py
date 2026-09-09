@@ -219,8 +219,9 @@ UPGRADE_STATEMENTS: tuple[str, ...] = (
     SET search_path = assessment, pg_temp
     AS $$
     BEGIN
-        RAISE EXCEPTION 'assessment.% is immutable', TG_TABLE_NAME
-            USING ERRCODE = '27000';
+        RAISE EXCEPTION
+            USING MESSAGE = 'assessment.' || TG_TABLE_NAME || ' is immutable',
+                ERRCODE = '27000';
     END;
     $$
     """,
