@@ -31,6 +31,13 @@ from aieos.domains.assessment.application.ports import (
     AssessmentUnitOfWorkFactory,
     ClassroomAssessmentAuthorization,
 )
+from aieos.domains.school_intelligence.application.ports import (
+    SchoolIntelligenceAuthorization,
+    SchoolIntelligenceFactsReader,
+)
+from aieos.domains.school_intelligence.application.school_scope import (
+    SchoolContextPrincipalScopeReader,
+)
 from aieos.platform.api.app import create_app
 from aieos.platform.runtime.activation import (
     ApiMutationActivationGate,
@@ -69,6 +76,11 @@ class ApiRuntimeDependencies:
     principal_classification_authority: HumanPrincipalClassificationGate
     teaching_authorization: TeachingWorkAuthorization | None = None
     student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None
+    school_intelligence_authorization: SchoolIntelligenceAuthorization | None = None
+    school_context_principal_scope_reader: (
+        SchoolContextPrincipalScopeReader | None
+    ) = None
+    school_intelligence_facts_reader: SchoolIntelligenceFactsReader | None = None
 
 
 def compose_api_application(
@@ -103,6 +115,15 @@ def compose_api_application(
             dependencies.principal_classification_authority
         ),
         student_learning_uow_factory=dependencies.student_learning_uow_factory,
+        school_intelligence_authorization=(
+            dependencies.school_intelligence_authorization
+        ),
+        school_context_principal_scope_reader=(
+            dependencies.school_context_principal_scope_reader
+        ),
+        school_intelligence_facts_reader=(
+            dependencies.school_intelligence_facts_reader
+        ),
     )
     app.state.release_identity = ReleaseIdentity(
         application_version=config.release_identity.application_version,

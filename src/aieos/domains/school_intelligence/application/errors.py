@@ -24,3 +24,11 @@ class SchoolContextUnavailable(SchoolIntelligenceApplicationError):
 
 class SchoolContextContractError(SchoolIntelligenceApplicationError):
     """School Context Principal-scope provider returned an invalid response."""
+
+
+class SchoolIntelligenceReadUnavailable(SchoolIntelligenceApplicationError):
+    """Authoritative source-domain read failed. Do not translate into zero."""
+
+
+class SchoolIntelligenceScopeCapacityExceeded(SchoolIntelligenceApplicationError):
+    """Current authorized ClassRef set exceeds the bounded first-showcase limit."""

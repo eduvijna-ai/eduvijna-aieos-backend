@@ -9,6 +9,18 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S02-I02 — Principal school intelligence derived-on-request GET
+  `/api/v1/principal-os/school-intelligence` under ADR-AIEOS-060 Frozen /
+  Approved. Current ACTIVE HUMAN + `school.intelligence.read` + current
+  Principal School Scope; authorized ClassRefs filtered before aggregation;
+  privacy-safe evidence-flow counts only. No learner identities, no Teacher
+  Assessment Intelligence DTO reuse, no mastery, no teacher ranking, no
+  School Intelligence table, no migration. Alembic head remains
+  `a360s010004`. OpenAPI changes for this GET only. Production Principal
+  School Context remains unconfigured. Exact-head correction: facts snapshot
+  completeness is fail-closed (no missing-row zero synthesis); ClassroomAssessment
+  assignment counts require coherent TeachingAssignment lineage.
+
 - AIEOS360-S02-I01 — Principal school scope current-authority substrate
   under ADR-AIEOS-060 Frozen / Approved. Exact capability
   `school.intelligence.read`; HUMAN-only Principal classification;

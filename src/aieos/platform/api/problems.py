@@ -168,6 +168,14 @@ from aieos.domains.learning.application.errors import (
     SecondAttemptNotAuthorized,
     SubmissionImmutable,
 )
+from aieos.domains.school_intelligence.application.errors import (
+    SchoolContextContractError as SchoolIntelligenceSchoolContextContractError,
+    SchoolContextUnavailable as SchoolIntelligenceSchoolContextUnavailable,
+    SchoolIntelligenceApplicationError,
+    SchoolIntelligenceCapabilityForbidden,
+    SchoolIntelligenceReadUnavailable,
+    SchoolIntelligenceScopeCapacityExceeded,
+)
 from aieos.platform.api.context import (
     InvalidTenantHeaderError,
     bind_response_context,
@@ -1150,6 +1158,41 @@ _LEARNING_PROBLEMS: dict[type[LearningApplicationError], tuple[int, str, str, st
     ),
 }
 
+_SCHOOL_INTELLIGENCE_PROBLEMS: dict[
+    type[SchoolIntelligenceApplicationError], tuple[int, str, str, str]
+] = {
+    SchoolIntelligenceCapabilityForbidden: (
+        403,
+        "school_intelligence_capability_forbidden",
+        "School Intelligence capability denied",
+        "The request is not authorized for this School Intelligence operation",
+    ),
+    SchoolIntelligenceSchoolContextUnavailable: (
+        503,
+        "school_context_unavailable",
+        "School Context unavailable",
+        "School Context is temporarily unavailable",
+    ),
+    SchoolIntelligenceSchoolContextContractError: (
+        503,
+        "school_context_unavailable",
+        "School Context unavailable",
+        "School Context is temporarily unavailable",
+    ),
+    SchoolIntelligenceReadUnavailable: (
+        503,
+        "school_intelligence_unavailable",
+        "School Intelligence unavailable",
+        "School Intelligence is temporarily unavailable",
+    ),
+    SchoolIntelligenceScopeCapacityExceeded: (
+        503,
+        "school_intelligence_unavailable",
+        "School Intelligence unavailable",
+        "School Intelligence is temporarily unavailable",
+    ),
+}
+
 
 def install_exception_handlers(app) -> None:
     @app.exception_handler(RequestValidationError)
@@ -1271,6 +1314,28 @@ def install_exception_handlers(app) -> None:
         request: Request, exc: LearningApplicationError
     ) -> JSONResponse:
         mapping = _LEARNING_PROBLEMS.get(type(exc))
+        if mapping is None:
+            status, code, title, detail = (
+                500,
+                "internal_error",
+                "Internal error",
+                "An unexpected error occurred",
+            )
+        else:
+            status, code, title, detail = mapping
+        return problem_response(
+            request,
+            status=status,
+            code=code,
+            title=title,
+            detail=detail,
+        )
+
+    @app.exception_handler(SchoolIntelligenceApplicationError)
+    async def school_intelligence_application_handler(
+        request: Request, exc: SchoolIntelligenceApplicationError
+    ) -> JSONResponse:
+        mapping = _SCHOOL_INTELLIGENCE_PROBLEMS.get(type(exc))
         if mapping is None:
             status, code, title, detail = (
                 500,
