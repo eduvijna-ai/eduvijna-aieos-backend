@@ -17,6 +17,10 @@ from aieos.development.auth_adapters import (
     DevelopmentReviewCommentPermit,
     DevelopmentTeachingWorkPermit,
 )
+from aieos.development.principal_school_context import (
+    DevelopmentSchoolContextPrincipalScopeReader,
+    DevelopmentSchoolIntelligencePermit,
+)
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
@@ -25,6 +29,9 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 )
 from aieos.domains.assessment.infrastructure.persistence.uow import (
     SqlAlchemyAssessmentUnitOfWorkFactory,
+)
+from aieos.domains.school_intelligence.infrastructure.read_projection import (
+    SqlAlchemySchoolIntelligenceFactsReader,
 )
 from aieos.platform.runtime.activation import (
     load_api_mutation_activation_gate_from_process_environment,
@@ -97,6 +104,16 @@ def compose_local_api_runtime_dependencies(
             engine
         ),
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
+            engine
+        ),
+        school_intelligence_authorization=DevelopmentSchoolIntelligencePermit(),
+        school_context_principal_scope_reader=(
+            DevelopmentSchoolContextPrincipalScopeReader(
+                tenant_id=LOCAL_DEV_TENANT_ID,
+                principal_id=LOCAL_DEV_PRINCIPAL_ID,
+            )
+        ),
+        school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             engine
         ),
     )

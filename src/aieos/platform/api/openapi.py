@@ -80,6 +80,7 @@ _GET_OPERATION_IDS = {
     "assessment_classroom_get",
     "assessment_classroom_list",
     "assessment_assignment_intelligence",
+    "principal_os_school_intelligence_get",
 }
 
 _IDEMPOTENCY_PARAM = {

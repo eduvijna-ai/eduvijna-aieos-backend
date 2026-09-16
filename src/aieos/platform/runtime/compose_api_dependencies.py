@@ -54,6 +54,12 @@ from aieos.platform.runtime.student_learning_command import (
 from aieos.platform.resources.asset_use import AssetUseAuthority
 from aieos.platform.security.auth_config import AuthRuntimeConfig
 from aieos.platform.security.authority import CurrentAuthoritySecurityContextResolver
+from aieos.domains.school_intelligence.application.school_scope import (
+    UnconfiguredSchoolContextPrincipalScopeReader,
+)
+from aieos.domains.school_intelligence.infrastructure.read_projection import (
+    SqlAlchemySchoolIntelligenceFactsReader,
+)
 from aieos.platform.security.authorization import (
     AIEOS_ASSESSMENT_CAPABILITIES,
     AIEOS_CONTENT_CAPABILITIES,
@@ -65,6 +71,7 @@ from aieos.platform.security.authorization import (
     KernelCurrentTenantAccessAuthority,
     KernelPublicationAuthorization,
     KernelReviewAuthorization,
+    KernelSchoolIntelligenceAuthorization,
     KernelTeachingWorkAuthorization,
 )
 from aieos.platform.security.jwt_bearer import JwtBearerRequestIdentityAuthenticator
@@ -209,6 +216,15 @@ def compose_api_runtime_dependencies(
             engine
         ),
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
+            engine
+        ),
+        school_intelligence_authorization=KernelSchoolIntelligenceAuthorization(
+            kernel
+        ),
+        school_context_principal_scope_reader=(
+            UnconfiguredSchoolContextPrincipalScopeReader()
+        ),
+        school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             engine
         ),
     )

@@ -54,6 +54,25 @@ from aieos.domains.education.application.generate_worksheet import GenerateWorks
 from aieos.domains.teaching.api.v1.routes import router as teaching_v1_router
 from aieos.domains.learning.api.v1.routes import router as learning_v1_router
 from aieos.domains.assessment.api.v1.routes import router as assessment_v1_router
+from aieos.domains.school_intelligence.api.v1.routes import (
+    router as school_intelligence_v1_router,
+)
+from aieos.domains.school_intelligence.application.errors import (
+    SchoolIntelligenceCapabilityForbidden,
+    SchoolIntelligenceReadUnavailable,
+)
+from aieos.domains.school_intelligence.application.intelligence import (
+    GetPrincipalSchoolIntelligenceService,
+)
+from aieos.domains.school_intelligence.application.ports import (
+    SchoolIntelligenceAuthorization,
+    SchoolIntelligenceFactsReader,
+)
+from aieos.domains.school_intelligence.application.school_scope import (
+    CurrentPrincipalSchoolScopeService,
+    SchoolContextPrincipalScopeReader,
+    UnconfiguredSchoolContextPrincipalScopeReader,
+)
 from aieos.domains.assessment.application.mutations import (
     CorrectClassroomAssessmentService,
     VoidClassroomAssessmentService,
@@ -178,6 +197,26 @@ from aieos.platform.security.context import (
 )
 
 
+class _MissingSchoolIntelligenceAuthorization:
+    """Fail-closed capability adapter when School Intelligence auth is omitted."""
+
+    def authorize(self, *, tenant_id, principal_id, capability) -> None:
+        del tenant_id, principal_id, capability
+        raise SchoolIntelligenceCapabilityForbidden(
+            "school intelligence capability denied"
+        )
+
+
+class _UnavailableSchoolIntelligenceFactsReader:
+    """Fail-closed facts adapter when no read adapter is composed."""
+
+    def read_authorized_class_facts(self, **kwargs):
+        del kwargs
+        raise SchoolIntelligenceReadUnavailable(
+            "School Intelligence source is temporarily unavailable"
+        )
+
+
 class _UnavailablePrincipalClassificationAuthority:
     """Fail-closed gate when no SoR engine is composed (OpenAPI/test shells)."""
 
@@ -237,6 +276,13 @@ def create_app(
     ) = None,
     learner_membership_reader: SchoolContextLearnerMembershipReader | None = None,
     student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None,
+    school_intelligence_authorization: (
+        SchoolIntelligenceAuthorization | None
+    ) = None,
+    school_context_principal_scope_reader: (
+        SchoolContextPrincipalScopeReader | None
+    ) = None,
+    school_intelligence_facts_reader: SchoolIntelligenceFactsReader | None = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -252,6 +298,7 @@ def create_app(
     app.include_router(teaching_v1_router)
     app.include_router(learning_v1_router)
     app.include_router(assessment_v1_router)
+    app.include_router(school_intelligence_v1_router)
     app.include_router(platform_ai_v1_router)
     app.state.request_identity_authenticator = request_identity_authenticator
     app.state.security_resolver = security_resolver
@@ -630,6 +677,26 @@ def create_app(
         app.state.save_responses_service = None
         app.state.submit_attempt_service = None
         app.state.get_attempt_service = None
+
+    app.state.get_principal_school_intelligence_service = (
+        GetPrincipalSchoolIntelligenceService(
+            school_scope=CurrentPrincipalSchoolScopeService(
+                classification=classification,
+                authorization=(
+                    school_intelligence_authorization
+                    or _MissingSchoolIntelligenceAuthorization()
+                ),
+                reader=(
+                    school_context_principal_scope_reader
+                    or UnconfiguredSchoolContextPrincipalScopeReader()
+                ),
+            ),
+            facts_reader=(
+                school_intelligence_facts_reader
+                or _UnavailableSchoolIntelligenceFactsReader()
+            ),
+        )
+    )
 
     def _openapi() -> dict:
         if app.openapi_schema is None:

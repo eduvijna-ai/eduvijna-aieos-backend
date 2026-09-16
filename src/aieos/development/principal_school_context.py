@@ -16,6 +16,12 @@ from aieos.development.teacher_os_review_scenario import (
     SCENARIO_NAMESPACE,
     SYNTHETIC_TENANT_ID,
 )
+from aieos.domains.school_intelligence.application.errors import (
+    SchoolIntelligenceCapabilityForbidden,
+)
+from aieos.domains.school_intelligence.application.ports import (
+    SCHOOL_INTELLIGENCE_READ,
+)
 from aieos.domains.school_intelligence.application.school_scope import (
     AuthorizedSchoolClassRef,
     CurrentPrincipalSchoolScopeService,
@@ -42,6 +48,7 @@ __all__ = [
     "PRINCIPAL_OS_HUMAN_PRINCIPAL_ID",
     "SYNTHETIC_TENANT_ID",
     "DevelopmentSchoolContextPrincipalScopeReader",
+    "DevelopmentSchoolIntelligencePermit",
     "development_principal_school_scope_reader",
 ]
 
@@ -99,3 +106,26 @@ def development_principal_school_scope_service(
             principal_id=principal_id,
         ),
     )
+
+
+class DevelopmentSchoolIntelligencePermit:
+    """NON_PRODUCTION exact-capability permit for school.intelligence.read.
+
+    Rejects wildcard and unknown School Intelligence capabilities. Must never
+    be imported by production runtime composition.
+    """
+
+    NON_PRODUCTION = True
+
+    def authorize(
+        self,
+        *,
+        tenant_id: UUID,
+        principal_id: UUID,
+        capability: str,
+    ) -> None:
+        del tenant_id, principal_id
+        if "*" in capability or capability != SCHOOL_INTELLIGENCE_READ:
+            raise SchoolIntelligenceCapabilityForbidden(
+                "school intelligence capability denied"
+            )

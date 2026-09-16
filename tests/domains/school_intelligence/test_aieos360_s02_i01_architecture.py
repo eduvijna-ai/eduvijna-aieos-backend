@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import json
 from dataclasses import fields
 from pathlib import Path
 
@@ -144,23 +143,24 @@ class TestNoPersistenceNoApi:
         for path in _py_files(SI_ROOT):
             text = path.read_text(encoding="utf-8")
             assert "Table(" not in text
+            relative = path.relative_to(SI_ROOT).as_posix()
+            if relative.startswith("infrastructure/"):
+                continue
             for module in _import_modules(path):
                 assert module != "sqlalchemy"
                 assert not module.startswith("sqlalchemy.")
                 assert module != "alembic"
                 assert not module.startswith("alembic.")
 
-    def test_openapi_unchanged_and_no_principal_http(self) -> None:
-        schema = json.loads(OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
-        paths = schema.get("paths") or {}
-        assert not any("principal" in path.lower() for path in paths)
-        assert not any("school-intelligence" in path.lower() for path in paths)
+    def test_openapi_snapshot_has_no_school_intelligence_table(self) -> None:
         digest = hashlib.sha256(OPENAPI_SNAPSHOT.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert digest == (
-            "7B51CE21725651B8D556B9DD6D264473DF0A2E7CAF30D722E1CC776C651FAFBB"
+        versions = sorted(
+            path.name
+            for path in MIGRATIONS.glob("*.py")
+            if path.name != "__init__.py"
         )
-        assert not (SI_ROOT / "api").exists()
+        assert not any("school_intelligence" in name.lower() for name in versions)
 
     def test_no_school_intelligence_aggregation(self) -> None:
         for path in _py_files(SI_ROOT):
@@ -204,5 +204,7 @@ class TestProductionCatalogComposition:
             " | AIEOS_TEACHING_WORK_CAPABILITIES"
             " | AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES )" in compact_src
         )
-        assert "KernelSchoolIntelligenceAuthorization" not in src
+        assert "KernelSchoolIntelligenceAuthorization" in src
+        assert "UnconfiguredSchoolContextPrincipalScopeReader" in src
+        assert "SqlAlchemySchoolIntelligenceFactsReader" in src
         assert "principal_school_context" not in src

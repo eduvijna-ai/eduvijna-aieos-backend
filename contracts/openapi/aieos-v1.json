@@ -1,6 +1,33 @@
 {
   "components": {
     "schemas": {
+      "AssignmentLifecycleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "minimum": 0.0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "cancelled": {
+            "minimum": 0.0,
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "closed": {
+            "minimum": 0.0,
+            "title": "Closed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "closed",
+          "cancelled"
+        ],
+        "title": "AssignmentLifecycleResponse",
+        "type": "object"
+      },
       "AttemptResponse": {
         "additionalProperties": false,
         "properties": {
@@ -931,6 +958,27 @@
         "title": "EducationalQualityResponse",
         "type": "object"
       },
+      "EvaluationCoverageAmongSubmittedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "current_policy_evaluated_count": {
+            "minimum": 0.0,
+            "title": "Current Policy Evaluated Count",
+            "type": "integer"
+          },
+          "submitted_count": {
+            "minimum": 0.0,
+            "title": "Submitted Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submitted_count",
+          "current_policy_evaluated_count"
+        ],
+        "title": "EvaluationCoverageAmongSubmittedResponse",
+        "type": "object"
+      },
       "GeneratedArtifactResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1364,6 +1412,210 @@
           "status"
         ],
         "title": "PreparationStatusResponse",
+        "type": "object"
+      },
+      "PrincipalSchoolIntelligenceClassCardResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_lifecycle": {
+            "$ref": "#/components/schemas/AssignmentLifecycleResponse"
+          },
+          "assignments_with_recorded_classroom_assessment_count": {
+            "minimum": 0.0,
+            "title": "Assignments With Recorded Classroom Assessment Count",
+            "type": "integer"
+          },
+          "class_ref": {
+            "title": "Class Ref",
+            "type": "string"
+          },
+          "completed_teaching_execution_count": {
+            "minimum": 0.0,
+            "title": "Completed Teaching Execution Count",
+            "type": "integer"
+          },
+          "current_policy_evaluation_count": {
+            "minimum": 0.0,
+            "title": "Current Policy Evaluation Count",
+            "type": "integer"
+          },
+          "display_label": {
+            "title": "Display Label",
+            "type": "string"
+          },
+          "evaluation_coverage_among_submitted": {
+            "$ref": "#/components/schemas/EvaluationCoverageAmongSubmittedResponse"
+          },
+          "has_assignment_activity": {
+            "title": "Has Assignment Activity",
+            "type": "boolean"
+          },
+          "has_recorded_classroom_assessment": {
+            "title": "Has Recorded Classroom Assessment",
+            "type": "boolean"
+          },
+          "learner_submission_count": {
+            "minimum": 0.0,
+            "title": "Learner Submission Count",
+            "type": "integer"
+          },
+          "remediation_activity_count": {
+            "minimum": 0.0,
+            "title": "Remediation Activity Count",
+            "type": "integer"
+          },
+          "submitted_but_not_current_policy_evaluated_count": {
+            "minimum": 0.0,
+            "title": "Submitted But Not Current Policy Evaluated Count",
+            "type": "integer"
+          },
+          "teaching_assignment_count": {
+            "minimum": 0.0,
+            "title": "Teaching Assignment Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "class_ref",
+          "display_label",
+          "has_assignment_activity",
+          "teaching_assignment_count",
+          "assignment_lifecycle",
+          "learner_submission_count",
+          "current_policy_evaluation_count",
+          "submitted_but_not_current_policy_evaluated_count",
+          "evaluation_coverage_among_submitted",
+          "has_recorded_classroom_assessment",
+          "assignments_with_recorded_classroom_assessment_count",
+          "completed_teaching_execution_count",
+          "remediation_activity_count"
+        ],
+        "title": "PrincipalSchoolIntelligenceClassCardResponse",
+        "type": "object"
+      },
+      "PrincipalSchoolIntelligenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipalSchoolIntelligenceClassCardResponse"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "evaluation_policy": {
+            "$ref": "#/components/schemas/SchoolIntelligenceEvaluationPolicyResponse"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "projection_mode": {
+            "title": "Projection Mode",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PrincipalSchoolIntelligenceSummaryResponse"
+          },
+          "time_window": {
+            "$ref": "#/components/schemas/SchoolIntelligenceTimeWindowResponse"
+          }
+        },
+        "required": [
+          "generated_at",
+          "projection_mode",
+          "time_window",
+          "evaluation_policy",
+          "sources",
+          "summary",
+          "classes"
+        ],
+        "title": "PrincipalSchoolIntelligenceResponse",
+        "type": "object"
+      },
+      "PrincipalSchoolIntelligenceSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_lifecycle": {
+            "$ref": "#/components/schemas/AssignmentLifecycleResponse"
+          },
+          "assignments_with_recorded_classroom_assessment_count": {
+            "minimum": 0.0,
+            "title": "Assignments With Recorded Classroom Assessment Count",
+            "type": "integer"
+          },
+          "classes_with_assignment_activity_count": {
+            "minimum": 0.0,
+            "title": "Classes With Assignment Activity Count",
+            "type": "integer"
+          },
+          "classes_with_recorded_classroom_assessment_count": {
+            "minimum": 0.0,
+            "title": "Classes With Recorded Classroom Assessment Count",
+            "type": "integer"
+          },
+          "completed_teaching_execution_count": {
+            "minimum": 0.0,
+            "title": "Completed Teaching Execution Count",
+            "type": "integer"
+          },
+          "current_policy_evaluation_count": {
+            "minimum": 0.0,
+            "title": "Current Policy Evaluation Count",
+            "type": "integer"
+          },
+          "evaluation_coverage_among_submitted": {
+            "$ref": "#/components/schemas/EvaluationCoverageAmongSubmittedResponse"
+          },
+          "in_scope_class_count": {
+            "minimum": 0.0,
+            "title": "In Scope Class Count",
+            "type": "integer"
+          },
+          "learner_submission_count": {
+            "minimum": 0.0,
+            "title": "Learner Submission Count",
+            "type": "integer"
+          },
+          "remediation_activity_count": {
+            "minimum": 0.0,
+            "title": "Remediation Activity Count",
+            "type": "integer"
+          },
+          "submitted_but_not_current_policy_evaluated_count": {
+            "minimum": 0.0,
+            "title": "Submitted But Not Current Policy Evaluated Count",
+            "type": "integer"
+          },
+          "teaching_assignment_count": {
+            "minimum": 0.0,
+            "title": "Teaching Assignment Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "in_scope_class_count",
+          "classes_with_assignment_activity_count",
+          "teaching_assignment_count",
+          "assignment_lifecycle",
+          "learner_submission_count",
+          "current_policy_evaluation_count",
+          "submitted_but_not_current_policy_evaluated_count",
+          "evaluation_coverage_among_submitted",
+          "classes_with_recorded_classroom_assessment_count",
+          "assignments_with_recorded_classroom_assessment_count",
+          "completed_teaching_execution_count",
+          "remediation_activity_count"
+        ],
+        "title": "PrincipalSchoolIntelligenceSummaryResponse",
         "type": "object"
       },
       "ProblemDetails": {
@@ -1908,6 +2160,59 @@
           "items"
         ],
         "title": "SchoolContextClassesResponse",
+        "type": "object"
+      },
+      "SchoolIntelligenceEvaluationPolicyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "minimum": 1.0,
+            "title": "Policy Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id",
+          "policy_version"
+        ],
+        "title": "SchoolIntelligenceEvaluationPolicyResponse",
+        "type": "object"
+      },
+      "SchoolIntelligenceTimeWindowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "mode",
+          "start",
+          "end"
+        ],
+        "title": "SchoolIntelligenceTimeWindowResponse",
         "type": "object"
       },
       "StudentAssignmentListResponse": {
@@ -11876,6 +12181,232 @@
         "summary": "Platform Ai Providers Get",
         "tags": [
           "platform-ai"
+        ]
+      }
+    },
+    "/api/v1/principal-os/school-intelligence": {
+      "get": {
+        "operationId": "principal_os_school_intelligence_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-AIEOS-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Aieos-Tenant-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier. Malformed values are rejected. The server generates a UUIDv7 when absent. Distinct from request_id.",
+            "in": "header",
+            "name": "X-AIEOS-Correlation-ID",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalSchoolIntelligenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "RFC 9457 Problem Details",
+            "headers": {
+              "X-AIEOS-Correlation-ID": {
+                "description": "Correlation identifier preserved or generated by the server.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "X-AIEOS-Request-ID": {
+                "description": "Server-generated UUIDv7 request identifier. Callers cannot choose it.",
+                "schema": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AIEOSBearerAuth": []
+          }
+        ],
+        "summary": "Principal Os School Intelligence Get",
+        "tags": [
+          "principal-os"
         ]
       }
     },

@@ -24,6 +24,10 @@ from aieos.development.schemas import (
     build_development_schema_registry,
     development_content_type_names,
 )
+from aieos.development.principal_school_context import (
+    DevelopmentSchoolContextPrincipalScopeReader,
+    DevelopmentSchoolIntelligencePermit,
+)
 from aieos.development.school_context import DevelopmentSchoolContextClassReader
 from aieos.domains.content.application.catalog import StaticContentTypeCatalog
 from aieos.domains.content.infrastructure.persistence.uow import (
@@ -34,6 +38,9 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 )
 from aieos.domains.assessment.infrastructure.persistence.uow import (
     SqlAlchemyAssessmentUnitOfWorkFactory,
+)
+from aieos.domains.school_intelligence.infrastructure.read_projection import (
+    SqlAlchemySchoolIntelligenceFactsReader,
 )
 from aieos.platform.ai.composition import compose_configured_model_provider
 from aieos.platform.ai.config import (
@@ -113,6 +120,16 @@ def build_development_teacher_os_app(
         ),
         teaching_authorization=DevelopmentTeachingWorkPermit(),
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
+            runtime_engine
+        ),
+        school_intelligence_authorization=DevelopmentSchoolIntelligencePermit(),
+        school_context_principal_scope_reader=(
+            DevelopmentSchoolContextPrincipalScopeReader(
+                tenant_id=tenant_id,
+                principal_id=principal_id,
+            )
+        ),
+        school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             runtime_engine
         ),
     )
