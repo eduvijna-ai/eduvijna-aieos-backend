@@ -42,6 +42,10 @@ from aieos.platform.security.authorization.repository import (
 from aieos.platform.security.authorization.tenant_authority import (
     KernelCurrentTenantAccessAuthority,
 )
+from aieos.platform.security.authorization.school_intelligence_adapters import (
+    AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
+    KernelSchoolIntelligenceAuthorization,
+)
 from aieos.platform.security.authorization.teaching_adapters import (
     AIEOS_TEACHING_WORK_CAPABILITIES,
     KernelTeachingWorkAuthorization,
@@ -51,6 +55,7 @@ __all__ = [
     "AIEOS_ASSESSMENT_CAPABILITIES",
     "AIEOS_ASSET_CAPABILITIES",
     "AIEOS_CONTENT_CAPABILITIES",
+    "AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES",
     "AIEOS_TEACHING_WORK_CAPABILITIES",
     "CONTENT_MIGRATE_IMPORT",
     "CONTENT_PUBLISH",
@@ -68,6 +73,7 @@ __all__ = [
     "KernelCurrentTenantAccessAuthority",
     "KernelPublicationAuthorization",
     "KernelReviewAuthorization",
+    "KernelSchoolIntelligenceAuthorization",
     "KernelTeachingWorkAuthorization",
     "MembershipStatus",
     "PrincipalKind",

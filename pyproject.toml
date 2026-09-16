@@ -111,4 +111,5 @@ markers = [
     "aieos360_s01_i05_b1: AIEOS360-S01-I05-B1 Assessment evaluation persistence and deterministic evaluator",
     "aieos360_s01_i05_b2: AIEOS360-S01-I05-B2 Assessment evaluation application/API composition",
     "aieos360_s01_i05_b3: AIEOS360-S01-I05-B3 Teacher Assessment Intelligence GET projection",
+    "aieos360_s02_i01: AIEOS360-S02-I01 Principal school scope current authority substrate",
 ]

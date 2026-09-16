@@ -9,6 +9,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S02-I01 — Principal school scope current-authority substrate
+  under ADR-AIEOS-060 Frozen / Approved. Exact capability
+  `school.intelligence.read`; HUMAN-only Principal classification;
+  distinct `SchoolContextPrincipalScopeReader` (teacher assignability and
+  learner membership ports are not reused); fail-closed unconfigured
+  School Context; NON_PRODUCTION development adapter isolated from
+  production composition. No School Intelligence SoR, no Principal HTTP,
+  no OpenAPI change, no migration. Alembic head remains `a360s010004`.
+
 - AIEOS360-S01-I05-B2 — Assessment evaluation application/API composition.
   Explicit POST commands ensure current-policy
   `LearnerAssessmentEvaluation` for one immutable submission or for existing
