@@ -57,6 +57,7 @@ from aieos.platform.security.authority import CurrentAuthoritySecurityContextRes
 from aieos.platform.security.authorization import (
     AIEOS_ASSESSMENT_CAPABILITIES,
     AIEOS_CONTENT_CAPABILITIES,
+    AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
     AIEOS_TEACHING_WORK_CAPABILITIES,
     AuthorizationKernel,
     CurrentPrincipalClassificationAuthority,
@@ -164,6 +165,7 @@ def compose_api_runtime_dependencies(
             AIEOS_CONTENT_CAPABILITIES
             | AIEOS_ASSESSMENT_CAPABILITIES
             | AIEOS_TEACHING_WORK_CAPABILITIES
+            | AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES
         ),
     )
     asset_authority = _build_asset_use_authority(engine, env)

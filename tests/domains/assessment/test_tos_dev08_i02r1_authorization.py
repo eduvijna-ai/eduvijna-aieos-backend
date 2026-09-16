@@ -949,5 +949,6 @@ class TestProductionCatalogComposition:
         assert (
             "known_capabilities=( AIEOS_CONTENT_CAPABILITIES"
             " | AIEOS_ASSESSMENT_CAPABILITIES"
-            " | AIEOS_TEACHING_WORK_CAPABILITIES )" in compact_src
+            " | AIEOS_TEACHING_WORK_CAPABILITIES"
+            " | AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES )" in compact_src
         )
