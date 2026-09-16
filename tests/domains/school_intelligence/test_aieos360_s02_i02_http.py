@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.engine import Engine
@@ -11,6 +12,9 @@ from aieos.development.principal_school_context import CLASS_REF_6A, CLASS_REF_6
 from aieos.domains.school_intelligence.application.errors import (
     SchoolContextContractError,
     SchoolContextUnavailable,
+)
+from aieos.domains.school_intelligence.application.models import (
+    SchoolIntelligenceFactsSnapshot,
 )
 from aieos.domains.school_intelligence.application.ports import (
     AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
@@ -63,6 +67,7 @@ def _client(
     principal_id,
     scope=None,
     authorization=None,
+    facts_reader=None,
     unauthenticated: bool = False,
 ):
     return build_client(
@@ -71,6 +76,7 @@ def _client(
         principal_id=principal_id,
         scope_reader=scope if scope is not None else MutablePrincipalScopeReader(default_scope()),
         school_intelligence_authorization=authorization,
+        facts_reader=facts_reader,
         unauthenticated=unauthenticated,
         principal_classification_authority=CurrentPrincipalClassificationAuthority(
             bootstrap_engine
@@ -107,6 +113,8 @@ class TestAuthorityHttp:
         assert "percentage" not in str(body).lower()
         assert "learner_principal_id" not in response.text
         assert "teacher_principal_id" not in response.text
+        assert "class_result_level" not in response.text
+        assert "class_result_note" not in response.text
         assert "mastery" not in response.text.lower()
 
     def test_workload_fails_closed(
@@ -245,6 +253,35 @@ class TestAuthorityHttp:
         )
         response = client.get(PATH, headers=headers(tenant_id))
         assert response.status_code == 503
+
+    def test_incomplete_facts_snapshot_is_503(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        seed_human_with_capability(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=principal_id
+        )
+
+        class _IncompleteFacts:
+            def read_authorized_class_facts(self, **kwargs):
+                del kwargs
+                return SchoolIntelligenceFactsSnapshot(
+                    generated_at=datetime.now(UTC),
+                    classes=(),
+                )
+
+        client = _client(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            facts_reader=_IncompleteFacts(),
+        )
+        response = client.get(PATH, headers=headers(tenant_id))
+        assert response.status_code == 503
+        assert response.headers["content-type"].startswith("application/problem+json")
+        assert response.json()["code"] == "school_intelligence_unavailable"
 
     def test_unauthenticated_is_401(
         self, bootstrap_engine: Engine, runtime_engine: Engine

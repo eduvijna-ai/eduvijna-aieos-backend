@@ -90,17 +90,21 @@ _EVALUATION_SQL = text(
 _CLASSROOM_SQL = text(
     """
     SELECT
-        class_ref,
+        assessments.class_ref,
         COUNT(*) > 0 AS has_recorded,
-        COUNT(DISTINCT assignment_id) FILTER (
-            WHERE assignment_id IS NOT NULL
-        ) AS assignments_with_recorded_count
-    FROM assessment.classroom_assessments
-    WHERE tenant_id = CAST(:tenant_id AS uuid)
-      AND class_ref IN :class_refs
-      AND lifecycle_state = 'RECORDED'
-      AND recorded_at <= :generated_at
-    GROUP BY class_ref
+        COUNT(DISTINCT assignments.assignment_id) AS assignments_with_recorded_count
+    FROM assessment.classroom_assessments AS assessments
+    LEFT JOIN teaching.assignments AS assignments
+      ON assignments.tenant_id = assessments.tenant_id
+     AND assignments.assignment_id = assessments.assignment_id
+     AND assignments.class_ref = assessments.class_ref
+     AND assignments.class_ref IN :class_refs
+     AND assignments.assigned_at <= :generated_at
+    WHERE assessments.tenant_id = CAST(:tenant_id AS uuid)
+      AND assessments.class_ref IN :class_refs
+      AND assessments.lifecycle_state = 'RECORDED'
+      AND assessments.recorded_at <= :generated_at
+    GROUP BY assessments.class_ref
     """
 ).bindparams(bindparam("class_refs", expanding=True))
 

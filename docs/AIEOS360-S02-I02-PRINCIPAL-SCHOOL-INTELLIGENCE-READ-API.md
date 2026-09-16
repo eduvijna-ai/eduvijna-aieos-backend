@@ -190,14 +190,23 @@ The first Principal UI may truthfully present
 
 ### `assignments_with_recorded_classroom_assessment_count`
 
-* **Definition:** DISTINCT non-null assignment ids with a current RECORDED
-  class-level assessment attributable to that authorized class. School
-  summary sums the class-level distinct counts.
-* **Source SoR:** `assessment.classroom_assessments.assignment_id`.
+* **Definition:** DISTINCT TeachingAssignment IDs with a current RECORDED
+  class-level assessment that joins coherently to `teaching.assignments` on
+  tenant, assignment id, and ClassRef, with `assigned_at <= generated_at`.
+  School summary sums the class-level distinct counts.
+* **Source SoR:** `assessment.classroom_assessments` LEFT JOIN
+  `teaching.assignments`.
+* **Included:** lineage-safe RECORDED assessments attributable to an
+  in-scope TeachingAssignment.
+* **Excluded:** NULL `assignment_id`; assignment ids that do not resolve to
+  a same-tenant same-class TeachingAssignment; VOIDED assessments; result
+  level; note text.
 
 ### Class card `has_recorded_classroom_assessment`
 
-* **Definition:** boolean current RECORDED activity for that class.
+* **Definition:** boolean current RECORDED activity for that class, including
+  RECORDED rows whose `assignment_id` is null or does not join to a coherent
+  TeachingAssignment.
 
 ### `completed_teaching_execution_count`
 

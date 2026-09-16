@@ -47,6 +47,17 @@ class SchoolIntelligenceFactsReader(Protocol):
     Receives the complete current authorized ClassRef set and current
     evaluation-policy identity. Must filter to those ClassRefs before any
     aggregation. Must not return teacher or learner identity fields.
+
+    Completeness contract for a successful snapshot:
+
+    * empty authorized ClassRef set → ``classes`` must be empty
+    * non-empty authorized ClassRef set → ``classes`` contains exactly one
+      ``AuthorizedClassFacts`` row for every requested ClassRef, with exact
+      set equality and exact multiplicity, including explicit zero-activity
+      rows when no source facts exist
+
+    Missing, extra, duplicate, or blank ClassRefs are a source-contract
+    failure, not truthful zero.
     """
 
     def read_authorized_class_facts(

@@ -183,6 +183,7 @@ class TestAuthorityOrder:
                         executions=2,
                         remediation=1,
                     ),
+                    _facts("class-6b"),
                 ),
             )
         )
@@ -307,3 +308,74 @@ class TestAuthorityOrder:
             == 0
         )
         assert result.classes == ()
+
+
+class TestFactsSnapshotCompleteness:
+    def test_complete_explicit_rows_succeed(self) -> None:
+        result = _service(
+            reader=_Reader(
+                (
+                    AuthorizedSchoolClassRef("class-a", "A"),
+                    AuthorizedSchoolClassRef("class-b", "B"),
+                )
+            ),
+            facts=_Facts(
+                SchoolIntelligenceFactsSnapshot(
+                    generated_at=GENERATED_AT,
+                    classes=(_facts("class-a", assignments=1, active=1), _facts("class-b")),
+                )
+            ),
+        ).get(uuid4(), uuid4())
+        assert [card.class_ref for card in result.classes] == ["class-a", "class-b"]
+        assert result.classes[0].teaching_assignment_count == 1
+        assert result.classes[1].teaching_assignment_count == 0
+
+    def test_empty_snapshot_for_authorized_class_is_unavailable(self) -> None:
+        with pytest.raises(SchoolIntelligenceReadUnavailable):
+            _service(
+                reader=_Reader((AuthorizedSchoolClassRef("class-a", "A"),)),
+                facts=_Facts(
+                    SchoolIntelligenceFactsSnapshot(generated_at=GENERATED_AT, classes=())
+                ),
+            ).get(uuid4(), uuid4())
+
+    def test_missing_requested_class_is_unavailable(self) -> None:
+        with pytest.raises(SchoolIntelligenceReadUnavailable):
+            _service(
+                reader=_Reader(
+                    (
+                        AuthorizedSchoolClassRef("class-a", "A"),
+                        AuthorizedSchoolClassRef("class-b", "B"),
+                    )
+                ),
+                facts=_Facts(
+                    SchoolIntelligenceFactsSnapshot(
+                        generated_at=GENERATED_AT,
+                        classes=(_facts("class-a"),),
+                    )
+                ),
+            ).get(uuid4(), uuid4())
+
+    def test_unexpected_extra_class_is_unavailable(self) -> None:
+        with pytest.raises(SchoolIntelligenceReadUnavailable):
+            _service(
+                reader=_Reader((AuthorizedSchoolClassRef("class-a", "A"),)),
+                facts=_Facts(
+                    SchoolIntelligenceFactsSnapshot(
+                        generated_at=GENERATED_AT,
+                        classes=(_facts("class-a"), _facts("class-extra")),
+                    )
+                ),
+            ).get(uuid4(), uuid4())
+
+    def test_duplicate_class_ref_is_unavailable(self) -> None:
+        with pytest.raises(SchoolIntelligenceReadUnavailable):
+            _service(
+                reader=_Reader((AuthorizedSchoolClassRef("class-a", "A"),)),
+                facts=_Facts(
+                    SchoolIntelligenceFactsSnapshot(
+                        generated_at=GENERATED_AT,
+                        classes=(_facts("class-a"), _facts("class-a")),
+                    )
+                ),
+            ).get(uuid4(), uuid4())

@@ -182,6 +182,17 @@ class TestFilterBeforeAggregation:
     def test_bounded_showcase_capacity_is_explicit(self) -> None:
         assert MAX_AUTHORIZED_CLASS_COUNT == 100
 
+    def test_classroom_assignment_count_joins_teaching_lineage(self) -> None:
+        sql = READER.read_text(encoding="utf-8")
+        classroom_block = sql.split("_CLASSROOM_SQL")[1].split("_EXECUTION_SQL")[0]
+        assert "LEFT JOIN teaching.assignments" in classroom_block
+        assert classroom_block.find("assessments.class_ref IN :class_refs") < (
+            classroom_block.find("GROUP BY")
+        )
+        assert "class_result_level" not in classroom_block
+        assert "class_result_note" not in classroom_block
+        assert "teacher_principal_id" not in classroom_block
+
 
 class TestOpenApiContract:
     def test_exact_get_path_and_no_mutation(self) -> None:

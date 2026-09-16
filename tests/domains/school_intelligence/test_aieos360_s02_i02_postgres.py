@@ -15,6 +15,7 @@ from aieos.domains.school_intelligence.application.errors import (
 from aieos.domains.school_intelligence.infrastructure.read_projection import (
     SqlAlchemySchoolIntelligenceFactsReader,
 )
+from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 from tests.domains.school_intelligence.helpers_s02_i02 import (
     CROSS_TENANT_CLASS_REF,
     FIXED_NOW,
@@ -32,6 +33,13 @@ from tests.domains.school_intelligence.helpers_s02_i02 import (
 )
 
 pytestmark = pytest.mark.aieos360_s02_i02
+
+
+@pytest.fixture(autouse=True)
+def _clear_immutable_rows_after_test(bootstrap_engine: Engine) -> None:
+    yield
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+
 
 CURRENT_POLICY_ID = "aieos.learner_assessment.deterministic"
 CURRENT_POLICY_VERSION = 1
@@ -61,6 +69,22 @@ class TestEmptyAndAssignments:
         assert by_ref[CLASS_REF_6A].teaching_assignment_count == 0
         assert by_ref[CLASS_REF_6B].learner_submission_count == 0
         assert snapshot.generated_at.tzinfo is not None
+
+    def test_sql_reader_returns_explicit_zero_row_for_authorized_class(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        snapshot = _read(runtime_engine, tenant_id, class_refs=(CLASS_REF_6A,))
+        assert len(snapshot.classes) == 1
+        row = snapshot.classes[0]
+        assert row.class_ref == CLASS_REF_6A
+        assert row.teaching_assignment_count == 0
+        assert row.learner_submission_count == 0
+        assert row.current_policy_evaluation_count == 0
+        assert row.has_recorded_classroom_assessment is False
+        assert row.assignments_with_recorded_classroom_assessment_count == 0
+        assert row.completed_teaching_execution_count == 0
+        assert row.remediation_activity_count == 0
 
     def test_assignment_lifecycle_counts(
         self, bootstrap_engine: Engine, runtime_engine: Engine
@@ -372,3 +396,187 @@ class TestIsolationAndFailures:
                     evaluation_policy_version=CURRENT_POLICY_VERSION,
                 )
             monkeypatch.undo()
+
+
+class TestClassroomAssessmentLineage:
+    def test_coherent_recorded_assignment_counts(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        assignment_id = insert_assignment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=assignment_id,
+            lifecycle_state="RECORDED",
+        )
+        row = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}[
+            CLASS_REF_6A
+        ]
+        assert row.has_recorded_classroom_assessment is True
+        assert row.assignments_with_recorded_classroom_assessment_count == 1
+
+    def test_null_assignment_id_is_activity_without_assignment_count(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=None,
+            lifecycle_state="RECORDED",
+        )
+        row = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}[
+            CLASS_REF_6A
+        ]
+        assert row.has_recorded_classroom_assessment is True
+        assert row.assignments_with_recorded_classroom_assessment_count == 0
+
+    def test_nonexistent_assignment_id_does_not_count(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=uuid.uuid7(),
+            lifecycle_state="RECORDED",
+        )
+        row = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}[
+            CLASS_REF_6A
+        ]
+        assert row.has_recorded_classroom_assessment is True
+        assert row.assignments_with_recorded_classroom_assessment_count == 0
+
+    def test_cross_class_assignment_mismatch_does_not_count(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        assignment_6b = insert_assignment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6B,
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=assignment_6b,
+            lifecycle_state="RECORDED",
+        )
+        rows = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}
+        assert rows[CLASS_REF_6A].has_recorded_classroom_assessment is True
+        assert rows[CLASS_REF_6A].assignments_with_recorded_classroom_assessment_count == 0
+        assert rows[CLASS_REF_6B].has_recorded_classroom_assessment is False
+        assert rows[CLASS_REF_6B].assignments_with_recorded_classroom_assessment_count == 0
+        assert rows[CLASS_REF_6B].teaching_assignment_count == 1
+
+    def test_cross_tenant_assignment_cannot_satisfy_lineage(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        other_tenant = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        other_teacher = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        other_content, other_version = seed_content(
+            bootstrap_engine, tenant_id=other_tenant, owner_id=other_teacher
+        )
+        foreign_assignment = insert_assignment(
+            bootstrap_engine,
+            tenant_id=other_tenant,
+            teacher_id=other_teacher,
+            content_id=other_content,
+            content_version_id=other_version,
+            class_ref=CLASS_REF_6A,
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=foreign_assignment,
+            lifecycle_state="RECORDED",
+        )
+        row = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}[
+            CLASS_REF_6A
+        ]
+        assert row.has_recorded_classroom_assessment is True
+        assert row.assignments_with_recorded_classroom_assessment_count == 0
+
+    def test_voided_assessment_is_not_current_recorded_activity(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        assignment_id = insert_assignment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+        )
+        insert_classroom_assessment(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            teacher_id=teacher_id,
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_6A,
+            assignment_id=assignment_id,
+            lifecycle_state="VOIDED",
+        )
+        row = {item.class_ref: item for item in _read(runtime_engine, tenant_id).classes}[
+            CLASS_REF_6A
+        ]
+        assert row.has_recorded_classroom_assessment is False
+        assert row.assignments_with_recorded_classroom_assessment_count == 0

@@ -17,7 +17,9 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
   Assessment Intelligence DTO reuse, no mastery, no teacher ranking, no
   School Intelligence table, no migration. Alembic head remains
   `a360s010004`. OpenAPI changes for this GET only. Production Principal
-  School Context remains unconfigured.
+  School Context remains unconfigured. Exact-head correction: facts snapshot
+  completeness is fail-closed (no missing-row zero synthesis); ClassroomAssessment
+  assignment counts require coherent TeachingAssignment lineage.
 
 - AIEOS360-S02-I01 — Principal school scope current-authority substrate
   under ADR-AIEOS-060 Frozen / Approved. Exact capability

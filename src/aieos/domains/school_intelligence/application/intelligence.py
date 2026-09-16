@@ -38,6 +38,7 @@ from aieos.domains.school_intelligence.application.models import (
     PrincipalSchoolIntelligenceReadModel,
     PrincipalSchoolIntelligenceSummary,
     SchoolIntelligenceEvaluationPolicy,
+    SchoolIntelligenceFactsSnapshot,
     SchoolIntelligenceTimeWindow,
 )
 from aieos.domains.school_intelligence.application.ports import (
@@ -48,23 +49,7 @@ from aieos.domains.school_intelligence.application.school_scope import (
     CurrentPrincipalSchoolScopeService,
 )
 
-
-def _empty_lifecycle() -> AssignmentLifecycleCounts:
-    return AssignmentLifecycleCounts(active=0, closed=0, cancelled=0)
-
-
-def _empty_facts(class_ref: str) -> AuthorizedClassFacts:
-    return AuthorizedClassFacts(
-        class_ref=class_ref,
-        teaching_assignment_count=0,
-        assignment_lifecycle=_empty_lifecycle(),
-        learner_submission_count=0,
-        current_policy_evaluation_count=0,
-        has_recorded_classroom_assessment=False,
-        assignments_with_recorded_classroom_assessment_count=0,
-        completed_teaching_execution_count=0,
-        remediation_activity_count=0,
-    )
+_UNAVAILABLE = "School Intelligence source is temporarily unavailable"
 
 
 def _submitted_but_not_evaluated(facts: AuthorizedClassFacts) -> int:
@@ -78,26 +63,45 @@ def _coverage(facts: AuthorizedClassFacts) -> EvaluationCoverageAmongSubmitted:
     )
 
 
+def _unavailable() -> SchoolIntelligenceReadUnavailable:
+    return SchoolIntelligenceReadUnavailable(_UNAVAILABLE)
+
+
 def _validate_class_facts(facts: AuthorizedClassFacts) -> None:
+    if not facts.class_ref or facts.class_ref.strip() != facts.class_ref:
+        raise _unavailable()
     lifecycle = facts.assignment_lifecycle
     if lifecycle.active + lifecycle.closed + lifecycle.cancelled != (
         facts.teaching_assignment_count
     ):
-        raise SchoolIntelligenceReadUnavailable(
-            "School Intelligence source is temporarily unavailable"
-        )
+        raise _unavailable()
     if facts.current_policy_evaluation_count < 0:
-        raise SchoolIntelligenceReadUnavailable(
-            "School Intelligence source is temporarily unavailable"
-        )
+        raise _unavailable()
     if facts.current_policy_evaluation_count > facts.learner_submission_count:
-        raise SchoolIntelligenceReadUnavailable(
-            "School Intelligence source is temporarily unavailable"
-        )
+        raise _unavailable()
     if facts.assignments_with_recorded_classroom_assessment_count < 0:
-        raise SchoolIntelligenceReadUnavailable(
-            "School Intelligence source is temporarily unavailable"
-        )
+        raise _unavailable()
+
+
+def _require_complete_facts_snapshot(
+    requested_class_refs: tuple[str, ...],
+    snapshot: SchoolIntelligenceFactsSnapshot,
+) -> dict[str, AuthorizedClassFacts]:
+    returned_refs = tuple(row.class_ref for row in snapshot.classes)
+    if requested_class_refs == () and returned_refs == ():
+        return {}
+    if any(not ref or ref.strip() != ref for ref in returned_refs):
+        raise _unavailable()
+    if len(returned_refs) != len(requested_class_refs):
+        raise _unavailable()
+    if len(set(returned_refs)) != len(returned_refs):
+        raise _unavailable()
+    if set(returned_refs) != set(requested_class_refs):
+        raise _unavailable()
+    facts_by_ref = {row.class_ref: row for row in snapshot.classes}
+    for class_ref in requested_class_refs:
+        _validate_class_facts(facts_by_ref[class_ref])
+    return facts_by_ref
 
 
 def _class_card(
@@ -193,19 +197,16 @@ class GetPrincipalSchoolIntelligenceService:
                 "School Intelligence is temporarily unavailable"
             )
         ordered = tuple(sorted(authorized, key=lambda item: item.class_ref))
+        requested = tuple(item.class_ref for item in ordered)
         snapshot = self._facts_reader.read_authorized_class_facts(
             tenant_id=tenant_id,
-            authorized_class_refs=tuple(item.class_ref for item in ordered),
+            authorized_class_refs=requested,
             evaluation_policy_id=DETERMINISTIC_LEARNER_ASSESSMENT_POLICY_ID,
             evaluation_policy_version=DETERMINISTIC_LEARNER_ASSESSMENT_POLICY_VERSION,
         )
-        facts_by_ref = {row.class_ref: row for row in snapshot.classes}
+        facts_by_ref = _require_complete_facts_snapshot(requested, snapshot)
         cards = tuple(
-            _class_card(
-                item,
-                facts_by_ref.get(item.class_ref, _empty_facts(item.class_ref)),
-            )
-            for item in ordered
+            _class_card(item, facts_by_ref[item.class_ref]) for item in ordered
         )
         return PrincipalSchoolIntelligenceReadModel(
             generated_at=snapshot.generated_at,
