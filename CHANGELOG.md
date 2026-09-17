@@ -9,6 +9,15 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S03-I02R1 — Bound Parent Intelligence fact reads before fan-out.
+  Assignment SELECT uses `authorized learner count ×
+  MAX_ASSIGNMENTS_PER_LEARNER` with `LIMIT n+1` sentinel detection;
+  per-learner `MAX_ASSIGNMENTS_PER_LEARNER` is enforced before attempt,
+  submission, Content, and ContentVersion queries. No truncation, no
+  pagination. Inactive HUMAN adult on an otherwise healthy authority
+  substrate is HTTP 403. Alembic head remains `a360s010004`. OpenAPI
+  unchanged. I03/I04 remain not authorized.
+
 - AIEOS360-S03-I02 — Derived Parent Intelligence read projection and GET API
   under ADR-AIEOS-061 Frozen / Approved v1.0.1. Depends on merged I01
   `CurrentParentLearnerAccessService`. Read-only

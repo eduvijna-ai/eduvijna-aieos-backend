@@ -4,13 +4,18 @@ Queries existing authoritative schemas. Never mutates. Never commits.
 Receives only learner IDs that already passed Parent Learner Access Current
 Authority. Current Class membership is a fact source after that authority,
 not Parent entitlement.
+
+Assignment SELECTs are request-bounded with sentinel detection. Dependent
+LearnerAttempt, LearnerSubmission, Content, and ContentVersion reads run only
+after the request-wide assignment bound and every per-learner assignment
+bound have passed. Over-capacity fails closed; rows are never truncated.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy import bindparam, text
@@ -33,6 +38,7 @@ from aieos.domains.parent_intelligence.application.models import (
     ATTEMPT_STATUS_NOT_STARTED,
     ATTEMPT_STATUS_SUBMITTED,
     MAX_ASSIGNMENTS_PER_LEARNER,
+    MAX_AUTHORIZED_LEARNER_COUNT,
     MAX_CLASS_REFS_PER_LEARNER,
     ParentAssignmentFact,
     ParentIntelligenceFactsSnapshot,
@@ -40,6 +46,11 @@ from aieos.domains.parent_intelligence.application.models import (
 )
 
 _UNAVAILABLE = "Parent Intelligence source is temporarily unavailable"
+
+# Operational I02 SELECT protection for independent Learning reads.
+# Learning unique (tenant, learner, assignment, attempt_number) does not cap
+# attempt_number. This is not a Learning-domain max_attempts rule.
+_MAX_ATTEMPT_ROWS_PER_QUERY_PAIR: Final = 8
 
 _ASSIGNMENT_SQL = text(
     """
@@ -56,6 +67,7 @@ _ASSIGNMENT_SQL = text(
       AND lifecycle_state = 'ACTIVE'
       AND available_from <= :observed_at
     ORDER BY assignment_id ASC
+    LIMIT :assignment_row_limit
     """
 ).bindparams(bindparam("class_refs", expanding=True))
 
@@ -72,6 +84,7 @@ _ATTEMPT_SQL = text(
     WHERE tenant_id = CAST(:tenant_id AS uuid)
       AND learner_principal_id IN :learner_ids
       AND teaching_assignment_id IN :assignment_ids
+    LIMIT :attempt_row_limit
     """
 ).bindparams(
     bindparam("learner_ids", expanding=True),
@@ -90,6 +103,7 @@ _SUBMISSION_SQL = text(
     WHERE tenant_id = CAST(:tenant_id AS uuid)
       AND learner_principal_id IN :learner_ids
       AND teaching_assignment_id IN :assignment_ids
+    LIMIT :submission_row_limit
     """
 ).bindparams(
     bindparam("learner_ids", expanding=True),
@@ -125,6 +139,25 @@ def _capacity() -> ParentIntelligenceCapacityExceeded:
     )
 
 
+def _request_assignment_row_limit(authorized_learner_count: int) -> int:
+    derived = max(authorized_learner_count, 0) * MAX_ASSIGNMENTS_PER_LEARNER
+    ceiling = MAX_AUTHORIZED_LEARNER_COUNT * MAX_ASSIGNMENTS_PER_LEARNER
+    return min(derived, ceiling)
+
+
+def _request_dependent_row_limit(learner_count: int, assignment_count: int) -> int:
+    return learner_count * assignment_count * _MAX_ATTEMPT_ROWS_PER_QUERY_PAIR
+
+
+def _require_bounded_rows(
+    rows: Iterable[Mapping[str, Any]], *, limit: int
+) -> list[Mapping[str, Any]]:
+    materialized = list(rows)
+    if len(materialized) > limit:
+        raise _capacity()
+    return materialized
+
+
 class SqlAlchemyParentIntelligenceFactsReader:
     """Short-lived read-only PostgreSQL adapter. Rollback/close only."""
 
@@ -158,6 +191,7 @@ class SqlAlchemyParentIntelligenceFactsReader:
         connection: Connection | None = None
         transaction = None
         assignments_by_class: dict[str, list[Mapping[str, Any]]] = {}
+        visible_by_learner: dict[UUID, list[Mapping[str, Any]]] = {}
         attempts: list[Mapping[str, Any]] = []
         submissions: list[Mapping[str, Any]] = []
         contents: dict[UUID, Mapping[str, Any]] = {}
@@ -173,42 +207,64 @@ class SqlAlchemyParentIntelligenceFactsReader:
                 {"tid": str(tenant_id)},
             )
             if class_refs:
-                assignment_rows = connection.execute(
-                    _ASSIGNMENT_SQL,
-                    {
-                        "tenant_id": tenant_id,
-                        "class_refs": class_refs,
-                        "observed_at": observed_at,
-                    },
-                ).mappings()
+                request_assignment_limit = _request_assignment_row_limit(
+                    len(learner_ids)
+                )
+                assignment_rows = _require_bounded_rows(
+                    connection.execute(
+                        _ASSIGNMENT_SQL,
+                        {
+                            "tenant_id": tenant_id,
+                            "class_refs": class_refs,
+                            "observed_at": observed_at,
+                            "assignment_row_limit": request_assignment_limit + 1,
+                        },
+                    ).mappings(),
+                    limit=request_assignment_limit,
+                )
                 for row in assignment_rows:
                     class_ref = str(row["class_ref"])
                     assignments_by_class.setdefault(class_ref, []).append(row)
+                for learner_id in learner_ids:
+                    visible = _visible_assignment_rows(
+                        class_refs=memberships_by_learner[learner_id],
+                        assignments_by_class=assignments_by_class,
+                    )
+                    if len(visible) > MAX_ASSIGNMENTS_PER_LEARNER:
+                        raise _capacity()
+                    visible_by_learner[learner_id] = visible
                 assignment_ids = [
                     row["assignment_id"]
                     for rows in assignments_by_class.values()
                     for row in rows
                 ]
                 if assignment_ids:
-                    attempts = list(
+                    dependent_limit = _request_dependent_row_limit(
+                        len(learner_ids), len(assignment_ids)
+                    )
+                    attempts = _require_bounded_rows(
                         connection.execute(
                             _ATTEMPT_SQL,
                             {
                                 "tenant_id": tenant_id,
                                 "learner_ids": learner_ids,
                                 "assignment_ids": assignment_ids,
+                                "attempt_row_limit": dependent_limit + 1,
                             },
-                        ).mappings()
+                        ).mappings(),
+                        limit=dependent_limit,
                     )
-                    submissions = list(
+                    submissions = _require_bounded_rows(
                         connection.execute(
                             _SUBMISSION_SQL,
                             {
                                 "tenant_id": tenant_id,
                                 "learner_ids": learner_ids,
                                 "assignment_ids": assignment_ids,
+                                "submission_row_limit": dependent_limit + 1,
                             },
-                        ).mappings()
+                        ).mappings(),
+                        limit=dependent_limit,
                     )
                     content_ids = list(
                         {
@@ -253,8 +309,7 @@ class SqlAlchemyParentIntelligenceFactsReader:
         learners = tuple(
             self._learner_facts(
                 learner_id=learner_id,
-                class_refs=memberships_by_learner[learner_id],
-                assignments_by_class=assignments_by_class,
+                visible=visible_by_learner.get(learner_id, []),
                 attempts=attempts,
                 submissions=submissions,
                 contents=contents,
@@ -291,25 +346,12 @@ class SqlAlchemyParentIntelligenceFactsReader:
         self,
         *,
         learner_id: UUID,
-        class_refs: Sequence[str],
-        assignments_by_class: Mapping[str, list[Mapping[str, Any]]],
+        visible: Sequence[Mapping[str, Any]],
         attempts: Sequence[Mapping[str, Any]],
         submissions: Sequence[Mapping[str, Any]],
         contents: Mapping[UUID, Mapping[str, Any]],
         versions: Mapping[UUID, UUID],
     ) -> ParentLearnerFacts:
-        visible: list[Mapping[str, Any]] = []
-        seen_assignment_ids: set[UUID] = set()
-        class_ref_set = set(class_refs)
-        for class_ref in class_refs:
-            for row in assignments_by_class.get(class_ref, ()):
-                assignment_id = row["assignment_id"]
-                if assignment_id in seen_assignment_ids:
-                    raise _unavailable()
-                seen_assignment_ids.add(assignment_id)
-                if str(row["class_ref"]) not in class_ref_set:
-                    raise _unavailable()
-                visible.append(row)
         if len(visible) > MAX_ASSIGNMENTS_PER_LEARNER:
             raise _capacity()
         learner_attempts = [
@@ -380,6 +422,26 @@ class SqlAlchemyParentIntelligenceFactsReader:
             attempt_status=attempt_status,
             submitted_at=submitted_at,
         )
+
+
+def _visible_assignment_rows(
+    *,
+    class_refs: Sequence[str],
+    assignments_by_class: Mapping[str, list[Mapping[str, Any]]],
+) -> list[Mapping[str, Any]]:
+    visible: list[Mapping[str, Any]] = []
+    seen_assignment_ids: set[UUID] = set()
+    class_ref_set = set(class_refs)
+    for class_ref in class_refs:
+        for row in assignments_by_class.get(class_ref, ()):
+            assignment_id = row["assignment_id"]
+            if assignment_id in seen_assignment_ids:
+                raise _unavailable()
+            seen_assignment_ids.add(assignment_id)
+            if str(row["class_ref"]) not in class_ref_set:
+                raise _unavailable()
+            visible.append(row)
+    return visible
 
 
 def _attempt_status(

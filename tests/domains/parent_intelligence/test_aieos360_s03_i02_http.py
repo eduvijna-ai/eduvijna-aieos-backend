@@ -218,16 +218,23 @@ class TestHomeHttp:
         response = client.get(HOME_PATH, headers=headers(tenant_id))
         assert response.status_code == 403
 
+    @pytest.mark.parametrize("inactive_status", ("DISABLED", "SUSPENDED"))
     def test_inactive_human_adult_is_403(
-        self, bootstrap_engine: Engine, runtime_engine: Engine
+        self,
+        bootstrap_engine: Engine,
+        runtime_engine: Engine,
+        inactive_status: str,
     ) -> None:
         tenant_id = uuid.uuid7()
         adult_id = uuid.uuid7()
+        seed_human_adult_with_capability(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=adult_id
+        )
         seed_principal(
             bootstrap_engine,
             adult_id,
             principal_kind=PrincipalKind.HUMAN,
-            status="DISABLED",
+            status=inactive_status,
         )
         client = _client(
             bootstrap_engine,
@@ -237,7 +244,8 @@ class TestHomeHttp:
             authorization=_kernel_auth(bootstrap_engine),
         )
         response = client.get(HOME_PATH, headers=headers(tenant_id))
-        assert response.status_code in {403, 503}
+        assert response.status_code == 403
+        assert response.json()["code"] != "parent_intelligence_unavailable"
 
     def test_missing_capability_is_403(
         self, bootstrap_engine: Engine, runtime_engine: Engine

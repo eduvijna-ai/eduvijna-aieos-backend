@@ -18,6 +18,7 @@ from aieos.domains.parent_intelligence.api.v1.models import (
 from aieos.domains.parent_intelligence.application.models import (
     MAX_ASSIGNMENTS_PER_LEARNER,
     MAX_AUTHORIZED_LEARNER_COUNT,
+    MAX_CLASS_REFS_PER_LEARNER,
     ParentAssignmentStatus,
     ParentChildCard,
     ParentIntelligenceReadModel,
@@ -236,4 +237,35 @@ class TestOpenApiContract:
 class TestProtectionLimits:
     def test_operational_limits_are_explicit(self) -> None:
         assert MAX_AUTHORIZED_LEARNER_COUNT == 100
+        assert MAX_CLASS_REFS_PER_LEARNER == 100
         assert MAX_ASSIGNMENTS_PER_LEARNER == 100
+
+    def test_assignment_select_is_bounded_with_sentinel_before_dependent_reads(
+        self,
+    ) -> None:
+        sql = READER.read_text(encoding="utf-8")
+        assert "LIMIT :assignment_row_limit" in sql
+        assert "OFFSET" not in sql
+        read_fn = sql[sql.index("def read_authorized_learner_facts") :]
+        assignment_exec = read_fn.index("_ASSIGNMENT_SQL")
+        attempt_exec = read_fn.index("_ATTEMPT_SQL")
+        submission_exec = read_fn.index("_SUBMISSION_SQL")
+        content_exec = read_fn.index("_CONTENT_SQL")
+        version_exec = read_fn.index("_CONTENT_VERSION_SQL")
+        per_learner = read_fn.index("if len(visible) > MAX_ASSIGNMENTS_PER_LEARNER:")
+        assert assignment_exec < per_learner < attempt_exec
+        assert per_learner < submission_exec < content_exec < version_exec
+        assert "request_assignment_limit + 1" in read_fn
+
+    def test_attempt_and_submission_cardinality_proof_is_documented(self) -> None:
+        sql = READER.read_text(encoding="utf-8")
+        docs = (
+            REPO_ROOT / "docs" / "AIEOS360-S03-I02-PARENT-INTELLIGENCE-READ-API.md"
+        ).read_text(encoding="utf-8")
+        assert "unique `(tenant_id, content_id)`" in docs
+        assert "unique `(tenant_id, attempt_id)`" in docs
+        assert "attempt_number" in docs
+        assert "LIMIT :attempt_row_limit" in sql
+        assert "LIMIT :submission_row_limit" in sql
+        assert "content_id IN :content_ids" in sql
+        assert "version_id IN :version_ids" in sql

@@ -265,7 +265,59 @@ Operational implementation-protection limits (not educational domain rules):
 * `MAX_ASSIGNMENTS_PER_LEARNER` = 100
 
 Exceeding a limit fails safely as 503 Parent Intelligence temporarily
-unavailable. Partial / truncated bodies are not returned.
+unavailable. Partial / truncated bodies are not returned. This is not
+pagination and does not return the first N assignments.
+
+### Bounded assignment read (I02R1)
+
+`SqlAlchemyParentIntelligenceFactsReader` must not load an unbounded
+TeachingAssignment result into application memory.
+
+Request-wide assignment-row protection:
+
+* derived maximum unique visible assignment rows =
+  `authorized learner count × MAX_ASSIGNMENTS_PER_LEARNER`
+* safe ceiling =
+  `MAX_AUTHORIZED_LEARNER_COUNT × MAX_ASSIGNMENTS_PER_LEARNER`
+* SQL `LIMIT request_assignment_limit + 1`
+* the extra row is **detection only**
+* if the sentinel row exists: raise `ParentIntelligenceCapacityExceeded`
+  immediately — before LearnerAttempt, LearnerSubmission, Content, or
+  ContentVersion queries
+
+Per-learner assignment protection then runs on the already-bounded rows,
+still before those dependent queries:
+
+* derive each authorized learner's visible assignment set from current
+  ClassRefs
+* if any learner's visible count `> MAX_ASSIGNMENTS_PER_LEARNER`: raise
+  `ParentIntelligenceCapacityExceeded` immediately
+
+Only after both checks pass may the adapter issue attempt / submission /
+content / content-version reads.
+
+### Downstream Learning / Content cardinality (I02R1)
+
+I02 does not invent Learning-domain attempt or submission rules.
+
+* `learning.attempts`: unique `(tenant_id, learner_principal_id,
+  teaching_assignment_id, attempt_number)` plus partial unique one
+  `IN_PROGRESS` per `(tenant, learner, assignment)`. `attempt_number`
+  has no authoritative maximum, so I02 applies a narrow operational
+  SELECT sentinel over the already-bounded `(authorized learner ×
+  assignment id)` envelope and fails closed on overflow. This is not a
+  Learning `max_attempts` rule.
+* `learning.submissions`: unique `(tenant_id, attempt_id)` and FK to
+  `learning.attempts`, so submissions cannot exceed attempts for the
+  same keys. The submission SELECT is independent, so I02 applies the
+  same envelope sentinel and fails closed on overflow.
+* `content.contents`: unique `(tenant_id, content_id)`. The I02 query
+  uses `content_id IN` the already-bounded assignment set, so returned
+  rows cannot exceed that ID list.
+* `content.content_versions`: unique `(tenant_id, content_id, version_id)`
+  and primary key `version_id`. The I02 query uses `version_id IN` the
+  already-bounded assignment set, so returned rows cannot exceed that
+  ID list.
 
 ## Deterministic ordering
 

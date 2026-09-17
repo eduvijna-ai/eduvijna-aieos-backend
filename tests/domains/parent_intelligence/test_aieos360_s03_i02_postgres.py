@@ -12,12 +12,14 @@ from aieos.domains.learning.application.learner_membership import (
     CurrentLearnerClassMembership,
 )
 from aieos.domains.parent_intelligence.application.errors import (
+    ParentIntelligenceCapacityExceeded,
     ParentIntelligenceReadUnavailable,
 )
 from aieos.domains.parent_intelligence.application.models import (
     ATTEMPT_STATUS_IN_PROGRESS,
     ATTEMPT_STATUS_NOT_STARTED,
     ATTEMPT_STATUS_SUBMITTED,
+    MAX_ASSIGNMENTS_PER_LEARNER,
 )
 from aieos.domains.parent_intelligence.infrastructure.read_projection import (
     SqlAlchemyParentIntelligenceFactsReader,
@@ -37,8 +39,10 @@ from tests.domains.parent_intelligence.helpers_s03_i02 import (
     HOME_PATH,
     MutableParentAccessReader,
     RecordingMembershipReader,
+    assert_dependent_fact_sources_not_queried,
     assert_exact_response_keys,
     build_client,
+    capture_sql_statements,
     headers,
     insert_assignment,
     insert_in_progress_attempt,
@@ -380,3 +384,164 @@ class TestAssignmentVisibility:
                 authorized_learner_principal_ids=(learner_id,),
                 observed_at=datetime(2026, 9, 17, 12, 0),
             )
+
+
+class TestBoundedAssignmentReads:
+    def test_one_learner_over_capacity_is_503_before_dependent_reads(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        adult_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        learner_id = uuid.uuid7()
+        seed_human_adult_with_capability(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=adult_id
+        )
+        seed_human_learner(
+            bootstrap_engine, tenant_id=tenant_id, learner_id=learner_id
+        )
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=teacher_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(),
+        )
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        over_capacity = MAX_ASSIGNMENTS_PER_LEARNER + 1
+        assignment_ids = [
+            insert_assignment(
+                bootstrap_engine,
+                tenant_id=tenant_id,
+                teacher_id=teacher_id,
+                content_id=content_id,
+                content_version_id=version_id,
+                class_ref=CLASS_REF_HOME,
+                available_from=AVAILABLE,
+            )
+            for _ in range(over_capacity)
+        ]
+        insert_in_progress_attempt(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            learner_id=learner_id,
+            assignment_id=assignment_ids[0],
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_HOME,
+        )
+        client = build_client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=adult_id,
+            access_reader=MutableParentAccessReader((learner_id,)),
+            parent_intelligence_authorization=_kernel_auth(bootstrap_engine),
+            membership_reader=_membership(learner_id),
+            principal_classification_authority=CurrentPrincipalClassificationAuthority(
+                bootstrap_engine
+            ),
+        )
+        with capture_sql_statements(runtime_engine) as statements:
+            response = client.get(HOME_PATH, headers=headers(tenant_id))
+        assert response.status_code == 503
+        body = response.json()
+        assert body["code"] == "parent_intelligence_unavailable"
+        assert "children" not in body
+        joined = "\n".join(statements).lower()
+        assert "from teaching.assignments" in joined
+        assert_dependent_fact_sources_not_queried(statements)
+
+    def test_per_learner_over_capacity_is_503_before_dependent_reads(
+        self, bootstrap_engine: Engine, runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        adult_id = uuid.uuid7()
+        teacher_id = uuid.uuid7()
+        over_capacity_learner = uuid.uuid7()
+        empty_learner = uuid.uuid7()
+        seed_human_adult_with_capability(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=adult_id
+        )
+        for learner_id in (over_capacity_learner, empty_learner):
+            seed_human_learner(
+                bootstrap_engine, tenant_id=tenant_id, learner_id=learner_id
+            )
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=teacher_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(),
+        )
+        content_id, version_id = seed_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
+        )
+        over_capacity = MAX_ASSIGNMENTS_PER_LEARNER + 1
+        assignment_ids = [
+            insert_assignment(
+                bootstrap_engine,
+                tenant_id=tenant_id,
+                teacher_id=teacher_id,
+                content_id=content_id,
+                content_version_id=version_id,
+                class_ref=CLASS_REF_HOME,
+                available_from=AVAILABLE,
+            )
+            for _ in range(over_capacity)
+        ]
+        insert_submitted_attempt(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            learner_id=over_capacity_learner,
+            assignment_id=assignment_ids[0],
+            content_id=content_id,
+            content_version_id=version_id,
+            class_ref=CLASS_REF_HOME,
+        )
+        membership = RecordingMembershipReader(
+            {
+                over_capacity_learner: (
+                    CurrentLearnerClassMembership(class_ref=CLASS_REF_HOME),
+                ),
+                empty_learner: (
+                    CurrentLearnerClassMembership(class_ref=CLASS_REF_OTHER),
+                ),
+            }
+        )
+        reader = SqlAlchemyParentIntelligenceFactsReader(
+            runtime_engine, membership_reader=membership
+        )
+        with capture_sql_statements(runtime_engine) as statements:
+            with pytest.raises(ParentIntelligenceCapacityExceeded):
+                reader.read_authorized_learner_facts(
+                    tenant_id=tenant_id,
+                    authorized_learner_principal_ids=(
+                        over_capacity_learner,
+                        empty_learner,
+                    ),
+                    observed_at=FIXED_NOW,
+                )
+        joined = "\n".join(statements).lower()
+        assert "from teaching.assignments" in joined
+        assert_dependent_fact_sources_not_queried(statements)
+        client = build_client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=adult_id,
+            access_reader=MutableParentAccessReader(
+                (over_capacity_learner, empty_learner)
+            ),
+            parent_intelligence_authorization=_kernel_auth(bootstrap_engine),
+            membership_reader=membership,
+            principal_classification_authority=CurrentPrincipalClassificationAuthority(
+                bootstrap_engine
+            ),
+        )
+        with capture_sql_statements(runtime_engine) as http_statements:
+            response = client.get(HOME_PATH, headers=headers(tenant_id))
+        assert response.status_code == 503
+        assert response.json()["code"] == "parent_intelligence_unavailable"
+        assert "children" not in response.json()
+        assert_dependent_fact_sources_not_queried(http_statements)

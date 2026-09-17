@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.learning.application.errors import (
@@ -484,6 +486,30 @@ def assert_exact_response_keys(body: dict) -> None:
         assert set(child) == CHILD_KEYS
         for assignment in child["assignments"]:
             assert set(assignment) == ASSIGNMENT_KEYS
+
+
+@contextmanager
+def capture_sql_statements(engine: Engine) -> Iterator[list[str]]:
+    statements: list[str] = []
+
+    def _before(conn, cursor, statement, parameters, context, executemany) -> None:
+        del conn, cursor, parameters, context, executemany
+        statements.append(" ".join(str(statement).split()))
+
+    target = getattr(engine, "sync_engine", engine)
+    event.listen(target, "before_cursor_execute", _before)
+    try:
+        yield statements
+    finally:
+        event.remove(target, "before_cursor_execute", _before)
+
+
+def assert_dependent_fact_sources_not_queried(statements: Sequence[str]) -> None:
+    joined = "\n".join(statements).lower()
+    assert "from learning.attempts" not in joined
+    assert "from learning.submissions" not in joined
+    assert "from content.contents" not in joined
+    assert "from content.content_versions" not in joined
 
 
 def assert_concealed_404(response) -> None:
