@@ -38,6 +38,7 @@ from aieos.domains.parent_intelligence.application.learner_access import (
 from aieos.domains.parent_intelligence.application.ports import (
     LearnerPrincipalIntegrityAuthority,
     ParentIntelligenceAuthorization,
+    ParentIntelligenceFactsReader,
 )
 from aieos.domains.school_intelligence.application.ports import (
     SchoolIntelligenceAuthorization,
@@ -95,6 +96,7 @@ class ApiRuntimeDependencies:
     ) = None
     parent_learner_integrity_authority: LearnerPrincipalIntegrityAuthority | None = None
     parent_learner_access_service: CurrentParentLearnerAccessService | None = None
+    parent_intelligence_facts_reader: ParentIntelligenceFactsReader | None = None
 
 
 def compose_api_application(
@@ -137,6 +139,19 @@ def compose_api_application(
         ),
         school_intelligence_facts_reader=(
             dependencies.school_intelligence_facts_reader
+        ),
+        parent_learner_access_service=dependencies.parent_learner_access_service,
+        parent_intelligence_authorization=(
+            dependencies.parent_intelligence_authorization
+        ),
+        school_context_parent_learner_access_reader=(
+            dependencies.school_context_parent_learner_access_reader
+        ),
+        parent_learner_integrity_authority=(
+            dependencies.parent_learner_integrity_authority
+        ),
+        parent_intelligence_facts_reader=(
+            dependencies.parent_intelligence_facts_reader
         ),
     )
     app.state.release_identity = ReleaseIdentity(

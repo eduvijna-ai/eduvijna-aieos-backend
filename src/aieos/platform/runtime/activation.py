@@ -97,6 +97,8 @@ READ_ONLY_OPERATION_IDS: frozenset[str] = frozenset(
         "student_os_assignment_get",
         "learning_attempt_get",
         "principal_os_school_intelligence_get",
+        "parent_os_home_get",
+        "parent_os_child_get",
     }
 )
 
