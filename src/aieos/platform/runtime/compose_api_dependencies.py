@@ -54,6 +54,10 @@ from aieos.platform.runtime.student_learning_command import (
 from aieos.platform.resources.asset_use import AssetUseAuthority
 from aieos.platform.security.auth_config import AuthRuntimeConfig
 from aieos.platform.security.authority import CurrentAuthoritySecurityContextResolver
+from aieos.domains.parent_intelligence.application.learner_access import (
+    CurrentParentLearnerAccessService,
+    UnconfiguredSchoolContextParentLearnerAccessReader,
+)
 from aieos.domains.school_intelligence.application.school_scope import (
     UnconfiguredSchoolContextPrincipalScopeReader,
 )
@@ -63,16 +67,19 @@ from aieos.domains.school_intelligence.infrastructure.read_projection import (
 from aieos.platform.security.authorization import (
     AIEOS_ASSESSMENT_CAPABILITIES,
     AIEOS_CONTENT_CAPABILITIES,
+    AIEOS_PARENT_INTELLIGENCE_CAPABILITIES,
     AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
     AIEOS_TEACHING_WORK_CAPABILITIES,
     AuthorizationKernel,
     CurrentPrincipalClassificationAuthority,
     KernelClassroomAssessmentAuthorization,
     KernelCurrentTenantAccessAuthority,
+    KernelParentIntelligenceAuthorization,
     KernelPublicationAuthorization,
     KernelReviewAuthorization,
     KernelSchoolIntelligenceAuthorization,
     KernelTeachingWorkAuthorization,
+    SecurityAuthorityLearnerPrincipalIntegrity,
 )
 from aieos.platform.security.jwt_bearer import JwtBearerRequestIdentityAuthenticator
 
@@ -173,10 +180,29 @@ def compose_api_runtime_dependencies(
             | AIEOS_ASSESSMENT_CAPABILITIES
             | AIEOS_TEACHING_WORK_CAPABILITIES
             | AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES
+            | AIEOS_PARENT_INTELLIGENCE_CAPABILITIES
         ),
     )
     asset_authority = _build_asset_use_authority(engine, env)
     handled_types = tuple(sorted(ASSET_RESOURCE_TYPES_V1))
+    principal_classification_authority = CurrentPrincipalClassificationAuthority(
+        engine
+    )
+    parent_intelligence_authorization = KernelParentIntelligenceAuthorization(
+        kernel
+    )
+    school_context_parent_learner_access_reader = (
+        UnconfiguredSchoolContextParentLearnerAccessReader()
+    )
+    parent_learner_integrity_authority = SecurityAuthorityLearnerPrincipalIntegrity(
+        engine
+    )
+    parent_learner_access_service = CurrentParentLearnerAccessService(
+        classification=principal_classification_authority,
+        authorization=parent_intelligence_authorization,
+        reader=school_context_parent_learner_access_reader,
+        integrity=parent_learner_integrity_authority,
+    )
     return ApiRuntimeDependencies(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(engine),
         teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(
@@ -212,9 +238,7 @@ def compose_api_runtime_dependencies(
         mutation_activation_gate=load_api_mutation_activation_gate_from_process_environment(
             config.release_identity
         ),
-        principal_classification_authority=CurrentPrincipalClassificationAuthority(
-            engine
-        ),
+        principal_classification_authority=principal_classification_authority,
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
             engine
         ),
@@ -227,4 +251,10 @@ def compose_api_runtime_dependencies(
         school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             engine
         ),
+        parent_intelligence_authorization=parent_intelligence_authorization,
+        school_context_parent_learner_access_reader=(
+            school_context_parent_learner_access_reader
+        ),
+        parent_learner_integrity_authority=parent_learner_integrity_authority,
+        parent_learner_access_service=parent_learner_access_service,
     )
