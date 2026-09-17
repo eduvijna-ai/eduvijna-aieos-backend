@@ -114,4 +114,5 @@ markers = [
     "aieos360_s02_i01: AIEOS360-S02-I01 Principal school scope current authority substrate",
     "aieos360_s02_i02: AIEOS360-S02-I02 Principal school intelligence derived read API",
     "aieos360_s03_i01: AIEOS360-S03-I01 Parent learner access current authority substrate",
+    "aieos360_s03_i02: AIEOS360-S03-I02 Parent intelligence derived read projection GET API",
 ]

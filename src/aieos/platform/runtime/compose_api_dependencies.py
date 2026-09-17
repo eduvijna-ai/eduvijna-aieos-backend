@@ -54,9 +54,15 @@ from aieos.platform.runtime.student_learning_command import (
 from aieos.platform.resources.asset_use import AssetUseAuthority
 from aieos.platform.security.auth_config import AuthRuntimeConfig
 from aieos.platform.security.authority import CurrentAuthoritySecurityContextResolver
+from aieos.domains.learning.application.learner_membership import (
+    UnconfiguredSchoolContextLearnerMembershipReader,
+)
 from aieos.domains.parent_intelligence.application.learner_access import (
     CurrentParentLearnerAccessService,
     UnconfiguredSchoolContextParentLearnerAccessReader,
+)
+from aieos.domains.parent_intelligence.infrastructure.read_projection import (
+    SqlAlchemyParentIntelligenceFactsReader,
 )
 from aieos.domains.school_intelligence.application.school_scope import (
     UnconfiguredSchoolContextPrincipalScopeReader,
@@ -257,4 +263,8 @@ def compose_api_runtime_dependencies(
         ),
         parent_learner_integrity_authority=parent_learner_integrity_authority,
         parent_learner_access_service=parent_learner_access_service,
+        parent_intelligence_facts_reader=SqlAlchemyParentIntelligenceFactsReader(
+            engine,
+            membership_reader=UnconfiguredSchoolContextLearnerMembershipReader(),
+        ),
     )

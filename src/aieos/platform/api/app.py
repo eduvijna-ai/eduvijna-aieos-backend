@@ -54,6 +54,27 @@ from aieos.domains.education.application.generate_worksheet import GenerateWorks
 from aieos.domains.teaching.api.v1.routes import router as teaching_v1_router
 from aieos.domains.learning.api.v1.routes import router as learning_v1_router
 from aieos.domains.assessment.api.v1.routes import router as assessment_v1_router
+from aieos.domains.parent_intelligence.api.v1.routes import (
+    router as parent_intelligence_v1_router,
+)
+from aieos.domains.parent_intelligence.application.errors import (
+    ParentIntelligenceCapabilityForbidden,
+    ParentIntelligenceReadUnavailable,
+    ParentLearnerAccessUnavailable,
+)
+from aieos.domains.parent_intelligence.application.intelligence import (
+    GetParentIntelligenceService,
+)
+from aieos.domains.parent_intelligence.application.learner_access import (
+    CurrentParentLearnerAccessService,
+    SchoolContextParentLearnerAccessReader,
+    UnconfiguredSchoolContextParentLearnerAccessReader,
+)
+from aieos.domains.parent_intelligence.application.ports import (
+    LearnerPrincipalIntegrityAuthority,
+    ParentIntelligenceAuthorization,
+    ParentIntelligenceFactsReader,
+)
 from aieos.domains.school_intelligence.api.v1.routes import (
     router as school_intelligence_v1_router,
 )
@@ -217,6 +238,36 @@ class _UnavailableSchoolIntelligenceFactsReader:
         )
 
 
+class _MissingParentIntelligenceAuthorization:
+    """Fail-closed capability adapter when Parent Intelligence auth is omitted."""
+
+    def authorize(self, *, tenant_id, principal_id, capability) -> None:
+        del tenant_id, principal_id, capability
+        raise ParentIntelligenceCapabilityForbidden(
+            "parent intelligence capability denied"
+        )
+
+
+class _UnavailableParentLearnerIntegrity:
+    """Fail-closed learner-subject integrity when no SoR adapter is composed."""
+
+    def validate_learner_subject(self, *, tenant_id, learner_principal_id) -> None:
+        del tenant_id, learner_principal_id
+        raise ParentLearnerAccessUnavailable(
+            "Parent Learner Access is temporarily unavailable"
+        )
+
+
+class _UnavailableParentIntelligenceFactsReader:
+    """Fail-closed facts adapter when no Parent read adapter is composed."""
+
+    def read_authorized_learner_facts(self, **kwargs):
+        del kwargs
+        raise ParentIntelligenceReadUnavailable(
+            "Parent Intelligence source is temporarily unavailable"
+        )
+
+
 class _UnavailablePrincipalClassificationAuthority:
     """Fail-closed gate when no SoR engine is composed (OpenAPI/test shells)."""
 
@@ -283,6 +334,17 @@ def create_app(
         SchoolContextPrincipalScopeReader | None
     ) = None,
     school_intelligence_facts_reader: SchoolIntelligenceFactsReader | None = None,
+    parent_learner_access_service: CurrentParentLearnerAccessService | None = None,
+    parent_intelligence_authorization: (
+        ParentIntelligenceAuthorization | None
+    ) = None,
+    school_context_parent_learner_access_reader: (
+        SchoolContextParentLearnerAccessReader | None
+    ) = None,
+    parent_learner_integrity_authority: (
+        LearnerPrincipalIntegrityAuthority | None
+    ) = None,
+    parent_intelligence_facts_reader: ParentIntelligenceFactsReader | None = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -299,6 +361,7 @@ def create_app(
     app.include_router(learning_v1_router)
     app.include_router(assessment_v1_router)
     app.include_router(school_intelligence_v1_router)
+    app.include_router(parent_intelligence_v1_router)
     app.include_router(platform_ai_v1_router)
     app.state.request_identity_authenticator = request_identity_authenticator
     app.state.security_resolver = security_resolver
@@ -696,6 +759,30 @@ def create_app(
                 or _UnavailableSchoolIntelligenceFactsReader()
             ),
         )
+    )
+    app.state.get_parent_intelligence_service = GetParentIntelligenceService(
+        learner_access=(
+            parent_learner_access_service
+            or CurrentParentLearnerAccessService(
+                classification=classification,
+                authorization=(
+                    parent_intelligence_authorization
+                    or _MissingParentIntelligenceAuthorization()
+                ),
+                reader=(
+                    school_context_parent_learner_access_reader
+                    or UnconfiguredSchoolContextParentLearnerAccessReader()
+                ),
+                integrity=(
+                    parent_learner_integrity_authority
+                    or _UnavailableParentLearnerIntegrity()
+                ),
+            )
+        ),
+        facts_reader=(
+            parent_intelligence_facts_reader
+            or _UnavailableParentIntelligenceFactsReader()
+        ),
     )
 
     def _openapi() -> dict:

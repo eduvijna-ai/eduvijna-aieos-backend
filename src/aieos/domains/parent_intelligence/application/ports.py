@@ -6,8 +6,14 @@ owned here and must not be redefined in AuthorizationKernel decisions.py.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
+
+from aieos.domains.parent_intelligence.application.models import (
+    ParentIntelligenceFactsSnapshot,
+)
 
 # Exact ADR-AIEOS-061 Parent Intelligence capability vocabulary.
 # Protected reads compose: trusted principal + current tenant + ACTIVE HUMAN
@@ -50,3 +56,31 @@ class LearnerPrincipalIntegrityAuthority(Protocol):
         tenant_id: UUID,
         learner_principal_id: UUID,
     ) -> None: ...
+
+
+class ParentIntelligenceFactsReader(Protocol):
+    """Read-only Parent facts for learners that already passed I01.
+
+    Receives ONLY learner IDs that have already passed Parent Learner Access
+    Current Authority. Does not decide adult→learner entitlement. Does not
+    replace Parent Learner Access Current Authority. Does not accept
+    arbitrary client-selected learner IDs.
+
+    Completeness contract for a successful snapshot:
+
+    * empty authorized learner set → ``learners`` must be empty
+    * non-empty authorized learner set → ``learners`` contains exactly one
+      row for every requested learner, with exact set equality and exact
+      multiplicity
+
+    Missing, extra, or duplicate learner rows are a source-contract failure.
+    Assignment IDs within each learner row must be unique.
+    """
+
+    def read_authorized_learner_facts(
+        self,
+        *,
+        tenant_id: UUID,
+        authorized_learner_principal_ids: Sequence[UUID],
+        observed_at: datetime,
+    ) -> ParentIntelligenceFactsSnapshot: ...

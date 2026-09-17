@@ -41,6 +41,7 @@ PRODUCTION_RUNTIME_FILES = (
     RUNTIME_ROOT / "entrypoints" / "api_main.py",
     SRC_ROOT / "platform" / "api" / "app.py",
 )
+APPLICATION_ROOT = PI_ROOT / "application"
 FORBIDDEN_NEIGHBOR_NAMES = (
     "SchoolContextClassReader",
     "SchoolContextClassAuthority",
@@ -138,23 +139,22 @@ class TestProductionIsolation:
         assert "production credentials" not in adapter.lower()
         assert "Not ERP/SIS integration" in adapter
 
-    def test_compose_api_application_does_not_register_parent_http(self) -> None:
-        composition = (RUNTIME_ROOT / "composition.py").read_text(encoding="utf-8")
-        assert "parent_learner_access_service" in composition
-        start = composition.index("app = create_app(")
-        end = composition.index("app.state.release_identity")
-        create_app_block = composition[start:end]
-        assert "parent_intelligence" not in create_app_block
-        assert "parent_learner" not in create_app_block
-        app_src = (SRC_ROOT / "platform" / "api" / "app.py").read_text(encoding="utf-8")
-        assert "parent-os" not in app_src
-        assert "/api/v1/parent-os" not in app_src
+    def test_i01_application_layer_has_no_http(self) -> None:
+        for path in _py_files(APPLICATION_ROOT):
+            modules = _import_modules(path)
+            assert "fastapi" not in modules
+            assert not any(module.startswith("fastapi.") for module in modules)
+            text = path.read_text(encoding="utf-8")
+            assert "APIRouter" not in text
+            assert "/api/v1/parent-os" not in text
 
 
 class TestNeighborPortsNotReused:
-    def test_parent_intelligence_does_not_import_neighbor_authority_ports(self) -> None:
+    def test_parent_access_application_does_not_import_neighbor_authority_ports(
+        self,
+    ) -> None:
         offenders: list[str] = []
-        for path in _py_files(PI_ROOT):
+        for path in _py_files(APPLICATION_ROOT):
             text = path.read_text(encoding="utf-8")
             for name in FORBIDDEN_NEIGHBOR_NAMES:
                 if name in text:
@@ -189,24 +189,28 @@ class TestNoPersistenceNoApi:
         for path in _py_files(PI_ROOT):
             text = path.read_text(encoding="utf-8")
             assert "Table(" not in text
+            relative = path.relative_to(PI_ROOT).as_posix()
+            if relative.startswith("infrastructure/"):
+                continue
             for module in _import_modules(path):
                 assert module != "sqlalchemy"
                 assert not module.startswith("sqlalchemy.")
                 assert module != "alembic"
                 assert not module.startswith("alembic.")
 
-    def test_openapi_snapshot_unchanged_and_has_no_parent_route(self) -> None:
+    def test_openapi_digest_matches_release_pin(self) -> None:
         digest = hashlib.sha256(OPENAPI_SNAPSHOT.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert digest == (
-            "BE60CC2A4612F77AB333088D264B9501B9AB842995AEC1539DA89EA0E8462B47"
+        versions = sorted(
+            path.name
+            for path in MIGRATIONS.glob("*.py")
+            if path.name != "__init__.py"
         )
-        snapshot = OPENAPI_SNAPSHOT.read_text(encoding="utf-8")
-        assert "/api/v1/parent-os" not in snapshot
-        assert "parent.intelligence.read" not in snapshot
+        assert not any("parent_intelligence" in name.lower() for name in versions)
+        assert not any("parent_learner" in name.lower() for name in versions)
 
-    def test_no_parent_intelligence_aggregation(self) -> None:
-        for path in _py_files(PI_ROOT):
+    def test_i01_application_does_not_aggregate_source_records(self) -> None:
+        for path in _py_files(APPLICATION_ROOT):
             text = path.read_text(encoding="utf-8")
             assert "TeachingAssignment" not in text
             assert "LearnerAttempt" not in text

@@ -168,6 +168,15 @@ from aieos.domains.learning.application.errors import (
     SecondAttemptNotAuthorized,
     SubmissionImmutable,
 )
+from aieos.domains.parent_intelligence.application.errors import (
+    ParentIntelligenceApplicationError,
+    ParentIntelligenceCapabilityForbidden,
+    ParentIntelligenceCapacityExceeded,
+    ParentIntelligenceReadUnavailable,
+    ParentLearnerAccessContractError,
+    ParentLearnerAccessUnavailable,
+    ParentLearnerNotFound,
+)
 from aieos.domains.school_intelligence.application.errors import (
     SchoolContextContractError as SchoolIntelligenceSchoolContextContractError,
     SchoolContextUnavailable as SchoolIntelligenceSchoolContextUnavailable,
@@ -1193,6 +1202,47 @@ _SCHOOL_INTELLIGENCE_PROBLEMS: dict[
     ),
 }
 
+_PARENT_INTELLIGENCE_PROBLEMS: dict[
+    type[ParentIntelligenceApplicationError], tuple[int, str, str, str]
+] = {
+    ParentIntelligenceCapabilityForbidden: (
+        403,
+        "parent_intelligence_capability_forbidden",
+        "Parent Intelligence capability denied",
+        "The request is not authorized for this Parent Intelligence operation",
+    ),
+    ParentLearnerAccessUnavailable: (
+        503,
+        "parent_learner_access_unavailable",
+        "Parent Learner Access unavailable",
+        "Parent Learner Access is temporarily unavailable",
+    ),
+    ParentLearnerAccessContractError: (
+        503,
+        "parent_learner_access_unavailable",
+        "Parent Learner Access unavailable",
+        "Parent Learner Access is temporarily unavailable",
+    ),
+    ParentLearnerNotFound: (
+        404,
+        "parent_learner_not_found",
+        "Parent learner not found",
+        "Parent learner was not found",
+    ),
+    ParentIntelligenceReadUnavailable: (
+        503,
+        "parent_intelligence_unavailable",
+        "Parent Intelligence unavailable",
+        "Parent Intelligence is temporarily unavailable",
+    ),
+    ParentIntelligenceCapacityExceeded: (
+        503,
+        "parent_intelligence_unavailable",
+        "Parent Intelligence unavailable",
+        "Parent Intelligence is temporarily unavailable",
+    ),
+}
+
 
 def install_exception_handlers(app) -> None:
     @app.exception_handler(RequestValidationError)
@@ -1336,6 +1386,28 @@ def install_exception_handlers(app) -> None:
         request: Request, exc: SchoolIntelligenceApplicationError
     ) -> JSONResponse:
         mapping = _SCHOOL_INTELLIGENCE_PROBLEMS.get(type(exc))
+        if mapping is None:
+            status, code, title, detail = (
+                500,
+                "internal_error",
+                "Internal error",
+                "An unexpected error occurred",
+            )
+        else:
+            status, code, title, detail = mapping
+        return problem_response(
+            request,
+            status=status,
+            code=code,
+            title=title,
+            detail=detail,
+        )
+
+    @app.exception_handler(ParentIntelligenceApplicationError)
+    async def parent_intelligence_application_handler(
+        request: Request, exc: ParentIntelligenceApplicationError
+    ) -> JSONResponse:
+        mapping = _PARENT_INTELLIGENCE_PROBLEMS.get(type(exc))
         if mapping is None:
             status, code, title, detail = (
                 500,

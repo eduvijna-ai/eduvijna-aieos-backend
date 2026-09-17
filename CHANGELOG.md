@@ -9,6 +9,20 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S03-I02 — Derived Parent Intelligence read projection and GET API
+  under ADR-AIEOS-061 Frozen / Approved v1.0.1. Depends on merged I01
+  `CurrentParentLearnerAccessService`. Read-only
+  `GET /api/v1/parent-os/home` (`parent_os_home_get`) and
+  `GET /api/v1/parent-os/children/{learner_principal_id}`
+  (`parent_os_child_get`). `DERIVED_ON_REQUEST` /
+  `CURRENT_FACTS_AS_OF_REQUEST`; Parent positive-allowlist DTO; current
+  authority revalidated every GET; 404 concealment for unauthorized
+  selectors; zero authorized children is 200 `children=[]`. Production Parent
+  access provider remains unconfigured/fail-closed. No evaluation/mastery, no
+  Parent persistence, no migration, no NATS / Temporal / Agent. Alembic head
+  remains `a360s010004`. OpenAPI changes for these GETs only. I03/I04 are not
+  authorized.
+
 - AIEOS360-S03-I01 — Parent learner access current-authority substrate
   under ADR-AIEOS-061 Frozen / Approved v1.0.1. Exact capability
   `parent.intelligence.read`; ACTIVE HUMAN adult classification; distinct

@@ -17,6 +17,9 @@ from aieos.development.auth_adapters import (
     DevelopmentReviewCommentPermit,
     DevelopmentTeachingWorkPermit,
 )
+from aieos.development.learner_school_context import (
+    DevelopmentSchoolContextLearnerMembershipReader,
+)
 from aieos.development.parent_learner_access import (
     DevelopmentParentIntelligencePermit,
     DevelopmentSchoolContextParentLearnerAccessReader,
@@ -36,6 +39,9 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 )
 from aieos.domains.assessment.infrastructure.persistence.uow import (
     SqlAlchemyAssessmentUnitOfWorkFactory,
+)
+from aieos.domains.parent_intelligence.infrastructure.read_projection import (
+    SqlAlchemyParentIntelligenceFactsReader,
 )
 from aieos.domains.school_intelligence.infrastructure.read_projection import (
     SqlAlchemySchoolIntelligenceFactsReader,
@@ -146,4 +152,10 @@ def compose_local_api_runtime_dependencies(
         ),
         parent_learner_integrity_authority=parent_learner_integrity_authority,
         parent_learner_access_service=parent_learner_access_service,
+        parent_intelligence_facts_reader=SqlAlchemyParentIntelligenceFactsReader(
+            engine,
+            membership_reader=DevelopmentSchoolContextLearnerMembershipReader(
+                tenant_id=LOCAL_DEV_TENANT_ID,
+            ),
+        ),
     )
