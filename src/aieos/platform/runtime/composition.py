@@ -31,6 +31,14 @@ from aieos.domains.assessment.application.ports import (
     AssessmentUnitOfWorkFactory,
     ClassroomAssessmentAuthorization,
 )
+from aieos.domains.parent_intelligence.application.learner_access import (
+    CurrentParentLearnerAccessService,
+    SchoolContextParentLearnerAccessReader,
+)
+from aieos.domains.parent_intelligence.application.ports import (
+    LearnerPrincipalIntegrityAuthority,
+    ParentIntelligenceAuthorization,
+)
 from aieos.domains.school_intelligence.application.ports import (
     SchoolIntelligenceAuthorization,
     SchoolIntelligenceFactsReader,
@@ -81,6 +89,12 @@ class ApiRuntimeDependencies:
         SchoolContextPrincipalScopeReader | None
     ) = None
     school_intelligence_facts_reader: SchoolIntelligenceFactsReader | None = None
+    parent_intelligence_authorization: ParentIntelligenceAuthorization | None = None
+    school_context_parent_learner_access_reader: (
+        SchoolContextParentLearnerAccessReader | None
+    ) = None
+    parent_learner_integrity_authority: LearnerPrincipalIntegrityAuthority | None = None
+    parent_learner_access_service: CurrentParentLearnerAccessService | None = None
 
 
 def compose_api_application(

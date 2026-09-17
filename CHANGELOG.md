@@ -9,6 +9,17 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S03-I01 — Parent learner access current-authority substrate
+  under ADR-AIEOS-061 Frozen / Approved v1.0.1. Exact capability
+  `parent.intelligence.read`; ACTIVE HUMAN adult classification; distinct
+  `SchoolContextParentLearnerAccessReader` (teacher, learner-membership, and
+  Principal School Scope ports are not reused); learner data-subject
+  integrity without actor ACTIVE rules; fail-closed unconfigured School
+  Context; NON_PRODUCTION development adapter isolated from production
+  composition. No Parent SoR, no Parent HTTP, no presentation metadata, no
+  OpenAPI change, no migration. Alembic head remains `a360s010004`. I02–I04
+  are not authorized.
+
 - AIEOS360-S02-I02 — Principal school intelligence derived-on-request GET
   `/api/v1/principal-os/school-intelligence` under ADR-AIEOS-060 Frozen /
   Approved. Current ACTIVE HUMAN + `school.intelligence.read` + current

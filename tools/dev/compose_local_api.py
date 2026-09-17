@@ -17,9 +17,16 @@ from aieos.development.auth_adapters import (
     DevelopmentReviewCommentPermit,
     DevelopmentTeachingWorkPermit,
 )
+from aieos.development.parent_learner_access import (
+    DevelopmentParentIntelligencePermit,
+    DevelopmentSchoolContextParentLearnerAccessReader,
+)
 from aieos.development.principal_school_context import (
     DevelopmentSchoolContextPrincipalScopeReader,
     DevelopmentSchoolIntelligencePermit,
+)
+from aieos.domains.parent_intelligence.application.learner_access import (
+    CurrentParentLearnerAccessService,
 )
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
@@ -51,6 +58,7 @@ from aieos.platform.runtime.student_learning_command import (
 )
 from aieos.platform.security.authorization import (
     CurrentPrincipalClassificationAuthority,
+    SecurityAuthorityLearnerPrincipalIntegrity,
 )
 from tools.dev.local_auth import (
     LocalDevelopmentBearerAuthenticator,
@@ -69,6 +77,24 @@ def compose_local_api_runtime_dependencies(
     config: ApiRuntimeConfig,
 ) -> ApiRuntimeDependencies:
     """Explicit local composition — no JWT/JWKS fetch, no AIStor network I/O."""
+    principal_classification_authority = CurrentPrincipalClassificationAuthority(
+        engine
+    )
+    parent_intelligence_authorization = DevelopmentParentIntelligencePermit()
+    school_context_parent_learner_access_reader = (
+        DevelopmentSchoolContextParentLearnerAccessReader(
+            tenant_id=LOCAL_DEV_TENANT_ID,
+        )
+    )
+    parent_learner_integrity_authority = SecurityAuthorityLearnerPrincipalIntegrity(
+        engine
+    )
+    parent_learner_access_service = CurrentParentLearnerAccessService(
+        classification=principal_classification_authority,
+        authorization=parent_intelligence_authorization,
+        reader=school_context_parent_learner_access_reader,
+        integrity=parent_learner_integrity_authority,
+    )
     return ApiRuntimeDependencies(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(engine),
         teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(
@@ -100,9 +126,7 @@ def compose_local_api_runtime_dependencies(
         mutation_activation_gate=load_api_mutation_activation_gate_from_process_environment(
             config.release_identity
         ),
-        principal_classification_authority=CurrentPrincipalClassificationAuthority(
-            engine
-        ),
+        principal_classification_authority=principal_classification_authority,
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
             engine
         ),
@@ -116,4 +140,10 @@ def compose_local_api_runtime_dependencies(
         school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             engine
         ),
+        parent_intelligence_authorization=parent_intelligence_authorization,
+        school_context_parent_learner_access_reader=(
+            school_context_parent_learner_access_reader
+        ),
+        parent_learner_integrity_authority=parent_learner_integrity_authority,
+        parent_learner_access_service=parent_learner_access_service,
     )
