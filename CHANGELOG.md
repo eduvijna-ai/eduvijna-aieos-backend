@@ -9,6 +9,13 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S03-I02R1 — Remove wall-clock coupling from the fixed-observation
+  Parent Intelligence capacity test. The direct-reader test that observes at
+  `FIXED_NOW` now fixtures `available_from` to `FIXED_NOW - 1 hour` so
+  current/visible assignment capacity remains deterministic. Production
+  Parent Intelligence behavior is unchanged. Alembic head remains
+  `a360s010004`. OpenAPI unchanged.
+
 - AIEOS360-S03-I02R1 — Bound Parent Intelligence fact reads before fan-out.
   Assignment SELECT uses `authorized learner count ×
   MAX_ASSIGNMENTS_PER_LEARNER` with `LIMIT n+1` sentinel detection;
