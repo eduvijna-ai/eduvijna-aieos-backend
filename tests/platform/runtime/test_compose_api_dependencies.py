@@ -94,7 +94,17 @@ def test_compose_returns_complete_api_runtime_dependencies() -> None:
     assert isinstance(dependencies, ApiRuntimeDependencies)
     sig = inspect.signature(ApiRuntimeDependencies)
     for name in sig.parameters:
-        assert getattr(dependencies, name) is not None
+        value = getattr(dependencies, name)
+        if name in {
+            "school_context_class_reader",
+            "learner_membership_reader",
+        }:
+            # Neutral optional School Context carriers remain unset in production
+            # until a governed production authority exists (Teacher) or Learning
+            # falls back inside create_app to the unconfigured membership reader.
+            assert value is None
+            continue
+        assert value is not None
     assert not dependencies.content_types.contains("test.generic")
     with pytest.raises(SchemaNotFoundError):
         dependencies.schema_registry.get("test.generic", 1)

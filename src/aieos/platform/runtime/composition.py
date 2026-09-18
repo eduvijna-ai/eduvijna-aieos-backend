@@ -17,6 +17,9 @@ from aieos.domains.content.application.ports import (
     ReviewCommentPolicy,
 )
 from aieos.domains.content.domain.schema import ContentSchemaRegistry
+from aieos.domains.learning.application.learner_membership import (
+    SchoolContextLearnerMembershipReader,
+)
 from aieos.domains.learning.application.ports import (
     StudentLearningCommandUnitOfWorkFactory,
 )
@@ -26,6 +29,9 @@ from aieos.domains.teaching.application.ports import (
 )
 from aieos.domains.teaching.application.owner_resolution import (
     HumanPrincipalClassificationGate,
+)
+from aieos.domains.teaching.application.school_context import (
+    SchoolContextClassReader,
 )
 from aieos.domains.assessment.application.ports import (
     AssessmentUnitOfWorkFactory,
@@ -85,6 +91,8 @@ class ApiRuntimeDependencies:
     principal_classification_authority: HumanPrincipalClassificationGate
     teaching_authorization: TeachingWorkAuthorization | None = None
     student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None
+    school_context_class_reader: SchoolContextClassReader | None = None
+    learner_membership_reader: SchoolContextLearnerMembershipReader | None = None
     school_intelligence_authorization: SchoolIntelligenceAuthorization | None = None
     school_context_principal_scope_reader: (
         SchoolContextPrincipalScopeReader | None
@@ -131,6 +139,8 @@ def compose_api_application(
             dependencies.principal_classification_authority
         ),
         student_learning_uow_factory=dependencies.student_learning_uow_factory,
+        school_context_class_reader=dependencies.school_context_class_reader,
+        learner_membership_reader=dependencies.learner_membership_reader,
         school_intelligence_authorization=(
             dependencies.school_intelligence_authorization
         ),

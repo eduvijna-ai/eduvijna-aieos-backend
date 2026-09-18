@@ -17,15 +17,15 @@ from aieos.development.auth_adapters import (
     DevelopmentReviewCommentPermit,
     DevelopmentTeachingWorkPermit,
 )
-from aieos.development.learner_school_context import (
-    DevelopmentSchoolContextLearnerMembershipReader,
+from aieos.development.coherent_school_context import (
+    CLASS_REF_5A,
+    CLASS_REF_5B,
+    DevelopmentCoherentSchoolContextProvider,
 )
 from aieos.development.parent_learner_access import (
     DevelopmentParentIntelligencePermit,
-    DevelopmentSchoolContextParentLearnerAccessReader,
 )
 from aieos.development.principal_school_context import (
-    DevelopmentSchoolContextPrincipalScopeReader,
     DevelopmentSchoolIntelligencePermit,
 )
 from aieos.domains.parent_intelligence.application.learner_access import (
@@ -77,6 +77,30 @@ from tools.dev.local_config import (
 )
 
 
+def _local_f5_coherent_school_context_provider() -> (
+    DevelopmentCoherentSchoolContextProvider
+):
+    """One shared NON_PRODUCTION School Context fact universe for local F5.
+
+    Preserves the coherent provider's canonical Teacher / Student / Principal /
+    Parent story, then overlays LOCAL_DEV_PRINCIPAL_ID Teacher + Principal
+    scope so the existing single-token local launcher continues to exercise
+    those flows. This overlay is F5 compatibility only — not a role model.
+    """
+    provider = DevelopmentCoherentSchoolContextProvider(
+        tenant_id=LOCAL_DEV_TENANT_ID,
+    )
+    provider.set_teacher_class_authority(
+        LOCAL_DEV_PRINCIPAL_ID,
+        (CLASS_REF_5A, CLASS_REF_5B),
+    )
+    provider.set_principal_class_scope(
+        LOCAL_DEV_PRINCIPAL_ID,
+        (CLASS_REF_5A, CLASS_REF_5B),
+    )
+    return provider
+
+
 def compose_local_api_runtime_dependencies(
     *,
     engine: Engine,
@@ -86,19 +110,15 @@ def compose_local_api_runtime_dependencies(
     principal_classification_authority = CurrentPrincipalClassificationAuthority(
         engine
     )
+    coherent_school_context = _local_f5_coherent_school_context_provider()
     parent_intelligence_authorization = DevelopmentParentIntelligencePermit()
-    school_context_parent_learner_access_reader = (
-        DevelopmentSchoolContextParentLearnerAccessReader(
-            tenant_id=LOCAL_DEV_TENANT_ID,
-        )
-    )
     parent_learner_integrity_authority = SecurityAuthorityLearnerPrincipalIntegrity(
         engine
     )
     parent_learner_access_service = CurrentParentLearnerAccessService(
         classification=principal_classification_authority,
         authorization=parent_intelligence_authorization,
-        reader=school_context_parent_learner_access_reader,
+        reader=coherent_school_context,
         integrity=parent_learner_integrity_authority,
     )
     return ApiRuntimeDependencies(
@@ -136,26 +156,19 @@ def compose_local_api_runtime_dependencies(
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
             engine
         ),
+        school_context_class_reader=coherent_school_context,
+        learner_membership_reader=coherent_school_context,
         school_intelligence_authorization=DevelopmentSchoolIntelligencePermit(),
-        school_context_principal_scope_reader=(
-            DevelopmentSchoolContextPrincipalScopeReader(
-                tenant_id=LOCAL_DEV_TENANT_ID,
-                principal_id=LOCAL_DEV_PRINCIPAL_ID,
-            )
-        ),
+        school_context_principal_scope_reader=coherent_school_context,
         school_intelligence_facts_reader=SqlAlchemySchoolIntelligenceFactsReader(
             engine
         ),
         parent_intelligence_authorization=parent_intelligence_authorization,
-        school_context_parent_learner_access_reader=(
-            school_context_parent_learner_access_reader
-        ),
+        school_context_parent_learner_access_reader=coherent_school_context,
         parent_learner_integrity_authority=parent_learner_integrity_authority,
         parent_learner_access_service=parent_learner_access_service,
         parent_intelligence_facts_reader=SqlAlchemyParentIntelligenceFactsReader(
             engine,
-            membership_reader=DevelopmentSchoolContextLearnerMembershipReader(
-                tenant_id=LOCAL_DEV_TENANT_ID,
-            ),
+            membership_reader=coherent_school_context,
         ),
     )
