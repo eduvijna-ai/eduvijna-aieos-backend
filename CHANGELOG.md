@@ -9,6 +9,19 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S04-I01 — Coherent NON_PRODUCTION School Context current-fact
+  provider under ADR-AIEOS-062 Frozen / Approved. One in-memory development
+  fact universe projects the four existing distinct reader contracts
+  (`SchoolContextClassReader`, `SchoolContextLearnerMembershipReader`,
+  `SchoolContextPrincipalScopeReader`, `SchoolContextParentLearnerAccessReader`)
+  without collapsing them. Teacher / learner / Principal / adult current facts
+  share class-5a / Student A (and optional class-5b / Student B). Development
+  fixture control can revoke or re-scope current facts; production composition
+  remains unconfigured / omitted / fail closed. No Admin OS, no
+  `PrincipalKind.ADMIN`, no `admin.*` capability, no School/roster/family SoR,
+  no production ERP/SIS adapter, no NATS, no Temporal, no migration, no OpenAPI
+  change. Alembic head remains `a360s010004`. S04-I02+ are not authorized.
+
 - AIEOS360-S03-I02R2 — Remove wall-clock coupling from the fixed-observation
   Parent Intelligence capacity test. The direct-reader test that observes at
   `FIXED_NOW` now fixtures `available_from` to `FIXED_NOW - 1 hour` so
