@@ -116,4 +116,5 @@ markers = [
     "aieos360_s03_i01: AIEOS360-S03-I01 Parent learner access current authority substrate",
     "aieos360_s03_i02: AIEOS360-S03-I02 Parent intelligence derived read projection GET API",
     "aieos360_s04_i01: AIEOS360-S04-I01 coherent NON_PRODUCTION School Context current-fact provider",
+    "aieos360_s04_i02: AIEOS360-S04-I02 coherent School Context development composition integration",
 ]

@@ -9,6 +9,18 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS360-S04-I02 — Integrate the I01 coherent NON_PRODUCTION School Context
+  provider into canonical local API composition. `ApiRuntimeDependencies`
+  optionally carries Teacher class and Learning membership readers and forwards
+  them through `compose_api_application` into `create_app`. Local F5 composition
+  supplies one shared `DevelopmentCoherentSchoolContextProvider` instance to all
+  four existing reader contracts and Parent Intelligence membership facts, with
+  a LOCAL_DEV_PRINCIPAL_ID Teacher/Principal compatibility overlay only.
+  Production composition remains fail closed and does not import the development
+  provider. No multi-role auth, no Admin OS, no ERP/SIS production adapter, no
+  migration, no OpenAPI change. Alembic head remains `a360s010004`. S04-I03 is
+  not authorized.
+
 - AIEOS360-S04-I01 — Coherent NON_PRODUCTION School Context current-fact
   provider under ADR-AIEOS-062 Frozen / Approved. One in-memory development
   fact universe projects the four existing distinct reader contracts
