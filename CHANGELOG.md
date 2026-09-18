@@ -9,7 +9,7 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- AIEOS360-S03-I02R1 — Remove wall-clock coupling from the fixed-observation
+- AIEOS360-S03-I02R2 — Remove wall-clock coupling from the fixed-observation
   Parent Intelligence capacity test. The direct-reader test that observes at
   `FIXED_NOW` now fixtures `available_from` to `FIXED_NOW - 1 hour` so
   current/visible assignment capacity remains deterministic. Production
