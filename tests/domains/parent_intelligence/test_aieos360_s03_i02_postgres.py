@@ -479,6 +479,7 @@ class TestBoundedAssignmentReads:
             bootstrap_engine, tenant_id=tenant_id, owner_id=teacher_id
         )
         over_capacity = MAX_ASSIGNMENTS_PER_LEARNER + 1
+        available_at = FIXED_NOW - timedelta(hours=1)
         assignment_ids = [
             insert_assignment(
                 bootstrap_engine,
@@ -487,7 +488,7 @@ class TestBoundedAssignmentReads:
                 content_id=content_id,
                 content_version_id=version_id,
                 class_ref=CLASS_REF_HOME,
-                available_from=AVAILABLE,
+                available_from=available_at,
             )
             for _ in range(over_capacity)
         ]
