@@ -100,6 +100,7 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "CreateAIGeneratedContentForReviewService": "A",
     "CreateAIPreparationArtifactsForReviewService": "A",
     "ImportMigratedContentService": "A",
+    "AppendWorksheetLearnerHintsContentVersionService": "A",
     "AppendContentVersionService": "B",
     "GetContentService": "R",
     "ListContentsService": "R",
@@ -121,6 +122,7 @@ _WIRED_AUDIT_FILES = {
     "CreateAIGeneratedContentForReviewService": "ai_for_review.py",
     "CreateAIPreparationArtifactsForReviewService": "ai_preparation_for_review.py",
     "ImportMigratedContentService": "migration_import.py",
+    "AppendWorksheetLearnerHintsContentVersionService": "worksheet_hint_append.py",
 }
 
 _FROZEN_ACTIONS = frozenset(a.value for a in SecurityAuditAction)

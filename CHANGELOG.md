@@ -12,8 +12,9 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AIEOS-V1-HINT-T1-I01R1 (PK-HINT-A) — Security corrections on worksheet@2
   guarded append: reject explicit `learner_hint: null`, re-check capability/owner/ClassRef
   before idempotent replay, persist normalized hints and human provenance
-  (`authoring_class_ref`), expanded grade vocabulary hard-block, and PostgreSQL/service
-  regression tests for guarded append, generic bypass, and APPROVE/publish interlock.
+  (`authoring_class_ref`), expanded grade vocabulary hard-block, PostgreSQL/service
+  regression tests for guarded append, generic bypass, and APPROVE/publish interlock,
+  and Content application pydantic-boundary plus SAI-I05 mutation inventory wiring.
 
 - AIEOS-V1-HINT-T1-I01 (PK-HINT-A) — `education.worksheet@2` typed schema with
   optional per-question `learner_hint`, generic `HttpAppendContentVersionService`

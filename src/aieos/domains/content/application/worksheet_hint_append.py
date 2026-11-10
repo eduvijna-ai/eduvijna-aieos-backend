@@ -7,8 +7,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from pydantic import ValidationError
-
 from aieos.domains.content.application.asset_refs import (
     build_version_asset_refs,
     canonical_asset_ref_fingerprint_items,
@@ -64,8 +62,8 @@ from aieos.domains.education.worksheet_hint_safety import (
     enforce_worksheet_hint_hard_blocks,
 )
 from aieos.domains.education.worksheet_v2 import (
-    WorksheetV2,
     normalized_worksheet_v2_mapping,
+    parse_worksheet_v2,
 )
 from aieos.domains.teaching.application.errors import ClassRefNotAssignable
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
@@ -187,8 +185,8 @@ class AppendWorksheetLearnerHintsContentVersionService:
             raise ContentSchemaNotFound("schema is not registered") from exc
         try:
             registered.validate(payload)
-            parsed = WorksheetV2.model_validate(dict(payload))
-        except (InvalidPayloadError, ValidationError) as exc:
+            parsed = parse_worksheet_v2(payload)
+        except (InvalidPayloadError, LearnerHintValidationError) as exc:
             raise ContentPayloadInvalid("payload failed schema validation") from exc
         if not any(q.learner_hint is not None for q in parsed.questions):
             raise InvalidContentRequest(

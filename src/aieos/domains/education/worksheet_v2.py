@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from aieos.domains.education.worksheet_hint_safety import (
     LearnerHintValidationError,
@@ -62,6 +62,14 @@ def normalized_worksheet_v2_mapping(parsed: WorksheetV2) -> dict[str, object]:
     return parsed.model_dump(mode="json", exclude_none=True)
 
 
+def parse_worksheet_v2(raw: Mapping[str, object]) -> WorksheetV2:
+    """Parse worksheet@2 payloads without leaking pydantic details to callers."""
+    try:
+        return WorksheetV2.model_validate(dict(raw))
+    except ValidationError as exc:
+        raise LearnerHintValidationError("worksheet payload failed validation") from exc
+
+
 def normalized_worksheet_v2_mapping_from_raw(raw: Mapping[str, object]) -> dict[str, object]:
     """Validate raw worksheet@2 input and return the normalized append mapping."""
-    return normalized_worksheet_v2_mapping(WorksheetV2.model_validate(dict(raw)))
+    return normalized_worksheet_v2_mapping(parse_worksheet_v2(raw))
