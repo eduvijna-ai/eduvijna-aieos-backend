@@ -19,6 +19,7 @@ from aieos.domains.content.domain.schema import (
 from aieos.domains.education.schema import (
     PREPARATION_CONTENT_TYPES,
     PREPARATION_V1_SCHEMAS,
+    PREPARATION_V2_SCHEMAS,
 )
 
 DEV_CONTENT_TYPE = "test.generic"
@@ -54,7 +55,7 @@ def build_development_schema_registry() -> ContentSchemaRegistry:
     registry = ContentSchemaRegistry()
     registry.register(DEV_GENERIC_V1)
     # PREPARATION_V1_SCHEMAS includes worksheet V1 (DEV03 + DEV04 shared).
-    for schema in PREPARATION_V1_SCHEMAS:
+    for schema in (*PREPARATION_V1_SCHEMAS, *PREPARATION_V2_SCHEMAS):
         registry.register(schema)  # type: ignore[arg-type]
     return registry
 

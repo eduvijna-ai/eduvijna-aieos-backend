@@ -200,3 +200,11 @@ class PublicationSchemaUnavailable(ContentApplicationError):
 
 class PublicationNotAllowed(ContentApplicationError):
     """Publish is not allowed in the current Content stewardship state."""
+
+
+class WorksheetLearnerHintAttestationRequired(ReviewDecisionNotAllowed):
+    """Hint-bearing worksheet@2 requires §5.3 attestation before APPROVE (T1 interlock)."""
+
+
+class WorksheetLearnerHintPublicationBlocked(PublicationNotAllowed):
+    """Hint-bearing worksheet@2 requires §5.3 attestation before publish (T1 interlock)."""

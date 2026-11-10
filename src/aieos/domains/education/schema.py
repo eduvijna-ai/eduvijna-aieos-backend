@@ -22,10 +22,12 @@ from aieos.domains.education.content_payloads_v1 import (
     TeacherNotesV1,
 )
 from aieos.domains.education.worksheet_v1 import WorksheetV1
+from aieos.domains.education.worksheet_v2 import WorksheetV2
 
 WORKSHEET_CONTENT_TYPE = "worksheet"
 WORKSHEET_SCHEMA_ID = "education.worksheet"
 WORKSHEET_SCHEMA_VERSION = 1
+WORKSHEET_SCHEMA_VERSION_V2 = 2
 
 LESSON_PLAN_CONTENT_TYPE = "lesson_plan"
 LESSON_PLAN_SCHEMA_ID = "education.lesson_plan"
@@ -186,6 +188,26 @@ class TeacherNotesV1ContentSchema:
 
 
 WORKSHEET_V1_SCHEMA = WorksheetV1ContentSchema()
+
+
+@dataclass(frozen=True, slots=True)
+class WorksheetV2ContentSchema:
+    """Validates worksheet payloads via WorksheetV2 (rejects unknown fields)."""
+
+    content_type: str = WORKSHEET_CONTENT_TYPE
+    schema_id: SchemaId = SchemaId(WORKSHEET_SCHEMA_ID)
+    schema_version: SchemaVersion = SchemaVersion(WORKSHEET_SCHEMA_VERSION_V2)
+
+    def validate(self, payload: Mapping[str, object]) -> None:
+        if not isinstance(payload, Mapping):
+            raise InvalidPayloadError("worksheet payload must be a JSON object")
+        try:
+            WorksheetV2.model_validate(dict(payload))
+        except ValidationError as exc:
+            _raise_invalid("worksheet", exc)
+
+
+WORKSHEET_V2_SCHEMA = WorksheetV2ContentSchema()
 LESSON_PLAN_V1_SCHEMA = LessonPlanV1ContentSchema()
 QUIZ_V1_SCHEMA = QuizV1ContentSchema()
 HOMEWORK_V1_SCHEMA = HomeworkV1ContentSchema()
@@ -201,6 +223,8 @@ PREPARATION_V1_SCHEMAS: tuple[object, ...] = (
     TEACHER_NOTES_V1_SCHEMA,
 )
 
+PREPARATION_V2_SCHEMAS: tuple[object, ...] = (WORKSHEET_V2_SCHEMA,)
+
 
 def build_preparation_content_schema_registry() -> ContentSchemaRegistry:
     """Explicit I03/test registry for the six preparation Content schemas.
@@ -208,6 +232,6 @@ def build_preparation_content_schema_registry() -> ContentSchemaRegistry:
     Does not activate schemas in production or development app composition.
     """
     registry = ContentSchemaRegistry()
-    for schema in PREPARATION_V1_SCHEMAS:
+    for schema in (*PREPARATION_V1_SCHEMAS, *PREPARATION_V2_SCHEMAS):
         registry.register(schema)  # type: ignore[arg-type]
     return registry

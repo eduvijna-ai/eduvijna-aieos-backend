@@ -9,6 +9,13 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T1-I01 (PK-HINT-A) — `education.worksheet@2` typed schema with
+  optional per-question `learner_hint`, generic `HttpAppendContentVersionService`
+  §7.5 hint-key presence fail-close before idempotency, guarded
+  `AppendWorksheetLearnerHintsContentVersionService`, and fail-closed APPROVE/publish
+  interlock pending ADR-063 §5.3 attestation (T2). No public HTTP route, OpenAPI, or
+  migration change. Student/Assessment `@2` consumption unchanged.
+
 - AIEOS360-S04-I02 — Integrate the I01 coherent NON_PRODUCTION School Context
   provider into canonical local API composition. `ApiRuntimeDependencies`
   optionally carries Teacher class and Learning membership readers and forwards
