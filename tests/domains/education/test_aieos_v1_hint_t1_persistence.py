@@ -222,7 +222,9 @@ class TestGuardedAppendPostgres:
                 {"tid": tenant_id, "cid": content_id.value},
             ).one()
             assert int(v2_audit.resource_revision_after) == 2
-            assert version_read.version_id.value in str(v2_audit.related_resource_refs)
+            assert str(version_read.version_id.value) in str(
+                v2_audit.related_resource_refs
+            )
             idem_count = conn.execute(
                 text(
                     """
@@ -464,6 +466,7 @@ class TestReviewPublishInterlockServices:
         )
         version_id = ContentVersionId.generate()
         publication_id = uuid.uuid7()
+        approval_decision_id = uuid.uuid7()
         payload = ContentPayload.from_mapping(_worksheet_v2_payload())
         idem_key = f"pub-replay-{uuid.uuid7()}"
         fingerprint = _publish_fingerprint(
@@ -512,6 +515,29 @@ class TestReviewPublishInterlockServices:
             conn.execute(
                 text(
                     """
+                    INSERT INTO content.review_decisions (
+                        review_decision_id, tenant_id, content_id, version_id,
+                        decision, reason_code, comment, reviewer_principal_id,
+                        effective_actor_id, delegation_id, decided_at, correlation_id
+                    ) VALUES (
+                        :id, :tid, :cid, :vid, 'APPROVE', NULL, NULL,
+                        :principal, :principal, NULL, :now, :corr
+                    )
+                    """
+                ),
+                {
+                    "id": approval_decision_id,
+                    "tid": tenant_id,
+                    "cid": content_id.value,
+                    "vid": version_id.value,
+                    "principal": principal_id,
+                    "now": FIXED_NOW,
+                    "corr": uuid.uuid7(),
+                },
+            )
+            conn.execute(
+                text(
+                    """
                     INSERT INTO content.publications (
                         publication_id, tenant_id, content_id, version_id,
                         approval_decision_id, published_by_principal_id,
@@ -527,7 +553,7 @@ class TestReviewPublishInterlockServices:
                     "tid": tenant_id,
                     "cid": content_id.value,
                     "vid": version_id.value,
-                    "decision": uuid.uuid7(),
+                    "decision": approval_decision_id,
                     "now": FIXED_NOW,
                     "principal": principal_id,
                     "corr": uuid.uuid7(),
