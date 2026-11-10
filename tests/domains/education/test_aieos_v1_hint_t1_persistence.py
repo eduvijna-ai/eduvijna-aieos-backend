@@ -31,7 +31,11 @@ from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
 )
-from aieos.domains.content.domain.version import ContentPayload
+from aieos.domains.content.domain.version import (
+    ContentPayload,
+    canonical_payload_json,
+    thaw_json_value,
+)
 from aieos.domains.education.schema import (
     WORKSHEET_CONTENT_TYPE,
     WORKSHEET_SCHEMA_ID,
@@ -192,11 +196,14 @@ class TestGuardedAppendPostgres:
         with SqlAlchemyContentUnitOfWorkFactory(runtime_engine)(tenant_id) as uow:
             stored = uow.versions.get(version_read.version_id)
             assert stored is not None
-            mapping = dict(stored.payload.body)
+            mapping = thaw_json_value(stored.payload.body)
+            assert isinstance(mapping, dict)
             q0 = mapping["questions"][0]
             assert q0["learner_hint"] == expected_hint
             assert "learner_hint" not in mapping["questions"][1]
-            assert stored.payload.sha256 == ContentPayload.from_mapping(mapping).sha256.value
+            assert stored.payload.sha256.value == ContentPayload.from_mapping(
+                mapping
+            ).sha256.value
             prov = uow.versions.get_provenance(version_read.version_id)
             assert prov is not None
             assert prov["authoring_class_ref"] == "class-5a"
@@ -246,7 +253,7 @@ class TestGuardedAppendPostgres:
             tenant_id,
             principal_id,
             content_id=content_id,
-            expected_aggregate_revision=AggregateRevision(99),
+            expected_aggregate_revision=AggregateRevision(1),
             payload=_worksheet_v2_payload(),
             authoring_class_ref="class-5a",
             idempotency_key=idem,
@@ -390,7 +397,7 @@ class TestReviewPublishInterlockServices:
                     "cid": content_id.value,
                     "schema_id": WORKSHEET_SCHEMA_ID,
                     "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
-                    "payload": json.dumps(dict(payload.body)),
+                    "payload": canonical_payload_json(payload.body),
                     "digest": payload.sha256.value,
                     "now": FIXED_NOW,
                     "principal": principal_id,
