@@ -139,7 +139,7 @@ def _append_v1(
         audit_provenance=api_mutation_audit_provenance(principal_id),
         now=FIXED_NOW,
     )
-    return ContentVersionId(version_read.version_id), revision
+    return version_read.version_id, revision
 
 
 def _guarded_service(
@@ -190,14 +190,14 @@ class TestGuardedAppendPostgres:
         )
         assert int(revision) == 2
         with SqlAlchemyContentUnitOfWorkFactory(runtime_engine)(tenant_id) as uow:
-            stored = uow.versions.get(ContentVersionId(version_read.version_id))
+            stored = uow.versions.get(version_read.version_id)
             assert stored is not None
-            mapping = dict(stored.payload.mapping)
+            mapping = dict(stored.payload.body)
             q0 = mapping["questions"][0]
             assert q0["learner_hint"] == expected_hint
             assert "learner_hint" not in mapping["questions"][1]
             assert stored.payload.sha256 == ContentPayload.from_mapping(mapping).sha256.value
-            prov = uow.versions.get_provenance(ContentVersionId(version_read.version_id))
+            prov = uow.versions.get_provenance(version_read.version_id)
             assert prov is not None
             assert prov["authoring_class_ref"] == "class-5a"
             assert prov["authoring_principal_id"] == str(principal_id)
@@ -349,7 +349,7 @@ class TestReviewPublishInterlockServices:
                 tenant_id,
                 principal_id,
                 content_id=content_id,
-                version_id=ContentVersionId(version_read.version_id),
+                version_id=version_read.version_id,
                 expected_aggregate_revision=revision,
                 reason_code=None,
                 comment=None,
@@ -390,7 +390,7 @@ class TestReviewPublishInterlockServices:
                     "cid": content_id.value,
                     "schema_id": WORKSHEET_SCHEMA_ID,
                     "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
-                    "payload": json.dumps(dict(payload.mapping)),
+                    "payload": json.dumps(dict(payload.body)),
                     "digest": payload.sha256.value,
                     "now": FIXED_NOW,
                     "principal": principal_id,
