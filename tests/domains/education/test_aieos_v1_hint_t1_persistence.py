@@ -212,7 +212,7 @@ class TestGuardedAppendPostgres:
             audit_count = conn.execute(
                 text(
                     """
-                    SELECT count(*) FROM security.audit_events
+                    SELECT count(*) FROM security.audit_records
                     WHERE tenant_id = :tid AND action = 'content.version.create'
                     AND primary_resource_id = :cid
                     """
