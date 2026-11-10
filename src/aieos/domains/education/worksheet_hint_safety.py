@@ -21,7 +21,7 @@ _MARKDOWN_PATTERNS = (
     re.compile(r"(?m)^\s*#{1,6}\s"),
 )
 _PROHIBITED_VOCAB = re.compile(
-    r"(?i)\b(score|graded|mastery|evaluation|answer\s*key)\b",
+    r"(?i)\b(score|graded|grade|grades|grading|mastery|evaluation|answer\s*key)\b",
 )
 
 

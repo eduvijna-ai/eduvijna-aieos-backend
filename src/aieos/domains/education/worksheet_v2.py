@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,7 +23,7 @@ class WorksheetQuestionV2(WorksheetQuestionV1):
     @classmethod
     def _validate_learner_hint(cls, value: object) -> str | None:
         if value is None:
-            return None
+            raise ValueError("learner_hint failed validation")
         try:
             return validate_learner_hint_string(value)
         except LearnerHintValidationError as exc:
@@ -54,3 +55,13 @@ class WorksheetV2(BaseModel):
             if any(oid not in known for oid in question.objective_ids):
                 raise ValueError("every question must map to valid objective IDs")
         return self
+
+
+def normalized_worksheet_v2_mapping(parsed: WorksheetV2) -> dict[str, object]:
+    """Immutable append mapping with trimmed hints and absent optional keys."""
+    return parsed.model_dump(mode="json", exclude_none=True)
+
+
+def normalized_worksheet_v2_mapping_from_raw(raw: Mapping[str, object]) -> dict[str, object]:
+    """Validate raw worksheet@2 input and return the normalized append mapping."""
+    return normalized_worksheet_v2_mapping(WorksheetV2.model_validate(dict(raw)))

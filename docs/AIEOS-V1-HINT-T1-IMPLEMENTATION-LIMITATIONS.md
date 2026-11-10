@@ -12,7 +12,8 @@ workflows.
 - Generic append bypass closure at `HttpAppendContentVersionService` (key
   presence, not truthiness).
 - Guarded application command `AppendWorksheetLearnerHintsContentVersionService`
-  (no public route).
+  (no public route; persists normalized hint text and `authoring_class_ref`
+  version provenance; idempotent replay re-checks current authority).
 - Temporary fail-closed APPROVE/publish interlock for hint-key-bearing worksheet@2
   payloads until §5.3 attestation exists.
 

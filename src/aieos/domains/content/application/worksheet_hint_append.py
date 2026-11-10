@@ -32,15 +32,18 @@ from aieos.domains.content.application.errors import (
 from aieos.domains.content.application.models import (
     AppendContentVersionCommand,
     ContentVersionReadModel,
+    LockedContentHead,
     content_version_read_model,
 )
 from aieos.domains.content.application.ports import (
     CONTENT_VERSION_CREATE,
     AIGenerationAuthorizationPort,
     AssetReferenceValidationPort,
+    ContentUnitOfWork,
     ContentUnitOfWorkFactory,
 )
 from aieos.domains.content.application.services import append_version_in_uow
+from aieos.domains.content.domain.content import Content
 from aieos.domains.content.domain.errors import InvalidPayloadError, SchemaNotFoundError
 from aieos.domains.content.domain.identities import (
     AggregateRevision,
@@ -60,7 +63,10 @@ from aieos.domains.education.worksheet_hint_safety import (
     LearnerHintValidationError,
     enforce_worksheet_hint_hard_blocks,
 )
-from aieos.domains.education.worksheet_v2 import WorksheetV2
+from aieos.domains.education.worksheet_v2 import (
+    WorksheetV2,
+    normalized_worksheet_v2_mapping,
+)
 from aieos.domains.teaching.application.errors import ClassRefNotAssignable
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
 from aieos.platform.events.models import MutationEventContext
@@ -74,6 +80,19 @@ from aieos.platform.security.audit import SecurityAuditAction
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
 )
+
+
+def worksheet_learner_hint_version_provenance(
+    *, authoring_class_ref: str, principal_id: UUID
+) -> dict[str, object]:
+    """Durable human-version provenance for guarded worksheet hint append (no SoR claim)."""
+    return {
+        "kind": "worksheet_learner_hint",
+        "schema_version": 1,
+        "authoring_class_ref": authoring_class_ref.strip(),
+        "authoring_principal_id": str(principal_id),
+    }
+
 
 class AppendWorksheetLearnerHintsContentVersionService:
     """Governed append for worksheet@2 payloads with validated learner_hint strings."""
@@ -99,6 +118,45 @@ class AppendWorksheetLearnerHintsContentVersionService:
         self._class_authority = class_authority
         self._idempotency_retention = idempotency_retention
 
+    def _assert_current_guarded_authority(
+        self,
+        uow: ContentUnitOfWork,
+        *,
+        execution_tenant_id: UUID,
+        principal_id: UUID,
+        content_id: ContentId,
+        authoring_class_ref: str,
+        expected_aggregate_revision: AggregateRevision | None,
+    ) -> tuple[LockedContentHead, Content]:
+        self._version_create_authorization.authorize(
+            tenant_id=execution_tenant_id,
+            principal_id=principal_id,
+            content_id=content_id,
+            capability=CONTENT_VERSION_CREATE,
+        )
+        head = uow.contents.get_head_for_update(content_id)
+        if head is None or head.tenant_id != execution_tenant_id:
+            raise ContentNotFound("Content is not visible in the execution tenant")
+        content = uow.contents.get(content_id)
+        if content is None or content.owner_principal_id != principal_id:
+            raise InvalidContentRequest("content owner does not match current principal")
+        if (
+            expected_aggregate_revision is not None
+            and head.aggregate_revision != expected_aggregate_revision
+        ):
+            raise AggregateRevisionConflict(
+                "expected aggregate_revision does not match stored head"
+            )
+        try:
+            self._class_authority.require_assignable_class_ref(
+                execution_tenant_id, principal_id, authoring_class_ref
+            )
+        except ClassRefNotAssignable as exc:
+            raise InvalidContentRequest(
+                "authoring class is not assignable for the current teacher"
+            ) from exc
+        return head, content
+
     def append(
         self,
         execution_tenant_id: UUID,
@@ -119,14 +177,41 @@ class AppendWorksheetLearnerHintsContentVersionService:
         raw_asset_refs: list[Mapping[str, Any]] = (
             [] if asset_refs is None else list(asset_refs)
         )
+        normalized_authoring_class_ref = authoring_class_ref.strip()
+
+        try:
+            registered = self._schema_registry.get(
+                WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2
+            )
+        except SchemaNotFoundError as exc:
+            raise ContentSchemaNotFound("schema is not registered") from exc
+        try:
+            registered.validate(payload)
+            parsed = WorksheetV2.model_validate(dict(payload))
+        except (InvalidPayloadError, ValidationError) as exc:
+            raise ContentPayloadInvalid("payload failed schema validation") from exc
+        if not any(q.learner_hint is not None for q in parsed.questions):
+            raise InvalidContentRequest(
+                "guarded worksheet hint append requires at least one learner_hint"
+            )
+        try:
+            enforce_worksheet_hint_hard_blocks(parsed)
+        except (LearnerHintHardBlockError, LearnerHintValidationError) as exc:
+            raise InvalidContentRequest("worksheet learner_hint failed safety checks") from exc
+
+        normalized_payload = normalized_worksheet_v2_mapping(parsed)
+        version_provenance = worksheet_learner_hint_version_provenance(
+            authoring_class_ref=normalized_authoring_class_ref,
+            principal_id=principal_id,
+        )
         fingerprint = fingerprint_material(
             {
                 "content_id": str(content_id),
                 "expected_aggregate_revision": int(expected_aggregate_revision),
                 "schema_id": WORKSHEET_SCHEMA_ID,
                 "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
-                "authoring_class_ref": authoring_class_ref.strip(),
-                "payload": dict(payload),
+                "authoring_class_ref": normalized_authoring_class_ref,
+                "payload": normalized_payload,
                 "asset_refs": canonical_asset_ref_fingerprint_items(raw_asset_refs),
             }
         )
@@ -142,6 +227,14 @@ class AppendWorksheetLearnerHintsContentVersionService:
             if existing is not None:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise IdempotencyKeyReused("idempotency key already bound")
+                self._assert_current_guarded_authority(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    principal_id=principal_id,
+                    content_id=content_id,
+                    authoring_class_ref=normalized_authoring_class_ref,
+                    expected_aggregate_revision=None,
+                )
                 if existing.result_version_id is None:
                     raise PersistenceInvariantViolation(
                         "idempotent append outcome is missing version identity"
@@ -156,59 +249,20 @@ class AppendWorksheetLearnerHintsContentVersionService:
                     AggregateRevision(existing.result_aggregate_revision),
                 )
 
-            self._version_create_authorization.authorize(
-                tenant_id=execution_tenant_id,
+            head, _content = self._assert_current_guarded_authority(
+                uow,
+                execution_tenant_id=execution_tenant_id,
                 principal_id=principal_id,
                 content_id=content_id,
-                capability=CONTENT_VERSION_CREATE,
+                authoring_class_ref=normalized_authoring_class_ref,
+                expected_aggregate_revision=expected_aggregate_revision,
             )
-
-            head = uow.contents.get_head_for_update(content_id)
-            if head is None or head.tenant_id != execution_tenant_id:
-                raise ContentNotFound("Content is not visible in the execution tenant")
-            content = uow.contents.get(content_id)
-            if content is None or content.owner_principal_id != principal_id:
-                raise InvalidContentRequest("content owner does not match current principal")
-            if head.aggregate_revision != expected_aggregate_revision:
-                raise AggregateRevisionConflict(
-                    "expected aggregate_revision does not match stored head"
-                )
-
-            try:
-                self._class_authority.require_assignable_class_ref(
-                    execution_tenant_id, principal_id, authoring_class_ref
-                )
-            except ClassRefNotAssignable as exc:
-                raise InvalidContentRequest(
-                    "authoring class is not assignable for the current teacher"
-                ) from exc
-
-            try:
-                registered = self._schema_registry.get(
-                    WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2
-                )
-            except SchemaNotFoundError as exc:
-                raise ContentSchemaNotFound("schema is not registered") from exc
             if registered.content_type != head.content_type:
                 raise ContentSchemaMismatch(
                     "registered schema content_type does not match Content"
                 )
             try:
-                registered.validate(payload)
-                parsed = WorksheetV2.model_validate(dict(payload))
-            except (InvalidPayloadError, ValidationError) as exc:
-                raise ContentPayloadInvalid("payload failed schema validation") from exc
-            if not any(q.learner_hint is not None for q in parsed.questions):
-                raise InvalidContentRequest(
-                    "guarded worksheet hint append requires at least one learner_hint"
-                )
-            try:
-                enforce_worksheet_hint_hard_blocks(parsed)
-            except (LearnerHintHardBlockError, LearnerHintValidationError) as exc:
-                raise InvalidContentRequest("worksheet learner_hint failed safety checks") from exc
-
-            try:
-                domain_payload = ContentPayload.from_mapping(payload)
+                domain_payload = ContentPayload.from_mapping(normalized_payload)
             except InvalidPayloadError as exc:
                 raise ContentPayloadInvalid("payload failed schema validation") from exc
 
@@ -256,7 +310,7 @@ class AppendWorksheetLearnerHintsContentVersionService:
                 AppendContentVersionCommand(
                     expected_aggregate_revision=expected_aggregate_revision,
                     version=version,
-                    provenance=None,
+                    provenance=version_provenance,
                     asset_refs=built_refs,
                 ),
                 now=created_at,
