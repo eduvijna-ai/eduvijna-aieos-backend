@@ -9,6 +9,12 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T1-I01R2 (PK-HINT-A) — ADR-063 §7.2 guarded-append check order
+  (human/tenant/capability/owner/ClassRef before payload validation and
+  idempotency), review/publish idempotent replay interlock for hint-bearing
+  worksheet@2, HTTP generic bypass matrix tests, and exact v2 audit/idempotency
+  PostgreSQL acceptance proofs.
+
 - AIEOS-V1-HINT-T1-I01R1 (PK-HINT-A) — Security corrections on worksheet@2
   guarded append: reject explicit `learner_hint: null`, re-check capability/owner/ClassRef
   before idempotent replay, persist normalized hints and human provenance

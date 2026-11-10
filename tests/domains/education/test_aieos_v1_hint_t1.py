@@ -522,3 +522,187 @@ def test_guarded_append_requires_at_least_one_hint():
 def test_v1_and_v2_schema_validators():
     WORKSHEET_V1_SCHEMA.validate(valid_worksheet_payload())
     WORKSHEET_V2_SCHEMA.validate(_hint_free_v2_payload())
+
+
+def test_guarded_append_denial_precedence_non_owner_before_validation():
+    """R2-F1: capability/owner/class deny before schema or idempotency inspection."""
+    tenant_id = uuid.uuid7()
+    owner_id = uuid.uuid7()
+    intruder_id = uuid.uuid7()
+    content_id = ContentId.generate()
+    uow = MagicMock()
+    uow.idempotency.get.return_value = None
+    from aieos.domains.content.application.models import LockedContentHead
+    from aieos.domains.content.domain.content import Content, ContentType
+    from aieos.domains.content.domain.states import StewardshipState
+
+    now = datetime.now(UTC)
+    uow.contents.get_head_for_update.return_value = LockedContentHead(
+        tenant_id=tenant_id,
+        content_id=content_id,
+        aggregate_revision=AggregateRevision(0),
+        current_version_id=None,
+        current_version_number=None,
+        published_version_id=None,
+        stewardship_state=StewardshipState.DRAFT.value,
+        content_type="worksheet",
+    )
+    uow.contents.get.return_value = Content(
+        content_id=content_id,
+        tenant_id=tenant_id,
+        owner_principal_id=owner_id,
+        content_type=ContentType("worksheet"),
+        title="Fractions",
+        description="",
+        locale="en-IN",
+        stewardship_state=StewardshipState.DRAFT,
+        current_version_id=None,
+        published_version_id=None,
+        aggregate_revision=AggregateRevision(0),
+        created_at=now,
+        created_by_principal_id=owner_id,
+        updated_at=now,
+        archived_at=None,
+    )
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value = uow
+    factory.return_value.__exit__.return_value = None
+    service = AppendWorksheetLearnerHintsContentVersionService(
+        factory,
+        build_preparation_content_schema_registry(),
+        AllowAssetReferenceValidation(),
+        AllowAIGenerationAuthorization(),
+        StubHumanClassification(),
+        StubClassAuthority(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=intruder_id,
+        effective_actor_id=intruder_id,
+    )
+    garbage_payload = {"questions": "not-a-list"}
+    with pytest.raises(InvalidContentRequest):
+        service.append(
+            tenant_id,
+            intruder_id,
+            content_id=content_id,
+            expected_aggregate_revision=AggregateRevision(0),
+            payload=garbage_payload,
+            authoring_class_ref="class-a",
+            idempotency_key=f"intruder-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(intruder_id),
+        )
+    uow.idempotency.acquire_scope.assert_not_called()
+    uow.idempotency.get.assert_not_called()
+
+
+def test_guarded_append_blank_authoring_class_ref_denied():
+    service = AppendWorksheetLearnerHintsContentVersionService(
+        _mock_uow_factory(),
+        build_preparation_content_schema_registry(),
+        AllowAssetReferenceValidation(),
+        AllowAIGenerationAuthorization(),
+        StubHumanClassification(),
+        StubClassAuthority(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=uuid.uuid7(),
+        effective_actor_id=uuid.uuid7(),
+    )
+    with pytest.raises(InvalidContentRequest):
+        service.append(
+            uuid.uuid7(),
+            uuid.uuid7(),
+            content_id=ContentId.generate(),
+            expected_aggregate_revision=AggregateRevision(0),
+            payload=_worksheet_v2_payload(),
+            authoring_class_ref="   ",
+            idempotency_key="k",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(uuid.uuid7()),
+        )
+
+
+def test_guarded_append_authorized_actor_still_gets_payload_validation_error():
+    tenant_id = uuid.uuid7()
+    principal_id = uuid.uuid7()
+    content_id = ContentId.generate()
+    uow = MagicMock()
+    uow.idempotency.get.return_value = None
+    from aieos.domains.content.application.models import LockedContentHead
+    from aieos.domains.content.domain.content import Content, ContentType
+    from aieos.domains.content.domain.states import StewardshipState
+
+    now = datetime.now(UTC)
+    uow.contents.get_head_for_update.return_value = LockedContentHead(
+        tenant_id=tenant_id,
+        content_id=content_id,
+        aggregate_revision=AggregateRevision(0),
+        current_version_id=None,
+        current_version_number=None,
+        published_version_id=None,
+        stewardship_state=StewardshipState.DRAFT.value,
+        content_type="worksheet",
+    )
+    uow.contents.get.return_value = Content(
+        content_id=content_id,
+        tenant_id=tenant_id,
+        owner_principal_id=principal_id,
+        content_type=ContentType("worksheet"),
+        title="Fractions",
+        description="",
+        locale="en-IN",
+        stewardship_state=StewardshipState.DRAFT,
+        current_version_id=None,
+        published_version_id=None,
+        aggregate_revision=AggregateRevision(0),
+        created_at=now,
+        created_by_principal_id=principal_id,
+        updated_at=now,
+        archived_at=None,
+    )
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value = uow
+    factory.return_value.__exit__.return_value = None
+    service = AppendWorksheetLearnerHintsContentVersionService(
+        factory,
+        build_preparation_content_schema_registry(),
+        AllowAssetReferenceValidation(),
+        AllowAIGenerationAuthorization(),
+        StubHumanClassification(),
+        StubClassAuthority(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=principal_id,
+        effective_actor_id=principal_id,
+    )
+    with pytest.raises(ContentPayloadInvalid):
+        service.append(
+            tenant_id,
+            principal_id,
+            content_id=content_id,
+            expected_aggregate_revision=AggregateRevision(0),
+            payload={"questions": "broken"},
+            authoring_class_ref="class-a",
+            idempotency_key=f"valid-owner-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(principal_id),
+        )

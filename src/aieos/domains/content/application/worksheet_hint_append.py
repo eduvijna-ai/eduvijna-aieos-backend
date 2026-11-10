@@ -155,28 +155,22 @@ class AppendWorksheetLearnerHintsContentVersionService:
             ) from exc
         return head, content
 
-    def append(
-        self,
-        execution_tenant_id: UUID,
-        principal_id: UUID,
-        *,
-        content_id: ContentId,
-        expected_aggregate_revision: AggregateRevision,
-        payload: Mapping[str, object],
-        authoring_class_ref: str,
-        idempotency_key: str,
-        event_context: MutationEventContext,
-        audit_provenance: MutationAuditProvenance,
-        asset_refs: Sequence[Mapping[str, Any]] | None = None,
-        now: datetime | None = None,
-    ) -> tuple[ContentVersionReadModel, AggregateRevision]:
-        self._principal_classification.require_current_human_principal(principal_id)
-        created_at = now if now is not None else datetime.now(UTC)
-        raw_asset_refs: list[Mapping[str, Any]] = (
-            [] if asset_refs is None else list(asset_refs)
-        )
-        normalized_authoring_class_ref = authoring_class_ref.strip()
+    @staticmethod
+    def _normalized_authoring_class_ref(authoring_class_ref: object) -> str:
+        if not isinstance(authoring_class_ref, str):
+            raise InvalidContentRequest(
+                "authoring class is not assignable for the current teacher"
+            )
+        normalized = authoring_class_ref.strip()
+        if not normalized:
+            raise InvalidContentRequest(
+                "authoring class is not assignable for the current teacher"
+            )
+        return normalized
 
+    def _validate_worksheet_hint_payload(
+        self, payload: Mapping[str, object]
+    ) -> tuple[object, dict[str, object]]:
         try:
             registered = self._schema_registry.get(
                 WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2
@@ -196,22 +190,30 @@ class AppendWorksheetLearnerHintsContentVersionService:
             enforce_worksheet_hint_hard_blocks(parsed)
         except (LearnerHintHardBlockError, LearnerHintValidationError) as exc:
             raise InvalidContentRequest("worksheet learner_hint failed safety checks") from exc
+        return registered, normalized_worksheet_v2_mapping(parsed)
 
-        normalized_payload = normalized_worksheet_v2_mapping(parsed)
-        version_provenance = worksheet_learner_hint_version_provenance(
-            authoring_class_ref=normalized_authoring_class_ref,
-            principal_id=principal_id,
+    def append(
+        self,
+        execution_tenant_id: UUID,
+        principal_id: UUID,
+        *,
+        content_id: ContentId,
+        expected_aggregate_revision: AggregateRevision,
+        payload: Mapping[str, object],
+        authoring_class_ref: str,
+        idempotency_key: str,
+        event_context: MutationEventContext,
+        audit_provenance: MutationAuditProvenance,
+        asset_refs: Sequence[Mapping[str, Any]] | None = None,
+        now: datetime | None = None,
+    ) -> tuple[ContentVersionReadModel, AggregateRevision]:
+        self._principal_classification.require_current_human_principal(principal_id)
+        normalized_authoring_class_ref = self._normalized_authoring_class_ref(
+            authoring_class_ref
         )
-        fingerprint = fingerprint_material(
-            {
-                "content_id": str(content_id),
-                "expected_aggregate_revision": int(expected_aggregate_revision),
-                "schema_id": WORKSHEET_SCHEMA_ID,
-                "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
-                "authoring_class_ref": normalized_authoring_class_ref,
-                "payload": normalized_payload,
-                "asset_refs": canonical_asset_ref_fingerprint_items(raw_asset_refs),
-            }
+        created_at = now if now is not None else datetime.now(UTC)
+        raw_asset_refs: list[Mapping[str, Any]] = (
+            [] if asset_refs is None else list(asset_refs)
         )
         scope = IdempotencyScope(
             tenant_id=execution_tenant_id,
@@ -220,6 +222,30 @@ class AppendWorksheetLearnerHintsContentVersionService:
             key_sha256=hash_idempotency_key(idempotency_key),
         )
         with self._uow_factory(execution_tenant_id) as uow:
+            self._assert_current_guarded_authority(
+                uow,
+                execution_tenant_id=execution_tenant_id,
+                principal_id=principal_id,
+                content_id=content_id,
+                authoring_class_ref=normalized_authoring_class_ref,
+                expected_aggregate_revision=None,
+            )
+            registered, normalized_payload = self._validate_worksheet_hint_payload(payload)
+            version_provenance = worksheet_learner_hint_version_provenance(
+                authoring_class_ref=normalized_authoring_class_ref,
+                principal_id=principal_id,
+            )
+            fingerprint = fingerprint_material(
+                {
+                    "content_id": str(content_id),
+                    "expected_aggregate_revision": int(expected_aggregate_revision),
+                    "schema_id": WORKSHEET_SCHEMA_ID,
+                    "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
+                    "authoring_class_ref": normalized_authoring_class_ref,
+                    "payload": normalized_payload,
+                    "asset_refs": canonical_asset_ref_fingerprint_items(raw_asset_refs),
+                }
+            )
             uow.idempotency.acquire_scope(scope)
             existing = uow.idempotency.get(scope)
             if existing is not None:

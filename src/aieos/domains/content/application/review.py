@@ -434,6 +434,9 @@ class ReviewCommandService:
             if existing is not None:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise IdempotencyKeyReused("idempotency key already bound")
+                if decision is ReviewDecisionCode.APPROVE:
+                    version_row = _require_visible_version(uow, content_id, version_id)
+                    enforce_worksheet_hint_review_interlock(version_row)
                 return self._replay_decision(uow, existing, frozen_state)
             self._comment_policy.evaluate(text)
             stored, revision = self._decide_new(

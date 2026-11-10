@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -209,17 +209,31 @@ class TestGuardedAppendPostgres:
             assert prov["authoring_class_ref"] == "class-5a"
             assert prov["authoring_principal_id"] == str(principal_id)
         with bootstrap_engine.connect() as conn:
-            audit_count = conn.execute(
+            v2_audit = conn.execute(
                 text(
                     """
-                    SELECT count(*) FROM security.audit_records
+                    SELECT resource_revision_after, related_resource_refs
+                    FROM security.audit_records
                     WHERE tenant_id = :tid AND action = 'content.version.create'
-                    AND primary_resource_id = :cid
+                      AND primary_resource_id = :cid
+                      AND resource_revision_after = 2
+                    """
+                ),
+                {"tid": tenant_id, "cid": content_id.value},
+            ).one()
+            assert int(v2_audit.resource_revision_after) == 2
+            assert version_read.version_id.value in str(v2_audit.related_resource_refs)
+            idem_count = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM api.idempotency_records
+                    WHERE tenant_id = :tid AND operation = 'content_version_append.v1'
+                      AND result_content_id = :cid AND result_aggregate_revision = 2
                     """
                 ),
                 {"tid": tenant_id, "cid": content_id.value},
             ).scalar_one()
-        assert int(audit_count) >= 1
+        assert int(idem_count) == 1
 
     def test_idempotent_replay_succeeds_while_still_authorized(
         self, runtime_engine, bootstrap_engine
@@ -430,6 +444,139 @@ class TestReviewPublishInterlockServices:
                 version_id=version_id,
                 expected_aggregate_revision=AggregateRevision(1),
                 idempotency_key=f"pub-{uuid.uuid7()}",
+                event_context=_event_context(principal_id),
+                audit_provenance=api_mutation_audit_provenance(principal_id),
+                now=FIXED_NOW,
+            )
+
+    def test_publish_idempotency_replay_still_blocked_for_hint_version(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        """R2-F2: stored publish idempotency must not bypass hint publish interlock."""
+        from aieos.domains.content.application.publish import _publish_fingerprint
+        from aieos.platform.idempotency.hashing import hash_idempotency_key
+        from aieos.platform.idempotency.models import CONTENT_PUBLISH_V1
+
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        content_id = _seed_worksheet_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_principal_id=principal_id
+        )
+        version_id = ContentVersionId.generate()
+        publication_id = uuid.uuid7()
+        payload = ContentPayload.from_mapping(_worksheet_v2_payload())
+        idem_key = f"pub-replay-{uuid.uuid7()}"
+        fingerprint = _publish_fingerprint(
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=AggregateRevision(1),
+        )
+        with bootstrap_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO content.content_versions (
+                        version_id, tenant_id, content_id, version_number,
+                        parent_version_id, schema_id, schema_version, payload,
+                        payload_sha256, origin, created_at, created_by_principal_id
+                    ) VALUES (
+                        :vid, :tid, :cid, 1, NULL,
+                        :schema_id, :schema_version, CAST(:payload AS jsonb),
+                        :digest, 'HUMAN', :now, :principal
+                    )
+                    """
+                ),
+                {
+                    "vid": version_id.value,
+                    "tid": tenant_id,
+                    "cid": content_id.value,
+                    "schema_id": WORKSHEET_SCHEMA_ID,
+                    "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
+                    "payload": canonical_payload_json(payload.body),
+                    "digest": payload.sha256.value,
+                    "now": FIXED_NOW,
+                    "principal": principal_id,
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE content.contents
+                    SET current_version_id = :vid, aggregate_revision = 1,
+                        stewardship_state = 'APPROVED'
+                    WHERE content_id = :cid
+                    """
+                ),
+                {"vid": version_id.value, "cid": content_id.value},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO content.publications (
+                        publication_id, tenant_id, content_id, version_id,
+                        approval_decision_id, published_by_principal_id,
+                        effective_actor_id, published_at, correlation_id
+                    ) VALUES (
+                        :pub, :tid, :cid, :vid, :decision, :principal,
+                        :principal, :now, :corr
+                    )
+                    """
+                ),
+                {
+                    "pub": publication_id,
+                    "tid": tenant_id,
+                    "cid": content_id.value,
+                    "vid": version_id.value,
+                    "decision": uuid.uuid7(),
+                    "now": FIXED_NOW,
+                    "principal": principal_id,
+                    "corr": uuid.uuid7(),
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO api.idempotency_records (
+                        idempotency_record_id, tenant_id, actor_principal_id,
+                        operation, idempotency_key_sha256, request_fingerprint_sha256,
+                        result_content_id, result_version_id, result_publication_id,
+                        result_aggregate_revision, created_at, expires_at
+                    ) VALUES (
+                        :rid, :tid, :pid, :operation, :key_sha, :fp,
+                        :cid, :vid, :pub, 1, :now, :expires
+                    )
+                    """
+                ),
+                {
+                    "rid": uuid.uuid7(),
+                    "tid": tenant_id,
+                    "pid": principal_id,
+                    "operation": CONTENT_PUBLISH_V1,
+                    "key_sha": hash_idempotency_key(idem_key),
+                    "fp": fingerprint,
+                    "cid": content_id.value,
+                    "vid": version_id.value,
+                    "pub": publication_id,
+                    "now": FIXED_NOW,
+                    "expires": FIXED_NOW + timedelta(hours=24),
+                },
+            )
+        publish = PublishContentService(
+            SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+            AllowPublicationAuthorization(),
+            AllowPublicationGovernance(),
+            AllowAssetCurrentGovernance(),
+            make_test_schema_registry(),
+            idempotency_retention=IDEMPOTENCY_RETENTION,
+        )
+        with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+            publish.publish(
+                tenant_id,
+                principal_id,
+                content_id=content_id,
+                version_id=version_id,
+                expected_aggregate_revision=AggregateRevision(1),
+                idempotency_key=idem_key,
                 event_context=_event_context(principal_id),
                 audit_provenance=api_mutation_audit_provenance(principal_id),
                 now=FIXED_NOW,

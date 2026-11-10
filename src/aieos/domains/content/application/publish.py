@@ -134,6 +134,9 @@ class PublishContentService:
             if existing is not None:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise IdempotencyKeyReused("idempotency key already bound")
+                version = uow.versions.get(version_id)
+                if version is not None and version.content_id == content_id:
+                    enforce_worksheet_hint_publish_interlock(version)
                 return self._replay(uow, existing)
             result = self._publish_new(
                 uow,
