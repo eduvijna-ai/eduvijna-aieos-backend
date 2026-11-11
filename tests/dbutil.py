@@ -48,7 +48,8 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                 "WHERE action LIKE 'asset.%' "
                 "OR action LIKE 'teaching.%' "
                 "OR action LIKE 'assessment.%' "
-                "OR action LIKE 'learning.%'"
+                "OR action LIKE 'learning.%' "
+                "OR action = 'content.worksheet_hint.attest'"
             )
         )
         conn.execute(
@@ -258,6 +259,49 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                 ")"
             )
         ).scalar()
+        hint_attestations_exist = conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'content' "
+                "AND table_name = 'worksheet_learner_hint_version_attestations'"
+                ")"
+            )
+        ).scalar()
+        if hint_attestations_exist:
+            conn.execute(
+                text(
+                    "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                    "DISABLE TRIGGER worksheet_hint_attestations_immutable_delete"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                    "DISABLE ROW LEVEL SECURITY"
+                )
+            )
+            conn.execute(
+                text("DELETE FROM content.worksheet_learner_hint_version_attestations")
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                    "ENABLE TRIGGER worksheet_hint_attestations_immutable_delete"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                    "ENABLE ROW LEVEL SECURITY"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                    "FORCE ROW LEVEL SECURITY"
+                )
+            )
         if learning_exists:
             for table, disable_triggers in (
                 (

@@ -39,6 +39,7 @@ from aieos.domains.content.infrastructure.persistence.uow import (
 from tests.domains.education.test_aieos_v1_hint_t1 import (
     StubHumanClassification,
     _worksheet_v2_payload,
+    build_preparation_content_schema_registry,
 )
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     FIXED_NOW,
@@ -54,7 +55,6 @@ from tests.fakes import (
     AllowReviewCommentPolicy,
     AllowAssetCurrentGovernance,
     IDEMPOTENCY_RETENTION,
-    make_test_schema_registry,
 )
 
 pytestmark = pytest.mark.aieos_v1_hint_t2
@@ -248,7 +248,7 @@ class TestAttestationPostgres:
             AllowPublicationAuthorization(),
             AllowPublicationGovernance(),
             AllowAssetCurrentGovernance(),
-            make_test_schema_registry(),
+            build_preparation_content_schema_registry(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
             principal_classification=StubHumanClassification(),
         )
@@ -557,7 +557,7 @@ class TestAttestationPostgres:
     def test_db_rejects_malformed_outcome_booleans(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
-        import psycopg
+        from sqlalchemy.exc import IntegrityError
 
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
@@ -583,7 +583,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        with pytest.raises(psycopg.errors.CheckViolation) as exc_info:
+        with pytest.raises(IntegrityError) as exc_info:
             with runtime_engine.begin() as conn:
                 conn.execute(
                     text("SELECT set_config('aieos.tenant_id', :tid, true)"),

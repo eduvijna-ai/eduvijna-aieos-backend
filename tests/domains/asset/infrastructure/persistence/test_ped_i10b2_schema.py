@@ -67,6 +67,7 @@ CONTENT_TABLES = {
     "publications",
     "version_asset_refs",
     "migration_import_records",
+    "worksheet_learner_hint_version_attestations",
 }
 SECURITY_TABLES = {
     "audit_records",

@@ -43,6 +43,9 @@ LEARNING_TABLES = ("attempts", "attempt_response_items", "submissions")
 
 
 def _clear_learning(bootstrap_engine: Engine) -> None:
+    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
     with bootstrap_engine.begin() as conn:
         exists = conn.execute(
             text(

@@ -299,9 +299,7 @@ class TestAlembicAndCatalog:
         assert "api" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="api")) == {"idempotency_records"}
         with bootstrap_engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-                "a360s010005",
-            )
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "a360s010005"
         assert "workflow" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="workflow")) == {
             "workflow_start_intents",

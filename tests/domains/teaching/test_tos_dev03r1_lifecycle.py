@@ -567,7 +567,10 @@ class TestTosDev03R1Migration:
     def test_upgrade_downgrade_reupgrade_tosd030002(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
         cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         with bootstrap_engine.begin() as conn:
             conn.execute(text("DELETE FROM ai.generation_runs"))
         command.downgrade(cfg, "tosd030001")
