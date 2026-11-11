@@ -11,7 +11,6 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from aieos.domains.asset.infrastructure.persistence.metadata import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ASSET_SCHEMA,
     asset_metadata,
 )
@@ -23,6 +22,7 @@ from aieos.domains.asset.infrastructure.persistence.models import (
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.dbutil import REPO_ROOT
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b2
 

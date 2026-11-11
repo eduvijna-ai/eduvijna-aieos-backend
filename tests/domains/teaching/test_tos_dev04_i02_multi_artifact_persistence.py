@@ -16,7 +16,6 @@ from aieos.domains.content.application.errors import AIGenerationRunAlreadyMater
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId, VersionNumber
 from aieos.domains.content.domain.origin import ContentOrigin
 from aieos.domains.content.domain.provenance import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AIGenerationProvenanceV1,
     AIGenerationProvenanceV2,
     ai_generation_provenance_as_json,
@@ -45,6 +44,7 @@ from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import REPO_ROOT
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev04_i02
 

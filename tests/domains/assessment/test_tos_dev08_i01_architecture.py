@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.assessment.infrastructure.persistence.models import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     classroom_assessments_table,
 )
 from aieos.platform.runtime.readiness import (
@@ -17,6 +16,7 @@ from aieos.platform.runtime.readiness import (
     _CONTENT_OWNED_SCHEMAS,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev08_i01
 

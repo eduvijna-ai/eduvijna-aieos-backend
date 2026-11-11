@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 from botocore.exceptions import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ClientError,
     ConnectTimeoutError,
     EndpointConnectionError,
@@ -35,6 +34,7 @@ from aieos.domains.asset.infrastructure.blobstore.config import AiStorBlobStoreC
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.dbutil import REPO_ROOT
 from tests.domains.asset.application.fakes import InMemoryBlobStore
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b8
 

@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.teaching.infrastructure.persistence.models import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     execution_content_bindings_table,
     execution_observations_table,
     executions_table,
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i01
 

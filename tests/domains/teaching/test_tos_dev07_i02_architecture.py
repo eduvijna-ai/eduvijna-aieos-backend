@@ -10,12 +10,12 @@ import pytest
 
 from aieos.platform.events.constants import EMITTED_TEACHING_EVENT_TYPES
 from aieos.platform.runtime.activation import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     FROZEN_API_MUTATION_OPERATION_IDS,
     READ_ONLY_OPERATION_IDS,
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i02
 

@@ -15,7 +15,6 @@ from sqlalchemy.engine import Engine
 
 from aieos.domains.content.domain.version import ContentPayload, canonical_payload_json
 from aieos.domains.teaching.application.errors import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     PersistenceInvariantViolation,
     PersistenceOperationFailed,
 )
@@ -38,6 +37,7 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i01
 

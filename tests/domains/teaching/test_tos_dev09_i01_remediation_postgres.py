@@ -12,7 +12,6 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.teaching.domain.class_result_level_snapshot import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ClassResultLevelSnapshot,
 )
 from aieos.domains.teaching.domain.intent_type import IntentType
@@ -26,6 +25,7 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev09_i01
 

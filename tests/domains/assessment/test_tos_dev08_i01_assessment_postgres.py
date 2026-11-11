@@ -17,7 +17,6 @@ from aieos.domains.assessment.domain.identities import AggregateRevision
 from aieos.domains.assessment.domain.lifecycle import AssessmentLifecycleState
 from aieos.domains.assessment.domain.result import ClassResultLevel
 from aieos.domains.assessment.infrastructure.persistence.models import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     classroom_assessments_table,
 )
 from aieos.domains.assessment.infrastructure.persistence.repositories import (
@@ -31,6 +30,7 @@ from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 from tools.release.common import EXPECTED_MIGRATION_HEAD
 
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 @pytest.fixture(autouse=True)
 def _clear_assessment_rows_after_test(bootstrap_engine: Engine) -> None:

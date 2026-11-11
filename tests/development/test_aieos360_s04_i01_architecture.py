@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.learning.application.learner_membership import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     SchoolContextLearnerMembershipAuthority,
     SchoolContextLearnerMembershipReader,
 )
@@ -36,6 +35,7 @@ from aieos.platform.security.authorization import (
 )
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s04_i01
 

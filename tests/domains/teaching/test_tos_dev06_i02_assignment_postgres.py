@@ -18,11 +18,11 @@ from aieos.domains.teaching.domain.assignment_lifecycle import AssignmentLifecyc
 from aieos.domains.teaching.domain.identities import AggregateRevision, WorkId
 from aieos.domains.teaching.domain.work import TeachingWork
 from aieos.domains.teaching.infrastructure.persistence.uow import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     SqlAlchemyTeachingUnitOfWorkFactory,
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev06_i02
 

@@ -12,12 +12,12 @@ import pytest
 from aieos.domains.asset.application.blob_store import BlobStore, Uuid7StorageKeyFactory
 from aieos.domains.asset.application.ingest import BlobIngestPreparer, PreparedBlob
 from aieos.domains.asset.application.reconciliation import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     BlobReferenceStatus,
     BlobReconciler,
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.dbutil import REPO_ROOT
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b3
 

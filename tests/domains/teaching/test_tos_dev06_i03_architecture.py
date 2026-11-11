@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from aieos.platform.events.constants import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     EMITTED_TEACHING_EVENT_TYPES,
     EVENT_TEACHING_ASSIGNMENT_CREATED_V1,
     PRODUCTION_EVENT_PUBLISH_PREFIXES,
@@ -33,6 +32,7 @@ from aieos.platform.security.audit.actions import (
     is_teaching_increment_action,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev06_i03
 

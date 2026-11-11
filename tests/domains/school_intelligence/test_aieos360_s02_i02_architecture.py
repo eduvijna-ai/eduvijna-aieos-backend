@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.school_intelligence.api.v1.models import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     PrincipalSchoolIntelligenceClassCardResponse,
     PrincipalSchoolIntelligenceResponse,
     PrincipalSchoolIntelligenceSummaryResponse,
@@ -26,6 +25,7 @@ from aieos.platform.runtime.activation import READ_ONLY_OPERATION_IDS
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s02_i02
 

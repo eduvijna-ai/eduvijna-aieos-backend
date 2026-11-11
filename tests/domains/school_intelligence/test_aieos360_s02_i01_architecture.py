@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.school_intelligence.application.ports import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
     SCHOOL_INTELLIGENCE_READ,
 )
@@ -20,6 +19,7 @@ from aieos.domains.school_intelligence.application.school_scope import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s02_i01
 

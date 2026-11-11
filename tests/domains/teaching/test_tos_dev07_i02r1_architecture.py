@@ -8,7 +8,6 @@ import pytest
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.audit.actions import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     SecurityAuditAction,
     is_teaching_create_action,
     is_teaching_increment_action,
@@ -16,6 +15,7 @@ from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELI
 from aieos.platform.security.audit.persistence.models import audit_records_table
 from tools.dev.constants import EXPECTED_ALEMBIC_HEAD as DEV_EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i02r1
 

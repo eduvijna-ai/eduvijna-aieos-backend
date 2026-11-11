@@ -20,6 +20,7 @@ from aieos.platform.security.authorization.assessment_adapters import (
     AIEOS_ASSESSMENT_CAPABILITIES as ADAPTER_CAPABILITIES,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i05_b3
 
@@ -59,7 +60,6 @@ class TestB3ArchitectureGuards:
         assert "assessment_assignment_intelligence" in READ_ONLY_OPERATION_IDS
 
     def test_alembic_head_unchanged(self) -> None:
-        from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
         assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))

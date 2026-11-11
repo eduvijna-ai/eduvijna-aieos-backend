@@ -14,7 +14,6 @@ from sqlalchemy.exc import DBAPIError
 
 from aieos.domains.assessment.domain.evaluation import LearnerAssessmentEvaluation
 from aieos.domains.assessment.domain.evaluation_input import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     EvaluationContentQuestion,
     EvaluationSubmittedResponse,
     LearnerAssessmentEvaluationRequest,
@@ -39,6 +38,7 @@ from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import set_tenant
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i05_b1
 

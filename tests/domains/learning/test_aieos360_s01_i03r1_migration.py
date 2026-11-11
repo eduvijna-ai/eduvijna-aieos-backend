@@ -11,7 +11,6 @@ from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import REPO_ROOT
 from tests.domains.learning.helpers_aieos360_s01_i03 import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     clear_i03_side_effects,
     fetch_audit,
     prepare_class_5a_assignment,
@@ -19,6 +18,7 @@ from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELI
     student_client,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = [pytest.mark.aieos360_s01_i03, pytest.mark.aieos360_s01_i03r1]
 

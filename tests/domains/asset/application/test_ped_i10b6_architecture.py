@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.asset.application.ports import (
-from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ASSET_CREATE,
     ASSET_LIFECYCLE_MANAGE,
     ASSET_QUARANTINE_MANAGE,
@@ -24,6 +23,7 @@ from aieos.platform.security.authorization.asset_adapters import (
     AIEOS_ASSET_CAPABILITIES,
 )
 from tests.dbutil import REPO_ROOT
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b6
 
