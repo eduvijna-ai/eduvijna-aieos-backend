@@ -636,3 +636,74 @@ class TestAttestationPostgres:
         from aieos.domains.education.worksheet_hint_qa import _jaccard
 
         assert _jaccard(hint, explanation) >= SIMILARITY_FLAG_JACCARD_THRESHOLD
+
+
+class TestR3GrantProvisioningRegression:
+    """R3-F3: version-aware runtime grants for the T2 attestation table."""
+
+    def test_provision_skips_missing_table_at_historical_revision(
+        self, postgres18, bootstrap_engine
+    ) -> None:
+        from alembic import command
+
+        from tests.conftest import alembic_config, provision_runtime_grants
+        from tests.dbutil import (
+            WORKSHEET_HINT_ATTESTATION_TABLE,
+            worksheet_hint_attestation_table_exists,
+        )
+
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+        cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        command.downgrade(cfg, "a360s010004")
+        with bootstrap_engine.connect() as conn:
+            assert not worksheet_hint_attestation_table_exists(conn)
+        provision_runtime_grants(bootstrap_engine)
+        with bootstrap_engine.connect() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    text("SELECT tablename FROM pg_tables WHERE schemaname = 'content'")
+                )
+            }
+            assert WORKSHEET_HINT_ATTESTATION_TABLE not in tables
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "a360s010004"
+            )
+        command.upgrade(cfg, "head")
+        provision_runtime_grants(bootstrap_engine)
+        from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+        from tests.conftest import RUNTIME_USER
+
+        with bootstrap_engine.connect() as conn:
+            assert worksheet_hint_attestation_table_exists(conn)
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == EXPECTED_ALEMBIC_HEAD
+            )
+            assert conn.execute(
+                text(
+                    """
+                    SELECT has_table_privilege(
+                        :role,
+                        'content.worksheet_learner_hint_version_attestations',
+                        'INSERT'
+                    )
+                    """
+                ),
+                {"role": RUNTIME_USER},
+            ).scalar_one() is True
+            assert conn.execute(
+                text(
+                    """
+                    SELECT has_table_privilege(
+                        :role,
+                        'content.worksheet_learner_hint_version_attestations',
+                        'UPDATE'
+                    )
+                    """
+                ),
+                {"role": RUNTIME_USER},
+            ).scalar_one() is False

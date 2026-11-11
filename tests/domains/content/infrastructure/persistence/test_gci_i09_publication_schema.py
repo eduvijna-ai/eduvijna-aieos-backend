@@ -492,6 +492,7 @@ class TestAlembicCycleAndOfflineSql:
             "publications",
             "version_asset_refs",
             "migration_import_records",
+            "worksheet_learner_hint_version_attestations",
         }
 
     def test_offline_sql_assumes_owner_before_i09_ddl(self, postgres18) -> None:

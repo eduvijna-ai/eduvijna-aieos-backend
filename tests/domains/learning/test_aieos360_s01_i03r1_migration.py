@@ -123,7 +123,7 @@ class TestA360s010002Postgres:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
         finally:
             clear_i03_side_effects(bootstrap_engine)

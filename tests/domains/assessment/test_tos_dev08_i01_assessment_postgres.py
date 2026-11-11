@@ -496,7 +496,7 @@ class TestP18P19Downgrade:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
             with factory(tenant_id) as uow:
                 loaded = uow.classroom_assessments.get(created.assessment_id)

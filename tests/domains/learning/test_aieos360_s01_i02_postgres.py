@@ -814,7 +814,7 @@ class TestDowngradeSafety:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
             with factory(tenant_id) as uow:
                 assert uow.attempts.get(created.attempt_id) is not None

@@ -9,6 +9,67 @@ from sqlalchemy import text
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+WORKSHEET_HINT_ATTESTATION_REVISION = "a360s010005"
+WORKSHEET_HINT_ATTESTATION_TABLE = "worksheet_learner_hint_version_attestations"
+
+CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION = frozenset(
+    {
+        "contents",
+        "content_versions",
+        "review_decisions",
+        "publications",
+        "version_asset_refs",
+        "migration_import_records",
+    }
+)
+CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION = (
+    CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION
+    | {WORKSHEET_HINT_ATTESTATION_TABLE}
+)
+
+
+def worksheet_hint_attestation_table_exists(conn) -> bool:
+    """Return whether the T2 attestation table is present in the current database."""
+    return bool(
+        conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'content' "
+                f"AND table_name = '{WORKSHEET_HINT_ATTESTATION_TABLE}'"
+                ")"
+            )
+        ).scalar()
+    )
+
+
+def current_alembic_revision(conn) -> str | None:
+    """Return the single Alembic version_num, or None when no version table exists."""
+    if not conn.execute(
+        text(
+            "SELECT EXISTS ("
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'alembic_version'"
+            ")"
+        )
+    ).scalar():
+        return None
+    return conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+
+
+def assert_worksheet_hint_attestation_present_at_forward_head(conn) -> None:
+    """Fail closed when forward Alembic head lacks the T2 attestation table."""
+    from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+
+    revision = current_alembic_revision(conn)
+    if revision != EXPECTED_ALEMBIC_HEAD:
+        return
+    if not worksheet_hint_attestation_table_exists(conn):
+        msg = (
+            f"T2 attestation table missing at Alembic head {EXPECTED_ALEMBIC_HEAD}"
+        )
+        raise AssertionError(msg)
+
 
 def set_tenant(conn, tenant_id: uuid.UUID) -> None:
     conn.execute(

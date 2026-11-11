@@ -113,8 +113,9 @@ def test_current_database_head_is_a360s010004(bootstrap_engine: Engine) -> None:
     from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 
     with bootstrap_engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            EXPECTED_ALEMBIC_HEAD,
+        assert (
+            conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == EXPECTED_ALEMBIC_HEAD
         )
 
 

@@ -313,7 +313,7 @@ class TestTosd060002Migration:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
         finally:
             clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)

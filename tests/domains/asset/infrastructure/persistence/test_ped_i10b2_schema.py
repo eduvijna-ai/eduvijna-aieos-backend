@@ -20,7 +20,13 @@ from tests.conftest import (
     alembic_config,
     provision_runtime_grants,
 )
-from tests.dbutil import REPO_ROOT, clear_asset_audit_rows_for_schema_downgrade, set_tenant
+from tests.dbutil import (
+    CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION,
+    CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION,
+    REPO_ROOT,
+    clear_asset_audit_rows_for_schema_downgrade,
+    set_tenant,
+)
 
 pytestmark = pytest.mark.ped_i10b2
 
@@ -60,15 +66,8 @@ FORBIDDEN_RESOURCE_TYPES = (
     "Asset.Image",
     "asset.Image",
 )
-CONTENT_TABLES = {
-    "contents",
-    "content_versions",
-    "review_decisions",
-    "publications",
-    "version_asset_refs",
-    "migration_import_records",
-    "worksheet_learner_hint_version_attestations",
-}
+CONTENT_TABLES = CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION
+CONTENT_TABLES_PRE_HINT_T2 = CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION
 SECURITY_TABLES = {
     "audit_records",
     "principals",
@@ -340,7 +339,7 @@ class TestMigrationGraph:
             assert "asset" not in schemas
             assert "content" in schemas
             assert "security" in schemas
-            assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES
+            assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES_PRE_HINT_T2
             assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES
             with bootstrap_engine.connect() as conn:
                 assert (
