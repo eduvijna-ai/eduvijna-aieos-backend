@@ -9,6 +9,12 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T2-I01 (PK-V1-HINT-T2) — ADR-063 §5.3 immutable
+  `WorksheetLearnerHintVersionAttestationV1` persistence (`a360s010005`), canonical
+  schema+payload digest, `O63-03-v1` FLAG heuristics, `RecordWorksheetLearnerHintAttestationService`,
+  and evidence-gated APPROVE/publish replacing the T1 unconditional interlock. OpenAPI
+  unchanged.
+
 - AIEOS-V1-HINT-T1-I01R3 (PK-HINT-A) — ADR-063 §7.2 tenant-visible Content before
   AuthorizationKernel `content.version.create`, trusted `effective_actor_id` aligned
   with owner and durable provenance, class-ref validation after authority gates, and

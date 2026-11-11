@@ -436,7 +436,9 @@ class ReviewCommandService:
                     raise IdempotencyKeyReused("idempotency key already bound")
                 if decision is ReviewDecisionCode.APPROVE:
                     version_row = _require_visible_version(uow, content_id, version_id)
-                    enforce_worksheet_hint_review_interlock(version_row)
+                    enforce_worksheet_hint_review_interlock(
+                        uow, version_row, reviewer_principal_id=principal_id
+                    )
                 return self._replay_decision(uow, existing, frozen_state)
             self._comment_policy.evaluate(text)
             stored, revision = self._decide_new(
@@ -545,7 +547,9 @@ class ReviewCommandService:
             )
         _require_current(head, version_id)
         if decision is ReviewDecisionCode.APPROVE:
-            enforce_worksheet_hint_review_interlock(version_row)
+            enforce_worksheet_hint_review_interlock(
+                uow, version_row, reviewer_principal_id=principal_id
+            )
         if head.stewardship_state != StewardshipState.IN_REVIEW.value:
             raise ReviewDecisionNotAllowed(
                 "review decision is not allowed in the current stewardship state"

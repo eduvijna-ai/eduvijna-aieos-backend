@@ -39,6 +39,7 @@ MIGRATION = (
     / "migrations"
     / "versions"
     / "a360s010004_learner_evaluation_audit_vocab.py"
+        "a360s010005_worksheet_learner_hint_attestations.py",
 )
 NATS_ROOT = SRC_ROOT / "platform" / "events" / "nats"
 TEMPORAL_ROOT = SRC_ROOT / "platform" / "workflows"

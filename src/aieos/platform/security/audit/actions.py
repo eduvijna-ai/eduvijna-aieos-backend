@@ -17,6 +17,7 @@ class SecurityAuditAction(StrEnum):
     CONTENT_PUBLISH = "content.publish"
     CONTENT_AI_MATERIALIZE = "content.ai.materialize"
     CONTENT_MIGRATION_IMPORT = "content.migration.import"
+    CONTENT_WORKSHEET_HINT_ATTEST = "content.worksheet_hint.attest"
     ASSET_CREATE = "asset.create"
     ASSET_REVISION_REGISTER = "asset.revision.register"
     ASSET_REVISION_ACTIVATE = "asset.revision.activate"
@@ -80,6 +81,9 @@ _CONTENT_INCREMENT_ACTIONS = frozenset(
 _ASSET_CREATE_ACTIONS = frozenset({SecurityAuditAction.ASSET_CREATE})
 _ASSET_STABLE_REGISTRATION_ACTIONS = frozenset(
     {SecurityAuditAction.ASSET_REVISION_REGISTER}
+)
+_CONTENT_STABLE_REGISTRATION_ACTIONS = frozenset(
+    {SecurityAuditAction.CONTENT_WORKSHEET_HINT_ATTEST}
 )
 _ASSET_INCREMENT_ACTIONS = frozenset(
     {
@@ -154,6 +158,10 @@ def is_asset_stable_registration_action(action: SecurityAuditAction) -> bool:
     return action in _ASSET_STABLE_REGISTRATION_ACTIONS
 
 
+def is_content_stable_registration_action(action: SecurityAuditAction) -> bool:
+    return action in _CONTENT_STABLE_REGISTRATION_ACTIONS
+
+
 def is_asset_increment_action(action: SecurityAuditAction) -> bool:
     return action in _ASSET_INCREMENT_ACTIONS
 
@@ -171,6 +179,7 @@ def is_content_audit_action(action: SecurityAuditAction) -> bool:
         is_content_create_action(action)
         or is_content_migration_import_action(action)
         or is_content_increment_action(action)
+        or is_content_stable_registration_action(action)
     )
 
 

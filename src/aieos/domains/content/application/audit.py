@@ -20,6 +20,7 @@ RESOURCE_CONTENT = "content.content"
 RESOURCE_CONTENT_VERSION = "content.content_version"
 RESOURCE_REVIEW_DECISION = "content.review_decision"
 RESOURCE_PUBLICATION = "content.publication"
+RESOURCE_WORKSHEET_HINT_ATTESTATION = "content.worksheet_hint_attestation"
 
 _SPECIALIZED_CHANNEL_BY_ACTION: dict[
     SecurityAuditAction, SecurityAuditExecutionChannel
@@ -87,6 +88,10 @@ def review_decision_ref(review_decision_id: UUID) -> ResourceRef:
 
 def publication_ref(publication_id: UUID) -> ResourceRef:
     return ResourceRef(RESOURCE_PUBLICATION, publication_id, None)
+
+
+def worksheet_hint_attestation_ref(attestation_id: UUID) -> ResourceRef:
+    return ResourceRef(RESOURCE_WORKSHEET_HINT_ATTESTATION, attestation_id, None)
 
 
 def _require_specialized_channel(

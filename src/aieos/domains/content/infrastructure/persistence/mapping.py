@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from aieos.domains.content.domain.content import Content, ContentType
+from aieos.domains.content.domain.errors import InvalidPayloadError
 from aieos.domains.content.domain.identities import (
     AggregateRevision,
     ContentId,
@@ -12,6 +13,11 @@ from aieos.domains.content.domain.identities import (
     PublicationId,
     ReviewDecisionId,
     VersionNumber,
+    WorksheetLearnerHintAttestationId,
+)
+from aieos.domains.content.domain.worksheet_hint_attestation import (
+    HintQuestionAttestationOutcome,
+    WorksheetLearnerHintVersionAttestationV1,
 )
 from aieos.domains.content.domain.origin import parse_content_origin
 from aieos.domains.content.domain.publication import Publication
@@ -105,6 +111,35 @@ def review_decision_from_row(row: Any) -> ReviewDecision:
         effective_actor_id=_row_value(row, "effective_actor_id"),
         delegation_id=_row_value(row, "delegation_id"),
         decided_at=_row_value(row, "decided_at"),
+        correlation_id=_row_value(row, "correlation_id"),
+    )
+
+
+def worksheet_hint_attestation_from_row(row: Any) -> WorksheetLearnerHintVersionAttestationV1:
+    raw_outcomes = _row_value(row, "per_question_outcomes")
+    if not isinstance(raw_outcomes, list):
+        raise InvalidPayloadError("per_question_outcomes must be a JSON array")
+    outcomes = tuple(
+        HintQuestionAttestationOutcome(
+            question_id=str(item["question_id"]),
+            hard_block_clear=bool(item["hard_block_clear"]),
+            human_review_pass=bool(item["human_review_pass"]),
+        )
+        for item in raw_outcomes
+    )
+    return WorksheetLearnerHintVersionAttestationV1(
+        attestation_id=WorksheetLearnerHintAttestationId(
+            _row_value(row, "attestation_id")
+        ),
+        tenant_id=_row_value(row, "tenant_id"),
+        content_id=ContentId(_row_value(row, "content_id")),
+        version_id=ContentVersionId(_row_value(row, "version_id")),
+        payload_digest=str(_row_value(row, "payload_digest")),
+        qa_policy_version=str(_row_value(row, "qa_policy_version")),
+        author_principal_id=_row_value(row, "author_principal_id"),
+        reviewer_principal_id=_row_value(row, "reviewer_principal_id"),
+        per_question_outcomes=outcomes,
+        attested_at=_row_value(row, "attested_at"),
         correlation_id=_row_value(row, "correlation_id"),
     )
 

@@ -206,5 +206,9 @@ class WorksheetLearnerHintAttestationRequired(ReviewDecisionNotAllowed):
     """Hint-bearing worksheet@2 requires §5.3 attestation before APPROVE (T1 interlock)."""
 
 
+class WorksheetLearnerHintAttestationInvalid(ReviewDecisionNotAllowed):
+    """Stored or submitted learner-hint attestation failed validation."""
+
+
 class WorksheetLearnerHintPublicationBlocked(PublicationNotAllowed):
     """Hint-bearing worksheet@2 requires §5.3 attestation before publish (T1 interlock)."""

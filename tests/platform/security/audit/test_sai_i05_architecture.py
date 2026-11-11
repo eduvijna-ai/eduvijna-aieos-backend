@@ -56,6 +56,7 @@ _EXPECTED_MIGRATIONS = [
         "a360s010002_learning_attempt_audit_vocab.py",
         "a360s010003_learner_assessment_evaluation.py",
         "a360s010004_learner_evaluation_audit_vocab.py",
+        "a360s010005_worksheet_learner_hint_attestations.py",
     "adra045001_dispatcher_candidate_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",
@@ -101,6 +102,7 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "CreateAIPreparationArtifactsForReviewService": "A",
     "ImportMigratedContentService": "A",
     "AppendWorksheetLearnerHintsContentVersionService": "A",
+    "RecordWorksheetLearnerHintAttestationService": "A",
     "AppendContentVersionService": "B",
     "GetContentService": "R",
     "ListContentsService": "R",
@@ -123,6 +125,7 @@ _WIRED_AUDIT_FILES = {
     "CreateAIPreparationArtifactsForReviewService": "ai_preparation_for_review.py",
     "ImportMigratedContentService": "migration_import.py",
     "AppendWorksheetLearnerHintsContentVersionService": "worksheet_hint_append.py",
+    "RecordWorksheetLearnerHintAttestationService": "worksheet_hint_attestation_record.py",
 }
 
 _FROZEN_ACTIONS = frozenset(a.value for a in SecurityAuditAction)

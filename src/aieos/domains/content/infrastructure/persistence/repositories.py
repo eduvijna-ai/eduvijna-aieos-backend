@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from uuid import UUID
@@ -15,6 +16,7 @@ from aieos.domains.content.application.errors import (
     PersistenceInvariantViolation,
     ReviewAlreadyDecided,
     VersionAlreadyExists,
+    WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.ai_generation_bindings import (
     ContentVersionAIGenerationBinding,
@@ -40,6 +42,10 @@ from aieos.domains.content.domain.identities import (
     PublicationId,
     ReviewDecisionId,
     VersionNumber,
+    WorksheetLearnerHintAttestationId,
+)
+from aieos.domains.content.domain.worksheet_hint_attestation import (
+    WorksheetLearnerHintVersionAttestationV1,
 )
 from aieos.domains.content.domain.provenance import ai_generation_provenance_from_json
 from aieos.domains.content.domain.publication import Publication
@@ -57,6 +63,7 @@ from aieos.domains.content.infrastructure.persistence.mapping import (
     publication_from_row,
     review_decision_from_row,
     version_asset_ref_from_row,
+    worksheet_hint_attestation_from_row,
 )
 from aieos.domains.content.infrastructure.persistence.models import (
     content_versions_table,
@@ -65,7 +72,66 @@ from aieos.domains.content.infrastructure.persistence.models import (
     publications_table,
     review_decisions_table,
     version_asset_refs_table,
+    worksheet_hint_attestations_table,
 )
+
+
+class SqlAlchemyWorksheetHintAttestationRepository:
+    def __init__(self, connection: Connection) -> None:
+        self._connection = connection
+
+    def insert(self, attestation: WorksheetLearnerHintVersionAttestationV1) -> None:
+        outcomes_json = [
+            {
+                "question_id": item.question_id,
+                "hard_block_clear": item.hard_block_clear,
+                "human_review_pass": item.human_review_pass,
+            }
+            for item in attestation.per_question_outcomes
+        ]
+        try:
+            self._connection.execute(
+                worksheet_hint_attestations_table.insert().values(
+                    attestation_id=attestation.attestation_id.value,
+                    tenant_id=attestation.tenant_id,
+                    content_id=attestation.content_id.value,
+                    version_id=attestation.version_id.value,
+                    payload_digest=attestation.payload_digest,
+                    qa_policy_version=attestation.qa_policy_version,
+                    author_principal_id=attestation.author_principal_id,
+                    reviewer_principal_id=attestation.reviewer_principal_id,
+                    per_question_outcomes=json.loads(json.dumps(outcomes_json)),
+                    attested_at=attestation.attested_at,
+                    correlation_id=attestation.correlation_id,
+                )
+            )
+        except Exception as exc:
+            reraise_as_application_error(
+                exc,
+                unique_conflict=WorksheetLearnerHintAttestationInvalid,
+                unique_message="attestation already exists for this ContentVersion",
+            )
+
+    def get_for_version(
+        self, content_id: ContentId, version_id: ContentVersionId
+    ) -> WorksheetLearnerHintVersionAttestationV1 | None:
+        try:
+            row = (
+                self._connection.execute(
+                    select(worksheet_hint_attestations_table).where(
+                        worksheet_hint_attestations_table.c.content_id
+                        == content_id.value,
+                        worksheet_hint_attestations_table.c.version_id == version_id.value,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        except Exception as exc:
+            reraise_as_application_error(exc)
+        if row is None:
+            return None
+        return worksheet_hint_attestation_from_row(row)
 
 
 class SqlAlchemyContentVersionRepository:

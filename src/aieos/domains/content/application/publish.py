@@ -136,7 +136,9 @@ class PublishContentService:
                     raise IdempotencyKeyReused("idempotency key already bound")
                 version = uow.versions.get(version_id)
                 if version is not None and version.content_id == content_id:
-                    enforce_worksheet_hint_publish_interlock(version)
+                    enforce_worksheet_hint_publish_interlock(
+                        uow, version, publisher_principal_id=principal_id
+                    )
                 return self._replay(uow, existing)
             result = self._publish_new(
                 uow,
@@ -241,7 +243,9 @@ class PublishContentService:
             raise PublicationNotAllowed(
                 "publish requires APPROVED stewardship state"
             )
-        enforce_worksheet_hint_publish_interlock(version)
+        enforce_worksheet_hint_publish_interlock(
+            uow, version, publisher_principal_id=principal_id
+        )
         decision = uow.reviews.get_for_version(content_id, version_id)
         if decision is None or decision.decision is not ReviewDecisionCode.APPROVE:
             raise PublicationApprovalRequired(
