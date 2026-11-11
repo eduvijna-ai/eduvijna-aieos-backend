@@ -413,13 +413,15 @@ def downgrade() -> None:
         SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
     )
     op.execute(f"SET LOCAL ROLE {content_owner}")
+    table = "content.worksheet_learner_hint_version_attestations"
+    op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
     bind = op.get_bind()
     attestation_count = bind.execute(
-        text(
-            "SELECT count(*) FROM content.worksheet_learner_hint_version_attestations"
-        )
+        text(f"SELECT count(*) FROM {table}")
     ).scalar_one()
     if int(attestation_count) > 0:
+        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(f"SET LOCAL ROLE {security_owner}")
     audit_count = bind.execute(
