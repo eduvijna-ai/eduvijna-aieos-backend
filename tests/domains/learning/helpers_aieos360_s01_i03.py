@@ -138,9 +138,6 @@ def _table_exists(conn, schema: str, table: str) -> bool:
 def clear_i03_side_effects(bootstrap_engine: Engine) -> None:
     """Remove I03 local rows so later Alembic-cycle tests see an empty head."""
 
-    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
-
-    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
     with bootstrap_engine.begin() as conn:
         if _table_exists(conn, "learning", "attempts"):
             conn.execute(

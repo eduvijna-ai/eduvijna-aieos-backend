@@ -76,9 +76,6 @@ def _cleanup_i02_shared_db_rows(postgres18: dict[str, str]) -> None:
 
 def _clear_i02_downgrade_blockers(bootstrap_engine: Engine) -> None:
     """TEST-ONLY: remove V2 ContentVersions and GenerationRuns left by I02 proofs."""
-    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
-
-    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
     with bootstrap_engine.begin() as conn:
         conn.execute(text("DELETE FROM ai.generation_runs"))
         conn.execute(
@@ -190,6 +187,9 @@ def _clear_i02_downgrade_blockers(bootstrap_engine: Engine) -> None:
 
 def _clear_ai_versions_for_migration_cycle(bootstrap_engine: Engine) -> None:
     """TEST-ONLY: reset AI versions/runs for migration cycle isolation."""
+    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
     _clear_i02_downgrade_blockers(bootstrap_engine)
     with bootstrap_engine.begin() as conn:
         conn.execute(

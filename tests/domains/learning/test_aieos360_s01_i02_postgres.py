@@ -42,10 +42,13 @@ MIGRATIONS = REPO_ROOT / "migrations" / "versions"
 LEARNING_TABLES = ("attempts", "attempt_response_items", "submissions")
 
 
-def _clear_learning(bootstrap_engine: Engine) -> None:
+def _clear_hint_attestation_downgrade_blockers(bootstrap_engine: Engine) -> None:
     from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 
     clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+
+
+def _clear_learning(bootstrap_engine: Engine) -> None:
     with bootstrap_engine.begin() as conn:
         exists = conn.execute(
             text(
@@ -138,6 +141,7 @@ class TestMigrationAndSchema:
         assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")
         try:
@@ -764,6 +768,7 @@ class TestDowngradeSafety:
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")
         try:
@@ -791,6 +796,7 @@ class TestDowngradeSafety:
         self, postgres18, bootstrap_engine: Engine, runtime_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         tenant_id = uuid.uuid7()
         factory = SqlAlchemyLearningUnitOfWorkFactory(runtime_engine)
         created = _start(tenant_id=tenant_id)

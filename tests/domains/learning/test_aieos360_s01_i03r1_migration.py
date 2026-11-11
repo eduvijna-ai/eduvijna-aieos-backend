@@ -85,7 +85,10 @@ class TestA360s010002Postgres:
     def test_r1_31_downgrade_without_learning_audit_evidence_succeeds(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
         cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         clear_i03_side_effects(bootstrap_engine)
         command.downgrade(cfg, "a360s010001")
         try:
@@ -101,7 +104,10 @@ class TestA360s010002Postgres:
     def test_r1_32_downgrade_with_learning_audit_evidence_fails_closed(
         self, postgres18, runtime_engine, bootstrap_engine: Engine
     ) -> None:
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
         cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         prepared = prepare_class_5a_assignment(runtime_engine, bootstrap_engine)
         client = student_client(runtime_engine, prepared)
         started = start_attempt(client, prepared)

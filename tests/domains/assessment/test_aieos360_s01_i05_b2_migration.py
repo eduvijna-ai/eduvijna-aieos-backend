@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
-from tests.dbutil import REPO_ROOT
+from tests.dbutil import REPO_ROOT, clear_asset_audit_rows_for_schema_downgrade
 from tests.domains.assessment.helpers_s01_i05_b2 import (
     build_client,
     headers,
@@ -163,6 +163,7 @@ class TestA360s010004Postgres:
             SINGLE_PATH,
         )
 
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         cfg = alembic_config(postgres18["migrator_url"])
         world = seed_world(bootstrap_engine, runtime_engine)
         client = build_client(runtime_engine, world.tenant_id, world.teacher_id)
