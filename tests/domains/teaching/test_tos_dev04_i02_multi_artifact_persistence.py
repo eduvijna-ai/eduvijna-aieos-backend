@@ -16,6 +16,7 @@ from aieos.domains.content.application.errors import AIGenerationRunAlreadyMater
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId, VersionNumber
 from aieos.domains.content.domain.origin import ContentOrigin
 from aieos.domains.content.domain.provenance import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AIGenerationProvenanceV1,
     AIGenerationProvenanceV2,
     ai_generation_provenance_as_json,
@@ -438,12 +439,12 @@ def _make_domain_version(
 
 class TestMigrationHeadAndSchema:
     def test_single_alembic_head_is_tosd060001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
         versions = sorted(
             p.name

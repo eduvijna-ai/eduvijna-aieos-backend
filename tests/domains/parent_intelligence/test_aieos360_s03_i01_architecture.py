@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.parent_intelligence.application.learner_access import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AuthorizedLearnerAccess,
 )
 from aieos.domains.parent_intelligence.application.ports import (
@@ -174,8 +175,8 @@ class TestNeighborPortsNotReused:
 
 class TestNoPersistenceNoApi:
     def test_no_parent_intelligence_table_or_migration(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

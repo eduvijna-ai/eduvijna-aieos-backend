@@ -139,7 +139,61 @@ _LEARNING_INCREMENT_SQL = """
                     'learning.attempt.submit'
 """
 
+_VALIDATE_OUTCOMES_FN = """
+    CREATE OR REPLACE FUNCTION content.validate_worksheet_hint_per_question_outcomes(
+        value jsonb
+    )
+    RETURNS boolean
+    LANGUAGE plpgsql
+    IMMUTABLE
+    PARALLEL SAFE
+    SET search_path = content, pg_temp
+    AS $$
+    DECLARE
+        n int;
+        idx int;
+        item jsonb;
+        keys text[];
+    BEGIN
+        IF value IS NULL OR jsonb_typeof(value) <> 'array' THEN
+            RETURN false;
+        END IF;
+        n := jsonb_array_length(value);
+        IF n IS NULL OR n < 1 THEN
+            RETURN false;
+        END IF;
+        FOR idx IN 0 .. (n - 1) LOOP
+            item := value -> idx;
+            IF item IS NULL OR jsonb_typeof(item) <> 'object' THEN
+                RETURN false;
+            END IF;
+            SELECT array_agg(k ORDER BY k)
+              INTO keys
+              FROM jsonb_object_keys(item) AS k;
+            IF keys IS DISTINCT FROM
+               ARRAY['hard_block_clear', 'human_review_pass', 'question_id'] THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(item->'question_id') <> 'string' THEN
+                RETURN false;
+            END IF;
+            IF length(trim(item->>'question_id')) < 1 THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(item->'hard_block_clear') <> 'boolean' THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(item->'human_review_pass') <> 'boolean' THEN
+                RETURN false;
+            END IF;
+        END LOOP;
+        RETURN true;
+    END;
+    $$
+    """
+
 _TABLE_STATEMENTS: tuple[str, ...] = (
+    _VALIDATE_OUTCOMES_FN,
     """
     CREATE TABLE content.worksheet_learner_hint_version_attestations (
         attestation_id UUID NOT NULL,
@@ -161,12 +215,8 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
             CHECK (qa_policy_version ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
         CONSTRAINT ck_worksheet_hint_attestations_outcomes_booleans
             CHECK (
-                jsonb_typeof(per_question_outcomes) = 'array'
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements(per_question_outcomes) AS elem
-                    WHERE jsonb_typeof(elem->'hard_block_clear') <> 'boolean'
-                       OR jsonb_typeof(elem->'human_review_pass') <> 'boolean'
+                content.validate_worksheet_hint_per_question_outcomes(
+                    per_question_outcomes
                 )
             ),
         CONSTRAINT fk_worksheet_hint_attestations_version
@@ -344,17 +394,11 @@ def upgrade() -> None:
         SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
     )
     runtime = _require_role(RUNTIME_ROLE_ENV, purpose="runtime database role")
-    migration_runtime = _require_role(
-        CONTENT_MIGRATION_RUNTIME_ROLE_ENV,
-        purpose="Content migration runtime database role",
-    )
     for statement in _TABLE_STATEMENTS:
         op.execute(statement)
     table = "content.worksheet_learner_hint_version_attestations"
     op.execute(f"GRANT SELECT, INSERT ON {table} TO {runtime}")
     op.execute(f"REVOKE UPDATE, DELETE ON {table} FROM {runtime}")
-    op.execute(f"GRANT SELECT, INSERT ON {table} TO {migration_runtime}")
-    op.execute(f"REVOKE UPDATE, DELETE ON {table} FROM {migration_runtime}")
     op.execute(f"SET LOCAL ROLE {security_owner}")
     for statement in UPGRADE_AUDIT_STATEMENTS:
         op.execute(statement)
@@ -369,18 +413,32 @@ def downgrade() -> None:
         SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
     )
     bind = op.get_bind()
-    count = bind.execute(
+    attestation_count = bind.execute(
         text(
             "SELECT count(*) FROM content.worksheet_learner_hint_version_attestations"
         )
     ).scalar_one()
-    if int(count) > 0:
+    if int(attestation_count) > 0:
+        raise RuntimeError(_DOWNGRADE_BLOCKED)
+    audit_count = bind.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM security.audit_records
+            WHERE action = 'content.worksheet_hint.attest'
+            """
+        )
+    ).scalar_one()
+    if int(audit_count) > 0:
         raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(
         "DROP TABLE IF EXISTS content.worksheet_learner_hint_version_attestations"
     )
     op.execute(
         "DROP FUNCTION IF EXISTS content.reject_worksheet_hint_attestation_mutation()"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS content.validate_worksheet_hint_per_question_outcomes(jsonb)"
     )
     from migrations.versions import a360s010004_learner_evaluation_audit_vocab as prev
 

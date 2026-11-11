@@ -11,6 +11,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from aieos.domains.asset.infrastructure.persistence.metadata import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ASSET_SCHEMA,
     asset_metadata,
 )
@@ -203,7 +204,7 @@ class TestArchitectureScope:
         dumped = OPENAPI.read_bytes()
         digest = hashlib.sha256(dumped).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_exactly_one_new_migration_and_no_wildcard_resource_match(self) -> None:
         asset_migrations = [

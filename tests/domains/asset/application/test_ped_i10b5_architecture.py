@@ -10,6 +10,7 @@ import pytest
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD, _ALL_APP_SCHEMAS
 from tests.dbutil import REPO_ROOT
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b5
 
@@ -100,7 +101,7 @@ class TestContracts:
         assert not any(p.name.startswith("pedi10b5") for p in MIGRATIONS.glob("*.py"))
         assert (MIGRATIONS / "pedi10b2001_asset_authority_sor.py").is_file()
         assert (MIGRATIONS / "pedi10b6001_asset_security_audit.py").is_file()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_openapi_and_lockfile_unchanged(self) -> None:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()

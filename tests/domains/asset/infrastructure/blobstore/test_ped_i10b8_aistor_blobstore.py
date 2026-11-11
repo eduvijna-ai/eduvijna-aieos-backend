@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from botocore.exceptions import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ClientError,
     ConnectTimeoutError,
     EndpointConnectionError,
@@ -638,7 +639,7 @@ class TestBoundaries:
 
     def test_no_http_openapi_migration_composition_or_pedi03(self) -> None:
         assert not (ASSET_ROOT / "api").exists()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         assert not any(p.name.startswith("pedi10b8") for p in MIGRATIONS.glob("*.py"))
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256

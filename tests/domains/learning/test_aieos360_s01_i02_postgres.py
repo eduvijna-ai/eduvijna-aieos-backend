@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 
 from aieos.domains.learning.application.errors import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AttemptConcurrencyConflict,
     PersistenceInvariantViolation,
     SubmissionImmutable,
@@ -131,8 +132,8 @@ class TestMigrationAndSchema:
     def test_i02_21_upgrade_from_tosd100001_to_a360s010001(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = alembic_config(postgres18["migrator_url"])
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")

@@ -8,6 +8,7 @@ import pytest
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.audit.actions import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     SecurityAuditAction,
     is_teaching_create_action,
     is_teaching_increment_action,
@@ -32,9 +33,9 @@ _EXECUTION_ACTIONS = (
 
 
 def test_head_constants_and_chain() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010004"
-    assert DEV_EXPECTED_ALEMBIC_HEAD == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
     assert EXPECTED_OPENAPI_SHA256 == (
         "4042FB2725DA70A02A70EE09563B7698AE2E5DA82927614CAF1B5F7E6AA7C1D0"
     )

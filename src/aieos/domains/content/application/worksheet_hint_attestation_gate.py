@@ -36,6 +36,38 @@ from aieos.platform.security.authorization.principal_classification import (
 )
 
 
+def _require_current_human_classification(
+    principal_classification: CurrentPrincipalClassificationAuthority | None,
+    principal_id: UUID,
+) -> None:
+    if principal_classification is None:
+        raise WorksheetLearnerHintAttestationInvalid(
+            "current human principal classification authority is required"
+        )
+    principal_classification.require_current_human_principal(principal_id)
+
+
+def _assert_stored_outcomes_match_hinted_questions(
+    *,
+    payload: Mapping[str, object],
+    outcomes: Sequence[HintQuestionAttestationOutcome],
+) -> None:
+    hinted_ids = hinted_question_ids(payload)
+    outcome_ids = [outcome.question_id for outcome in outcomes]
+    if len(outcome_ids) != len(set(outcome_ids)):
+        raise WorksheetLearnerHintAttestationInvalid(
+            "stored attestation outcomes contain duplicate question_id values"
+        )
+    if set(outcome_ids) != set(hinted_ids):
+        raise WorksheetLearnerHintAttestationInvalid(
+            "stored attestation outcomes must match hinted question IDs exactly"
+        )
+    if len(outcome_ids) != len(hinted_ids):
+        raise WorksheetLearnerHintAttestationInvalid(
+            "stored attestation outcomes count mismatch for hinted questions"
+        )
+
+
 def _payload_mapping(version: ContentVersion) -> Mapping[str, object]:
     body = version.payload.body
     if not isinstance(body, Mapping):
@@ -135,8 +167,17 @@ def load_valid_attestation(
         raise WorksheetLearnerHintAttestationInvalid("attestation QA policy version mismatch")
     if attestation.author_principal_id != version.created_by_principal_id:
         raise WorksheetLearnerHintAttestationInvalid("attestation author mismatch")
+    if attestation.content_id != version.content_id:
+        raise WorksheetLearnerHintAttestationInvalid("attestation content mismatch")
+    if attestation.version_id != version.version_id:
+        raise WorksheetLearnerHintAttestationInvalid("attestation version mismatch")
+    payload = _payload_mapping(version)
+    _assert_stored_outcomes_match_hinted_questions(
+        payload=payload,
+        outcomes=attestation.per_question_outcomes,
+    )
     assert_attestation_outcomes_against_qa(
-        payload=_payload_mapping(version),
+        payload=payload,
         outcomes=attestation.per_question_outcomes,
     )
     return attestation
@@ -156,8 +197,7 @@ def enforce_worksheet_hint_review_interlock(
         payload=_payload_mapping(version),
     ):
         return
-    if principal_classification is not None:
-        principal_classification.require_current_human_principal(reviewer_principal_id)
+    _require_current_human_classification(principal_classification, reviewer_principal_id)
     if effective_actor_id is not None and effective_actor_id != reviewer_principal_id:
         raise WorksheetLearnerHintAttestationInvalid(
             "effective actor must align with reviewer principal"
@@ -187,8 +227,7 @@ def enforce_worksheet_hint_publish_interlock(
         payload=_payload_mapping(version),
     ):
         return
-    if principal_classification is not None:
-        principal_classification.require_current_human_principal(publisher_principal_id)
+    _require_current_human_classification(principal_classification, publisher_principal_id)
     if effective_actor_id is not None and effective_actor_id != publisher_principal_id:
         raise WorksheetLearnerHintPublicationBlocked(
             "effective actor must align with publisher principal"

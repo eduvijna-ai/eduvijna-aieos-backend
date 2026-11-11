@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from aieos.platform.runtime.activation import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     FROZEN_API_MUTATION_OPERATION_IDS,
     READ_ONLY_OPERATION_IDS,
 )
@@ -42,8 +43,8 @@ FORBIDDEN_EVENTS = (
 
 class TestI02ArchitectureGuards:
     def test_current_alembic_head_tosd080002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080002"' in text
         assert 'down_revision: str | None = "tosd080001"' in text

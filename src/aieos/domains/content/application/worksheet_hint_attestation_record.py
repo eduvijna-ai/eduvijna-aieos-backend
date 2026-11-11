@@ -92,6 +92,10 @@ class RecordWorksheetLearnerHintAttestationService:
         now: datetime | None = None,
     ) -> WorksheetLearnerHintAttestationId:
         self._principal_classification.require_current_human_principal(principal_id)
+        if event_context.effective_actor_id != principal_id:
+            raise WorksheetLearnerHintAttestationInvalid(
+                "effective actor must align with reviewer principal"
+            )
         self._authorization.authorize(
             tenant_id=execution_tenant_id,
             principal_id=principal_id,
@@ -122,6 +126,14 @@ class RecordWorksheetLearnerHintAttestationService:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise WorksheetLearnerHintAttestationInvalid(
                         "idempotency key already bound"
+                    )
+                if existing.result_content_id != content_id.value:
+                    raise WorksheetLearnerHintAttestationInvalid(
+                        "idempotency replay content binding mismatch"
+                    )
+                if existing.result_version_id != version_id.value:
+                    raise WorksheetLearnerHintAttestationInvalid(
+                        "idempotency replay version binding mismatch"
                     )
                 version_row = uow.versions.get(version_id)
                 if version_row is None or version_row.content_id != content_id:

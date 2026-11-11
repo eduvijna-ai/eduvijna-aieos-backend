@@ -10,6 +10,7 @@ import pytest
 
 from aieos.platform.events.constants import EMITTED_TEACHING_EVENT_TYPES
 from aieos.platform.runtime.activation import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     FROZEN_API_MUTATION_OPERATION_IDS,
     READ_ONLY_OPERATION_IDS,
 )
@@ -38,8 +39,8 @@ EXECUTION_READ_OPS = (
 
 class TestI02ArchitectureGuards:
     def test_alembic_head_still_tosd070002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )

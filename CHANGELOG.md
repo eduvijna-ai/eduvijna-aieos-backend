@@ -9,6 +9,12 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T2-I01R2 — Chief R2 corrections: PostgreSQL validation function
+  for attestation JSON outcomes (no CHECK subqueries), fail-closed human classification
+  on hint APPROVE/publish, stored outcome set equality, effective-actor binding,
+  idempotency replay bindings, least-privilege migration grants, downgrade audit guard,
+  forward Alembic head architecture tests, and expanded T2 PostgreSQL negatives.
+
 - AIEOS-V1-HINT-T2-I01R1 — Chief R1 corrections: principal classification import,
   split-role audit migration choreography, runtime attestation grants, strict boolean
   outcomes, IN_REVIEW-only attestation, version-bound idempotency replay, APPROVE/publish

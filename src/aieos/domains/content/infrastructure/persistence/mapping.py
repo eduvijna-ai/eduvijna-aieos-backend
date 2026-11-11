@@ -125,18 +125,27 @@ def worksheet_hint_attestation_from_row(row: Any) -> WorksheetLearnerHintVersion
     raw_outcomes = _row_value(row, "per_question_outcomes")
     if not isinstance(raw_outcomes, list):
         raise InvalidPayloadError("per_question_outcomes must be a JSON array")
-    outcomes = tuple(
-        HintQuestionAttestationOutcome(
-            question_id=str(item["question_id"]),
-            hard_block_clear=_require_stored_json_bool(
-                item["hard_block_clear"], label="hard_block_clear"
-            ),
-            human_review_pass=_require_stored_json_bool(
-                item["human_review_pass"], label="human_review_pass"
-            ),
+    outcomes_list: list[HintQuestionAttestationOutcome] = []
+    for item in raw_outcomes:
+        if not isinstance(item, dict):
+            raise InvalidPayloadError("per_question_outcomes entry must be an object")
+        question_id = item.get("question_id")
+        if not isinstance(question_id, str) or not question_id:
+            raise InvalidPayloadError("question_id must be a non-empty string")
+        if "hard_block_clear" not in item or "human_review_pass" not in item:
+            raise InvalidPayloadError("attestation outcome fields are required")
+        outcomes_list.append(
+            HintQuestionAttestationOutcome(
+                question_id=question_id,
+                hard_block_clear=_require_stored_json_bool(
+                    item["hard_block_clear"], label="hard_block_clear"
+                ),
+                human_review_pass=_require_stored_json_bool(
+                    item["human_review_pass"], label="human_review_pass"
+                ),
+            )
         )
-        for item in raw_outcomes
-    )
+    outcomes = tuple(outcomes_list)
     return WorksheetLearnerHintVersionAttestationV1(
         attestation_id=WorksheetLearnerHintAttestationId(
             _row_value(row, "attestation_id")

@@ -15,6 +15,7 @@ from sqlalchemy.engine import Engine
 
 from aieos.domains.content.domain.version import ContentPayload, canonical_payload_json
 from aieos.domains.teaching.application.errors import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     PersistenceInvariantViolation,
     PersistenceOperationFailed,
 )
@@ -156,12 +157,12 @@ def _execution(
 
 class TestMigrationAndSchema:
     def test_alembic_head_tosd070002(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"

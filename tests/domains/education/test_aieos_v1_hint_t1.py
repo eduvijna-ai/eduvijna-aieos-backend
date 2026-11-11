@@ -13,6 +13,7 @@ from aieos.domains.content.application.errors import (
     ContentNotFound,
     ContentPayloadInvalid,
     InvalidContentRequest,
+    WorksheetLearnerHintAttestationInvalid,
     WorksheetLearnerHintAttestationRequired,
 )
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
@@ -399,11 +400,11 @@ def test_hint_interlock_blocks_review_and_publish():
     )
     uow = MagicMock()
     uow.worksheet_hint_attestations.get_for_version.return_value = None
-    with pytest.raises(WorksheetLearnerHintAttestationRequired):
+    with pytest.raises(WorksheetLearnerHintAttestationInvalid):
         enforce_worksheet_hint_review_interlock(
             uow, version, reviewer_principal_id=uuid.uuid7()
         )
-    with pytest.raises(WorksheetLearnerHintAttestationRequired):
+    with pytest.raises(WorksheetLearnerHintAttestationInvalid):
         enforce_worksheet_hint_publish_interlock(
             uow, version, publisher_principal_id=uuid.uuid7()
         )

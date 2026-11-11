@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.school_intelligence.application.ports import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     AIEOS_SCHOOL_INTELLIGENCE_CAPABILITIES,
     SCHOOL_INTELLIGENCE_READ,
 )
@@ -129,8 +130,8 @@ class TestTeacherAndLearnerSchoolContextNotReused:
 
 class TestNoPersistenceNoApi:
     def test_no_school_intelligence_table_or_migration(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

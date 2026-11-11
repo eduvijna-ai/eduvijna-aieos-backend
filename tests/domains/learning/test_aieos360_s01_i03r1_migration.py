@@ -11,6 +11,7 @@ from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import REPO_ROOT
 from tests.domains.learning.helpers_aieos360_s01_i03 import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     clear_i03_side_effects,
     fetch_audit,
     prepare_class_5a_assignment,
@@ -43,8 +44,8 @@ class TestA360s010002Static:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010002"' in sql
         assert 'down_revision: str | None = "a360s010001"' in sql
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_r1_26_27_28_29_scope_is_security_audit_vocabulary_only(self) -> None:
         sql = I03_MIGRATION.read_text(encoding="utf-8")

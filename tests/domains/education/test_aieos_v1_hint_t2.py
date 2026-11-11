@@ -100,6 +100,45 @@ def _hinted_ids_from_version(runtime_engine, tenant_id: uuid.UUID, version_id) -
         return [q.id for q in worksheet.questions if q.learner_hint is not None]
 
 
+class TestHintAttestationGateUnit:
+    def test_approve_fails_closed_without_human_classification(self) -> None:
+        from aieos.domains.content.application.worksheet_hint_attestation_gate import (
+            enforce_worksheet_hint_review_interlock,
+        )
+        from aieos.domains.content.domain.identities import ContentVersionId, VersionNumber
+        from aieos.domains.content.domain.origin import ContentOrigin
+        from aieos.domains.content.domain.schema import SchemaId, SchemaVersion
+        from aieos.domains.content.domain.version import ContentPayload, ContentVersion
+        from aieos.domains.education.schema import WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2
+        from unittest.mock import MagicMock
+        from datetime import UTC, datetime
+
+        version = ContentVersion(
+            version_id=ContentVersionId.generate(),
+            tenant_id=uuid.uuid7(),
+            content_id=__import__(
+                "aieos.domains.content.domain.identities", fromlist=["ContentId"]
+            ).ContentId.generate(),
+            version_number=VersionNumber(1),
+            parent_version_id=None,
+            schema_id=SchemaId(WORKSHEET_SCHEMA_ID),
+            schema_version=SchemaVersion(WORKSHEET_SCHEMA_VERSION_V2),
+            payload=ContentPayload.from_mapping(_worksheet_v2_payload(hint=FIXED_HINT)),
+            origin=ContentOrigin.HUMAN,
+            created_at=datetime.now(UTC),
+            created_by_principal_id=uuid.uuid7(),
+        )
+        uow = MagicMock()
+        uow.worksheet_hint_attestations.get_for_version.return_value = None
+        with pytest.raises(WorksheetLearnerHintAttestationInvalid):
+            enforce_worksheet_hint_review_interlock(
+                uow,
+                version,
+                reviewer_principal_id=uuid.uuid7(),
+                principal_classification=None,
+            )
+
+
 class TestDigestAndQa:
     def test_digest_includes_schema_envelope(self) -> None:
         payload = ContentPayload.from_mapping(_worksheet_v2_payload(hint=FIXED_HINT))
@@ -518,13 +557,33 @@ class TestAttestationPostgres:
     def test_db_rejects_malformed_outcome_booleans(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
+        import psycopg
+
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
         content_id = _seed_worksheet_content(
             bootstrap_engine, tenant_id=tenant_id, owner_principal_id=author_id
         )
-        version_id = uuid.uuid7()
-        with pytest.raises(Exception):
+        _, rev_after_v1 = _append_v1(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            content_id=content_id,
+        )
+        version_read, _revision = _guarded_service(runtime_engine).append(
+            tenant_id,
+            author_id,
+            content_id=content_id,
+            expected_aggregate_revision=rev_after_v1,
+            payload=_worksheet_v2_payload(hint=FIXED_HINT),
+            authoring_class_ref="class-5a",
+            idempotency_key=f"db-bool-{uuid.uuid7()}",
+            event_context=_event_context(author_id),
+            audit_provenance=api_mutation_audit_provenance(author_id),
+            now=FIXED_NOW,
+        )
+        with pytest.raises(psycopg.errors.CheckViolation) as exc_info:
             with runtime_engine.begin() as conn:
                 conn.execute(
                     text("SELECT set_config('aieos.tenant_id', :tid, true)"),
@@ -549,10 +608,10 @@ class TestAttestationPostgres:
                         "aid": uuid.uuid7(),
                         "tid": tenant_id,
                         "cid": content_id.value,
-                        "vid": version_id,
+                        "vid": version_read.version_id.value,
                         "digest": "b" * 64,
                         "author": author_id,
-                        "reviewer": uuid.uuid7(),
+                        "reviewer": reviewer_id,
                         "outcomes": json.dumps(
                             [
                                 {
@@ -566,6 +625,7 @@ class TestAttestationPostgres:
                         "corr": uuid.uuid7(),
                     },
                 )
+        assert "ck_worksheet_hint_attestations_outcomes_booleans" in str(exc_info.value)
 
     def test_similarity_threshold_fixture_is_above_cutoff(self) -> None:
         payload = _worksheet_v2_payload(hint="Explanation for question 1 about fractions")

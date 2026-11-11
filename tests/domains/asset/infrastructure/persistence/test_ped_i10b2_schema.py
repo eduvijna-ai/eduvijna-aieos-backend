@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -311,7 +312,7 @@ class TestMigrationGraph:
     def test_script_directory_single_head_and_parent(self) -> None:
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
         revision = script.get_revision("pedi10b2001")
         assert revision is not None
         assert revision.down_revision == "pedi090001"
@@ -323,7 +324,7 @@ class TestMigrationGraph:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
 
     def test_downgrade_removes_asset_keeps_content_security_then_reupgrade(
@@ -352,7 +353,7 @@ class TestMigrationGraph:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
 
 

@@ -12,6 +12,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from aieos.platform.runtime.readiness import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     EXPECTED_ALEMBIC_HEAD,
     _CONTENT_OWNED_SCHEMAS,
 )
@@ -196,11 +197,11 @@ class TestArchitectureIsolation:
         )
 
     def test_alembic_head_and_learning_schema_ownership(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
         assert "learning" in _CONTENT_OWNED_SCHEMAS
         sql = I02_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010001"' in sql

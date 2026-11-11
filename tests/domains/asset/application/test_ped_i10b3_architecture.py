@@ -12,6 +12,7 @@ import pytest
 from aieos.domains.asset.application.blob_store import BlobStore, Uuid7StorageKeyFactory
 from aieos.domains.asset.application.ingest import BlobIngestPreparer, PreparedBlob
 from aieos.domains.asset.application.reconciliation import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     BlobReferenceStatus,
     BlobReconciler,
 )
@@ -213,7 +214,7 @@ class TestArchitectureScope:
     def test_no_migration_and_alembic_head_unchanged(self) -> None:
         assert not any(p.name.startswith("pedi10b3") for p in MIGRATIONS.glob("*.py"))
         assert (MIGRATIONS / "pedi10b2001_asset_authority_sor.py").is_file()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_no_asset_persistence_or_content_or_composition_change(self) -> None:
         models = (

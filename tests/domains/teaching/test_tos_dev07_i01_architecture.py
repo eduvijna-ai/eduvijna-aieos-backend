@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.teaching.infrastructure.persistence.models import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     execution_content_bindings_table,
     execution_observations_table,
     executions_table,
@@ -56,8 +57,8 @@ def _impl_sources() -> list[Path]:
 
 class TestI01ArchitectureGuards:
     def test_migration_head_and_chain(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd070001"' in text
         assert 'down_revision: str | None = "tosd060002"' in text

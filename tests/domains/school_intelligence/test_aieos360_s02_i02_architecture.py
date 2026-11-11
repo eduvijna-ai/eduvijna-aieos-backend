@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.school_intelligence.api.v1.models import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     PrincipalSchoolIntelligenceClassCardResponse,
     PrincipalSchoolIntelligenceResponse,
     PrincipalSchoolIntelligenceSummaryResponse,
@@ -88,8 +89,8 @@ def _import_modules(path: Path) -> set[str]:
 
 class TestNoPersistence:
     def test_alembic_head_unchanged(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

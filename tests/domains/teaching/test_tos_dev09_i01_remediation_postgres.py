@@ -12,6 +12,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.teaching.domain.class_result_level_snapshot import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ClassResultLevelSnapshot,
 )
 from aieos.domains.teaching.domain.intent_type import IntentType
@@ -69,12 +70,12 @@ def _remediation_pair(*, tenant_id: uuid.UUID, teacher_id: uuid.UUID):
 
 class TestMigrationHeadAndShape:
     def test_alembic_head_tosd090001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"

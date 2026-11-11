@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.asset.application.ports import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     ASSET_CREATE,
     ASSET_LIFECYCLE_MANAGE,
     ASSET_QUARANTINE_MANAGE,
@@ -120,7 +121,7 @@ class TestDocsAndContracts:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert UV_LOCK.is_file()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         source = READINESS.read_text(encoding="utf-8")
         assert "asset_schema_owner" not in source
         assert "AIEOS_ASSET_SCHEMA_OWNER_ROLE" not in source

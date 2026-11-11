@@ -234,6 +234,7 @@ class TestAlembicAndCatalog:
                 "publications",
                 "version_asset_refs",
                 "migration_import_records",
+                "worksheet_learner_hint_version_attestations",
             }
             api_tables = {
                 row[0]
@@ -258,7 +259,7 @@ class TestAlembicAndCatalog:
                 "capability_grants",
             }
             revision = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            assert revision == "a360s010004"
+            assert revision == "a360s010005"
             gcii02 = (
                 REPO_ROOT / "migrations" / "versions" / "gcii020001_content_schema.py"
             ).read_text(encoding="utf-8")
@@ -293,11 +294,14 @@ class TestAlembicAndCatalog:
             "publications",
             "version_asset_refs",
             "migration_import_records",
+            "worksheet_learner_hint_version_attestations",
         }
         assert "api" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="api")) == {"idempotency_records"}
         with bootstrap_engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == ("a360s010004")
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+                "a360s010005",
+            )
         assert "workflow" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="workflow")) == {
             "workflow_start_intents",

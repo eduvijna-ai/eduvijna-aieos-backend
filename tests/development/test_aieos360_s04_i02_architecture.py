@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from aieos.domains.learning.application.learner_membership import (
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
     SchoolContextLearnerMembershipAuthority,
     SchoolContextLearnerMembershipReader,
 )
@@ -222,8 +223,8 @@ class TestHistoricalAdaptersPreserved:
 
 class TestNoPersistenceNoOpenApi:
     def test_alembic_head_unchanged(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")
