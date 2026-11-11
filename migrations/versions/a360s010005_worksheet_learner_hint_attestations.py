@@ -7,6 +7,8 @@ Create Date: 2026-11-11
 
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Sequence
 
 from alembic import op
@@ -16,6 +18,12 @@ revision: str = "a360s010005"
 down_revision: str | None = "a360s010004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+SCHEMA_OWNER_ROLE_ENV = "AIEOS_SCHEMA_OWNER_ROLE"
+SECURITY_SCHEMA_OWNER_ROLE_ENV = "AIEOS_SECURITY_SCHEMA_OWNER_ROLE"
+RUNTIME_ROLE_ENV = "AIEOS_RUNTIME_ROLE"
+CONTENT_MIGRATION_RUNTIME_ROLE_ENV = "AIEOS_CONTENT_MIGRATION_RUNTIME_ROLE"
+_ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 _DOWNGRADE_BLOCKED = (
     "PK-V1-HINT-T2 downgrade refused: worksheet learner hint attestation evidence exists"
@@ -151,6 +159,16 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
             CHECK (payload_digest ~ '^[0-9a-f]{64}$'),
         CONSTRAINT ck_worksheet_hint_attestations_qa_policy_version
             CHECK (qa_policy_version ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
+        CONSTRAINT ck_worksheet_hint_attestations_outcomes_booleans
+            CHECK (
+                jsonb_typeof(per_question_outcomes) = 'array'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(per_question_outcomes) AS elem
+                    WHERE jsonb_typeof(elem->'hard_block_clear') <> 'boolean'
+                       OR jsonb_typeof(elem->'human_review_pass') <> 'boolean'
+                )
+            ),
         CONSTRAINT fk_worksheet_hint_attestations_version
             FOREIGN KEY (tenant_id, content_id, version_id)
             REFERENCES content.content_versions (tenant_id, content_id, version_id)
@@ -199,9 +217,21 @@ def _joined(*parts: str) -> str:
     return ",\n".join(part.strip("\n") for part in parts)
 
 
-def upgrade() -> None:
-    for statement in _TABLE_STATEMENTS:
-        op.execute(statement)
+def _require_role(env_name: str, *, purpose: str) -> str:
+    role = os.environ.get(env_name, "").strip()
+    if not role:
+        raise RuntimeError(
+            f"{env_name} must be set to the {purpose}; Alembic will not "
+            "silently alter security objects as the migrator or content owner."
+        )
+    if not _ROLE_NAME.fullmatch(role):
+        raise RuntimeError(
+            f"{env_name} must be a lowercase unquoted PostgreSQL identifier"
+        )
+    return role
+
+
+def _upgrade_audit_statements() -> tuple[str, ...]:
     actions_sql = _joined(
         _CONTENT_ACTIONS_SQL,
         _ASSET_ACTIONS_SQL,
@@ -217,21 +247,17 @@ def upgrade() -> None:
         _ASSESSMENT_UPGRADE_ACTIONS_SQL,
         _LEARNING_ACTIONS_SQL,
     )
-    op.execute("ALTER TABLE security.audit_records DROP CONSTRAINT ck_audit_records_action")
-    op.execute(
+    return (
+        "ALTER TABLE security.audit_records DROP CONSTRAINT ck_audit_records_action",
         f"""
         ALTER TABLE security.audit_records
             ADD CONSTRAINT ck_audit_records_action
             CHECK (action IN (
 {actions_sql}
             ))
-        """
-    )
-    op.execute(
+        """,
         "ALTER TABLE security.audit_records "
-        "DROP CONSTRAINT ck_audit_records_primary_revision_family"
-    )
-    op.execute(
+        "DROP CONSTRAINT ck_audit_records_primary_revision_family",
         f"""
         ALTER TABLE security.audit_records
             ADD CONSTRAINT ck_audit_records_primary_revision_family
@@ -250,13 +276,9 @@ def upgrade() -> None:
                     AND primary_resource_revision IS NULL
                 )
             )
-        """
-    )
-    op.execute(
+        """,
         "ALTER TABLE security.audit_records "
-        "DROP CONSTRAINT ck_audit_records_revision_semantics"
-    )
-    op.execute(
+        "DROP CONSTRAINT ck_audit_records_revision_semantics",
         f"""
         ALTER TABLE security.audit_records
             ADD CONSTRAINT ck_audit_records_revision_semantics
@@ -307,11 +329,45 @@ def upgrade() -> None:
                     AND resource_revision_before IS NOT NULL
                     AND resource_revision_after = resource_revision_before + 1)
             )
-        """
+        """,
     )
 
 
+UPGRADE_AUDIT_STATEMENTS = _upgrade_audit_statements()
+
+
+def upgrade() -> None:
+    content_owner = _require_role(
+        SCHEMA_OWNER_ROLE_ENV, purpose="Generic Content schema-owner role"
+    )
+    security_owner = _require_role(
+        SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
+    )
+    runtime = _require_role(RUNTIME_ROLE_ENV, purpose="runtime database role")
+    migration_runtime = _require_role(
+        CONTENT_MIGRATION_RUNTIME_ROLE_ENV,
+        purpose="Content migration runtime database role",
+    )
+    for statement in _TABLE_STATEMENTS:
+        op.execute(statement)
+    table = "content.worksheet_learner_hint_version_attestations"
+    op.execute(f"GRANT SELECT, INSERT ON {table} TO {runtime}")
+    op.execute(f"REVOKE UPDATE, DELETE ON {table} FROM {runtime}")
+    op.execute(f"GRANT SELECT, INSERT ON {table} TO {migration_runtime}")
+    op.execute(f"REVOKE UPDATE, DELETE ON {table} FROM {migration_runtime}")
+    op.execute(f"SET LOCAL ROLE {security_owner}")
+    for statement in UPGRADE_AUDIT_STATEMENTS:
+        op.execute(statement)
+    op.execute(f"SET LOCAL ROLE {content_owner}")
+
+
 def downgrade() -> None:
+    content_owner = _require_role(
+        SCHEMA_OWNER_ROLE_ENV, purpose="Generic Content schema-owner role"
+    )
+    security_owner = _require_role(
+        SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
+    )
     bind = op.get_bind()
     count = bind.execute(
         text(
@@ -328,5 +384,7 @@ def downgrade() -> None:
     )
     from migrations.versions import a360s010004_learner_evaluation_audit_vocab as prev
 
+    op.execute(f"SET LOCAL ROLE {security_owner}")
     for statement in prev.UPGRADE_AUDIT_STATEMENTS:
         op.execute(statement)
+    op.execute(f"SET LOCAL ROLE {content_owner}")

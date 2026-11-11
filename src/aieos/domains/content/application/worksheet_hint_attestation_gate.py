@@ -29,7 +29,11 @@ from aieos.domains.education.worksheet_hint_qa import (
 from aieos.domains.education.worksheet_hint_safety import (
     version_requires_worksheet_hint_attestation,
 )
+from aieos.domains.content.domain.review import ReviewDecisionCode
 from aieos.domains.education.worksheet_v2 import parse_worksheet_v2
+from aieos.platform.security.authorization.principal_classification import (
+    CurrentPrincipalClassificationAuthority,
+)
 
 
 def _payload_mapping(version: ContentVersion) -> Mapping[str, object]:
@@ -143,6 +147,8 @@ def enforce_worksheet_hint_review_interlock(
     version: ContentVersion,
     *,
     reviewer_principal_id: UUID,
+    principal_classification: CurrentPrincipalClassificationAuthority | None = None,
+    effective_actor_id: UUID | None = None,
 ) -> None:
     if not version_requires_worksheet_hint_attestation(
         schema_id=str(version.schema_id),
@@ -150,6 +156,12 @@ def enforce_worksheet_hint_review_interlock(
         payload=_payload_mapping(version),
     ):
         return
+    if principal_classification is not None:
+        principal_classification.require_current_human_principal(reviewer_principal_id)
+    if effective_actor_id is not None and effective_actor_id != reviewer_principal_id:
+        raise WorksheetLearnerHintAttestationInvalid(
+            "effective actor must align with reviewer principal"
+        )
     attestation = load_valid_attestation(uow.worksheet_hint_attestations, version)
     if attestation.reviewer_principal_id != reviewer_principal_id:
         raise WorksheetLearnerHintAttestationInvalid(
@@ -166,6 +178,8 @@ def enforce_worksheet_hint_publish_interlock(
     version: ContentVersion,
     *,
     publisher_principal_id: UUID,
+    principal_classification: CurrentPrincipalClassificationAuthority | None = None,
+    effective_actor_id: UUID | None = None,
 ) -> None:
     if not version_requires_worksheet_hint_attestation(
         schema_id=str(version.schema_id),
@@ -173,7 +187,22 @@ def enforce_worksheet_hint_publish_interlock(
         payload=_payload_mapping(version),
     ):
         return
+    if principal_classification is not None:
+        principal_classification.require_current_human_principal(publisher_principal_id)
+    if effective_actor_id is not None and effective_actor_id != publisher_principal_id:
+        raise WorksheetLearnerHintPublicationBlocked(
+            "effective actor must align with publisher principal"
+        )
     attestation = load_valid_attestation(uow.worksheet_hint_attestations, version)
+    decision = uow.reviews.get_for_version(version.content_id, version.version_id)
+    if decision is None or decision.decision is not ReviewDecisionCode.APPROVE:
+        raise WorksheetLearnerHintPublicationBlocked(
+            "publish requires exact-version APPROVE ReviewDecision"
+        )
+    if decision.reviewer_principal_id != attestation.reviewer_principal_id:
+        raise WorksheetLearnerHintPublicationBlocked(
+            "approve reviewer does not match stored attestation reviewer"
+        )
     if publisher_principal_id in {
         attestation.author_principal_id,
         attestation.reviewer_principal_id,

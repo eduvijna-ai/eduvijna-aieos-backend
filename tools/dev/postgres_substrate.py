@@ -258,6 +258,20 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
             )
             conn.execute(
                 text(
+                    "GRANT SELECT, INSERT ON "
+                    "content.worksheet_learner_hint_version_attestations "
+                    f"TO {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "REVOKE UPDATE, DELETE ON "
+                    "content.worksheet_learner_hint_version_attestations "
+                    f"FROM {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
                     f"GRANT SELECT, INSERT ON content.publications TO {RUNTIME_USER}"
                 )
             )

@@ -26,6 +26,7 @@ from aieos.domains.content.application.ports import (
 from aieos.domains.content.application.worksheet_hint_attestation_gate import (
     assert_attestation_outcomes_against_qa,
     hinted_question_ids,
+    load_valid_attestation,
     outcomes_from_command,
 )
 from aieos.domains.content.domain.identities import (
@@ -52,7 +53,10 @@ from aieos.platform.idempotency.models import (
     IdempotencyScope,
 )
 from aieos.platform.security.audit import SecurityAuditAction
-from aieos.platform.security.authorization.ports import CurrentPrincipalClassificationAuthority
+from aieos.domains.content.domain.states import StewardshipState
+from aieos.platform.security.authorization.principal_classification import (
+    CurrentPrincipalClassificationAuthority,
+)
 
 
 class RecordWorksheetLearnerHintAttestationService:
@@ -119,11 +123,19 @@ class RecordWorksheetLearnerHintAttestationService:
                     raise WorksheetLearnerHintAttestationInvalid(
                         "idempotency key already bound"
                     )
-                if existing.result_review_decision_id is None:
-                    raise WorksheetLearnerHintAttestationInvalid(
-                        "idempotent attestation outcome is missing attestation identity"
+                version_row = uow.versions.get(version_id)
+                if version_row is None or version_row.content_id != content_id:
+                    raise ContentVersionNotFound(
+                        "ContentVersion is not visible for the requested Content"
                     )
-                return WorksheetLearnerHintAttestationId(existing.result_review_decision_id)
+                stored_attestation = load_valid_attestation(
+                    uow.worksheet_hint_attestations, version_row
+                )
+                if stored_attestation.reviewer_principal_id != principal_id:
+                    raise WorksheetLearnerHintAttestationInvalid(
+                        "idempotent attestation reviewer mismatch"
+                    )
+                return stored_attestation.attestation_id
 
             head = uow.contents.get_head_for_update(content_id)
             if head is None or head.tenant_id != execution_tenant_id:
@@ -135,6 +147,10 @@ class RecordWorksheetLearnerHintAttestationService:
             if head.current_version_id is None or head.current_version_id != version_id:
                 raise WorksheetLearnerHintAttestationInvalid(
                     "attestation requires the current ContentVersion"
+                )
+            if head.stewardship_state != StewardshipState.IN_REVIEW.value:
+                raise WorksheetLearnerHintAttestationInvalid(
+                    "attestation requires IN_REVIEW stewardship state"
                 )
             version = uow.versions.get(version_id)
             if version is None or version.content_id != content_id:
@@ -204,7 +220,7 @@ class RecordWorksheetLearnerHintAttestationService:
                     request_fingerprint_sha256=fingerprint,
                     result_content_id=content_id.value,
                     result_version_id=version_id.value,
-                    result_review_decision_id=attestation_id.value,
+                    result_review_decision_id=None,
                     result_publication_id=None,
                     result_aggregate_revision=int(expected_aggregate_revision),
                     created_at=attested_at,

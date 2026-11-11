@@ -16,5 +16,5 @@ Backend-only semantic QA + immutable `WorksheetLearnerHintVersionAttestationV1` 
 
 ## Known limitations
 
-- Idempotent attestation replay stores `attestation_id` in `result_review_decision_id` (no new idempotency column in this packet)
+- Idempotent attestation replay re-loads the version-bound attestation record (no typed idempotency result column)
 - FLAG heuristics are deterministic placeholders; they do not prove semantic pedagogical safety

@@ -14,7 +14,6 @@ from aieos.domains.content.application.errors import (
     ContentPayloadInvalid,
     InvalidContentRequest,
     WorksheetLearnerHintAttestationRequired,
-    WorksheetLearnerHintPublicationBlocked,
 )
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
 from aieos.domains.content.application.ports import CONTENT_VERSION_CREATE
@@ -404,7 +403,7 @@ def test_hint_interlock_blocks_review_and_publish():
         enforce_worksheet_hint_review_interlock(
             uow, version, reviewer_principal_id=uuid.uuid7()
         )
-    with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+    with pytest.raises(WorksheetLearnerHintAttestationRequired):
         enforce_worksheet_hint_publish_interlock(
             uow, version, publisher_principal_id=uuid.uuid7()
         )

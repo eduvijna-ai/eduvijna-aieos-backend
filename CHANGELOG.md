@@ -9,6 +9,11 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T2-I01R1 — Chief R1 corrections: principal classification import,
+  split-role audit migration choreography, runtime attestation grants, strict boolean
+  outcomes, IN_REVIEW-only attestation, version-bound idempotency replay, APPROVE/publish
+  human and reviewer alignment, and expanded hint T2 PostgreSQL proofs.
+
 - AIEOS-V1-HINT-T2-I01 (PK-V1-HINT-T2) — ADR-063 §5.3 immutable
   `WorksheetLearnerHintVersionAttestationV1` persistence (`a360s010005`), canonical
   schema+payload digest, `O63-03-v1` FLAG heuristics, `RecordWorksheetLearnerHintAttestationService`,

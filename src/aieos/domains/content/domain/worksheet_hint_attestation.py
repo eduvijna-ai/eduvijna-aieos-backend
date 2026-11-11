@@ -15,7 +15,6 @@ from aieos.domains.content.domain.identities import (
     require_foreign_uuid,
 )
 
-_QUESTION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _POLICY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
@@ -33,8 +32,8 @@ class HintQuestionAttestationOutcome:
     human_review_pass: bool
 
     def __post_init__(self) -> None:
-        if not _QUESTION_ID_PATTERN.fullmatch(self.question_id):
-            raise InvalidContentIdentityError("question_id is malformed")
+        if not self.question_id:
+            raise InvalidContentIdentityError("question_id is required")
         if not isinstance(self.hard_block_clear, bool) or not isinstance(
             self.human_review_pass, bool
         ):

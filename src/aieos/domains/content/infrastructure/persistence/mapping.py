@@ -56,6 +56,12 @@ def _row_value(row: Any, name: str) -> Any:
     return getattr(row, name)
 
 
+def _require_stored_json_bool(value: object, *, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise InvalidPayloadError(f"{label} must be a JSON boolean")
+    return value
+
+
 def content_from_row(row: Any) -> Content:
     current = _row_value(row, "current_version_id")
     published = _row_value(row, "published_version_id")
@@ -122,8 +128,12 @@ def worksheet_hint_attestation_from_row(row: Any) -> WorksheetLearnerHintVersion
     outcomes = tuple(
         HintQuestionAttestationOutcome(
             question_id=str(item["question_id"]),
-            hard_block_clear=bool(item["hard_block_clear"]),
-            human_review_pass=bool(item["human_review_pass"]),
+            hard_block_clear=_require_stored_json_bool(
+                item["hard_block_clear"], label="hard_block_clear"
+            ),
+            human_review_pass=_require_stored_json_bool(
+                item["human_review_pass"], label="human_review_pass"
+            ),
         )
         for item in raw_outcomes
     )
