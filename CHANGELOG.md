@@ -9,6 +9,11 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T1-I01R3 (PK-HINT-A) — ADR-063 §7.2 tenant-visible Content before
+  AuthorizationKernel `content.version.create`, trusted `effective_actor_id` aligned
+  with owner and durable provenance, class-ref validation after authority gates, and
+  adversarial concealment / actor-mismatch regression tests.
+
 - AIEOS-V1-HINT-T1-I01R2 (PK-HINT-A) — ADR-063 §7.2 guarded-append check order
   (human/tenant/capability/owner/ClassRef before payload validation and
   idempotency), review/publish idempotent replay interlock for hint-bearing

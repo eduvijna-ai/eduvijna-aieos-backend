@@ -122,21 +122,28 @@ class AppendWorksheetLearnerHintsContentVersionService:
         *,
         execution_tenant_id: UUID,
         principal_id: UUID,
+        effective_actor_id: UUID,
         content_id: ContentId,
         authoring_class_ref: str,
         expected_aggregate_revision: AggregateRevision | None,
-    ) -> tuple[LockedContentHead, Content]:
+    ) -> tuple[LockedContentHead, Content, str]:
+        head = uow.contents.get_head_for_update(content_id)
+        if head is None or head.tenant_id != execution_tenant_id:
+            raise ContentNotFound("Content is not visible in the execution tenant")
+        content = uow.contents.get(content_id)
+        if content is None:
+            raise ContentNotFound("Content is not visible in the execution tenant")
         self._version_create_authorization.authorize(
             tenant_id=execution_tenant_id,
             principal_id=principal_id,
             content_id=content_id,
             capability=CONTENT_VERSION_CREATE,
         )
-        head = uow.contents.get_head_for_update(content_id)
-        if head is None or head.tenant_id != execution_tenant_id:
-            raise ContentNotFound("Content is not visible in the execution tenant")
-        content = uow.contents.get(content_id)
-        if content is None or content.owner_principal_id != principal_id:
+        if effective_actor_id != principal_id:
+            raise InvalidContentRequest(
+                "effective actor does not match current principal"
+            )
+        if content.owner_principal_id != effective_actor_id:
             raise InvalidContentRequest("content owner does not match current principal")
         if (
             expected_aggregate_revision is not None
@@ -145,15 +152,18 @@ class AppendWorksheetLearnerHintsContentVersionService:
             raise AggregateRevisionConflict(
                 "expected aggregate_revision does not match stored head"
             )
+        normalized_authoring_class_ref = self._normalized_authoring_class_ref(
+            authoring_class_ref
+        )
         try:
             self._class_authority.require_assignable_class_ref(
-                execution_tenant_id, principal_id, authoring_class_ref
+                execution_tenant_id, principal_id, normalized_authoring_class_ref
             )
         except ClassRefNotAssignable as exc:
             raise InvalidContentRequest(
                 "authoring class is not assignable for the current teacher"
             ) from exc
-        return head, content
+        return head, content, normalized_authoring_class_ref
 
     @staticmethod
     def _normalized_authoring_class_ref(authoring_class_ref: object) -> str:
@@ -208,9 +218,7 @@ class AppendWorksheetLearnerHintsContentVersionService:
         now: datetime | None = None,
     ) -> tuple[ContentVersionReadModel, AggregateRevision]:
         self._principal_classification.require_current_human_principal(principal_id)
-        normalized_authoring_class_ref = self._normalized_authoring_class_ref(
-            authoring_class_ref
-        )
+        effective_actor_id = event_context.effective_actor_id
         created_at = now if now is not None else datetime.now(UTC)
         raw_asset_refs: list[Mapping[str, Any]] = (
             [] if asset_refs is None else list(asset_refs)
@@ -222,18 +230,21 @@ class AppendWorksheetLearnerHintsContentVersionService:
             key_sha256=hash_idempotency_key(idempotency_key),
         )
         with self._uow_factory(execution_tenant_id) as uow:
-            self._assert_current_guarded_authority(
-                uow,
-                execution_tenant_id=execution_tenant_id,
-                principal_id=principal_id,
-                content_id=content_id,
-                authoring_class_ref=normalized_authoring_class_ref,
-                expected_aggregate_revision=None,
+            _head, _content, normalized_authoring_class_ref = (
+                self._assert_current_guarded_authority(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    principal_id=principal_id,
+                    effective_actor_id=effective_actor_id,
+                    content_id=content_id,
+                    authoring_class_ref=authoring_class_ref,
+                    expected_aggregate_revision=None,
+                )
             )
             registered, normalized_payload = self._validate_worksheet_hint_payload(payload)
             version_provenance = worksheet_learner_hint_version_provenance(
                 authoring_class_ref=normalized_authoring_class_ref,
-                principal_id=principal_id,
+                principal_id=effective_actor_id,
             )
             fingerprint = fingerprint_material(
                 {
@@ -255,8 +266,9 @@ class AppendWorksheetLearnerHintsContentVersionService:
                     uow,
                     execution_tenant_id=execution_tenant_id,
                     principal_id=principal_id,
+                    effective_actor_id=effective_actor_id,
                     content_id=content_id,
-                    authoring_class_ref=normalized_authoring_class_ref,
+                    authoring_class_ref=authoring_class_ref,
                     expected_aggregate_revision=None,
                 )
                 if existing.result_version_id is None:
@@ -273,13 +285,16 @@ class AppendWorksheetLearnerHintsContentVersionService:
                     AggregateRevision(existing.result_aggregate_revision),
                 )
 
-            head, _content = self._assert_current_guarded_authority(
-                uow,
-                execution_tenant_id=execution_tenant_id,
-                principal_id=principal_id,
-                content_id=content_id,
-                authoring_class_ref=normalized_authoring_class_ref,
-                expected_aggregate_revision=expected_aggregate_revision,
+            head, _content, normalized_authoring_class_ref = (
+                self._assert_current_guarded_authority(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    principal_id=principal_id,
+                    effective_actor_id=effective_actor_id,
+                    content_id=content_id,
+                    authoring_class_ref=authoring_class_ref,
+                    expected_aggregate_revision=expected_aggregate_revision,
+                )
             )
             if registered.content_type != head.content_type:
                 raise ContentSchemaMismatch(
@@ -312,7 +327,7 @@ class AppendWorksheetLearnerHintsContentVersionService:
                 payload=domain_payload,
                 origin=ContentOrigin.HUMAN,
                 created_at=created_at,
-                created_by_principal_id=principal_id,
+                created_by_principal_id=effective_actor_id,
             )
             built_refs = build_version_asset_refs(
                 tenant_id=execution_tenant_id,

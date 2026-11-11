@@ -10,12 +10,14 @@ import pytest
 from pydantic import ValidationError
 
 from aieos.domains.content.application.errors import (
+    ContentNotFound,
     ContentPayloadInvalid,
     InvalidContentRequest,
     WorksheetLearnerHintAttestationRequired,
     WorksheetLearnerHintPublicationBlocked,
 )
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
+from aieos.domains.content.application.ports import CONTENT_VERSION_CREATE
 from aieos.domains.content.application.worksheet_hint_append import (
     AppendWorksheetLearnerHintsContentVersionService,
 )
@@ -603,11 +605,52 @@ def test_guarded_append_denial_precedence_non_owner_before_validation():
 
 
 def test_guarded_append_blank_authoring_class_ref_denied():
+    tenant_id = uuid.uuid7()
+    principal_id = uuid.uuid7()
+    content_id = ContentId.generate()
+    uow = MagicMock()
+    uow.idempotency.get.return_value = None
+    from aieos.domains.content.application.models import LockedContentHead
+    from aieos.domains.content.domain.content import Content, ContentType
+    from aieos.domains.content.domain.states import StewardshipState
+
+    now = datetime.now(UTC)
+    uow.contents.get_head_for_update.return_value = LockedContentHead(
+        tenant_id=tenant_id,
+        content_id=content_id,
+        aggregate_revision=AggregateRevision(0),
+        current_version_id=None,
+        current_version_number=None,
+        published_version_id=None,
+        stewardship_state=StewardshipState.DRAFT.value,
+        content_type="worksheet",
+    )
+    uow.contents.get.return_value = Content(
+        content_id=content_id,
+        tenant_id=tenant_id,
+        owner_principal_id=principal_id,
+        content_type=ContentType("worksheet"),
+        title="Fractions",
+        description="",
+        locale="en-IN",
+        stewardship_state=StewardshipState.DRAFT,
+        current_version_id=None,
+        published_version_id=None,
+        aggregate_revision=AggregateRevision(0),
+        created_at=now,
+        created_by_principal_id=principal_id,
+        updated_at=now,
+        archived_at=None,
+    )
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value = uow
+    factory.return_value.__exit__.return_value = None
+    auth = AllowAIGenerationAuthorization()
     service = AppendWorksheetLearnerHintsContentVersionService(
-        _mock_uow_factory(),
+        factory,
         build_preparation_content_schema_registry(),
         AllowAssetReferenceValidation(),
-        AllowAIGenerationAuthorization(),
+        auth,
         StubHumanClassification(),
         StubClassAuthority(),
         idempotency_retention=IDEMPOTENCY_RETENTION,
@@ -615,14 +658,14 @@ def test_guarded_append_blank_authoring_class_ref_denied():
     event = MutationEventContext(
         correlation_id=uuid.uuid7(),
         causation_id=uuid.uuid7(),
-        actor_principal_id=uuid.uuid7(),
-        effective_actor_id=uuid.uuid7(),
+        actor_principal_id=principal_id,
+        effective_actor_id=principal_id,
     )
     with pytest.raises(InvalidContentRequest):
         service.append(
-            uuid.uuid7(),
-            uuid.uuid7(),
-            content_id=ContentId.generate(),
+            tenant_id,
+            principal_id,
+            content_id=content_id,
             expected_aggregate_revision=AggregateRevision(0),
             payload=_worksheet_v2_payload(),
             authoring_class_ref="   ",
@@ -631,8 +674,9 @@ def test_guarded_append_blank_authoring_class_ref_denied():
             audit_provenance=__import__(
                 "aieos.domains.content.application.audit",
                 fromlist=["api_mutation_audit_provenance"],
-            ).api_mutation_audit_provenance(uuid.uuid7()),
+            ).api_mutation_audit_provenance(principal_id),
         )
+    uow.idempotency.acquire_scope.assert_not_called()
 
 
 def test_guarded_append_authorized_actor_still_gets_payload_validation_error():
@@ -706,3 +750,163 @@ def test_guarded_append_authorized_actor_still_gets_payload_validation_error():
                 fromlist=["api_mutation_audit_provenance"],
             ).api_mutation_audit_provenance(principal_id),
         )
+
+
+def _guarded_append_fixture(
+    *,
+    owner_id: uuid.UUID,
+    caller_id: uuid.UUID,
+    tenant_id: uuid.UUID | None = None,
+    content_visible: bool = True,
+) -> tuple[AppendWorksheetLearnerHintsContentVersionService, MagicMock, AllowAIGenerationAuthorization, ContentId, uuid.UUID]:
+    tenant_id = tenant_id or uuid.uuid7()
+    content_id = ContentId.generate()
+    uow = MagicMock()
+    uow.idempotency.get.return_value = None
+    from aieos.domains.content.application.models import LockedContentHead
+    from aieos.domains.content.domain.content import Content, ContentType
+    from aieos.domains.content.domain.states import StewardshipState
+
+    now = datetime.now(UTC)
+    if content_visible:
+        uow.contents.get_head_for_update.return_value = LockedContentHead(
+            tenant_id=tenant_id,
+            content_id=content_id,
+            aggregate_revision=AggregateRevision(0),
+            current_version_id=None,
+            current_version_number=None,
+            published_version_id=None,
+            stewardship_state=StewardshipState.DRAFT.value,
+            content_type="worksheet",
+        )
+        uow.contents.get.return_value = Content(
+            content_id=content_id,
+            tenant_id=tenant_id,
+            owner_principal_id=owner_id,
+            content_type=ContentType("worksheet"),
+            title="Fractions",
+            description="",
+            locale="en-IN",
+            stewardship_state=StewardshipState.DRAFT,
+            current_version_id=None,
+            published_version_id=None,
+            aggregate_revision=AggregateRevision(0),
+            created_at=now,
+            created_by_principal_id=owner_id,
+            updated_at=now,
+            archived_at=None,
+        )
+    else:
+        uow.contents.get_head_for_update.return_value = None
+        uow.contents.get.return_value = None
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value = uow
+    factory.return_value.__exit__.return_value = None
+    auth = AllowAIGenerationAuthorization()
+    service = AppendWorksheetLearnerHintsContentVersionService(
+        factory,
+        build_preparation_content_schema_registry(),
+        AllowAssetReferenceValidation(),
+        auth,
+        StubHumanClassification(),
+        StubClassAuthority(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+    )
+    return service, uow, auth, content_id, tenant_id
+
+
+def test_guarded_append_invisible_content_conceals_without_kernel_or_idempotency():
+    owner_id = uuid.uuid7()
+    caller_id = uuid.uuid7()
+    service, uow, auth, content_id, tenant_id = _guarded_append_fixture(
+        owner_id=owner_id,
+        caller_id=caller_id,
+        content_visible=False,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=caller_id,
+        effective_actor_id=caller_id,
+    )
+    with pytest.raises(ContentNotFound):
+        service.append(
+            tenant_id,
+            caller_id,
+            content_id=content_id,
+            expected_aggregate_revision=AggregateRevision(0),
+            payload=_worksheet_v2_payload(),
+            authoring_class_ref="class-a",
+            idempotency_key=f"hidden-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(caller_id),
+        )
+    assert auth.calls == []
+    uow.idempotency.acquire_scope.assert_not_called()
+
+
+def test_guarded_append_effective_actor_mismatch_denied_even_when_owner_matches_principal():
+    owner_id = uuid.uuid7()
+    other_actor = uuid.uuid7()
+    service, uow, auth, content_id, tenant_id = _guarded_append_fixture(
+        owner_id=owner_id,
+        caller_id=owner_id,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=owner_id,
+        effective_actor_id=other_actor,
+    )
+    with pytest.raises(InvalidContentRequest):
+        service.append(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            expected_aggregate_revision=AggregateRevision(0),
+            payload=_worksheet_v2_payload(),
+            authoring_class_ref="class-a",
+            idempotency_key=f"eff-mismatch-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(owner_id),
+        )
+    assert auth.calls == [(owner_id, CONTENT_VERSION_CREATE)]
+    uow.idempotency.acquire_scope.assert_not_called()
+
+
+def test_guarded_append_distinct_effective_owner_not_auto_authorized_for_intruder():
+    owner_id = uuid.uuid7()
+    intruder_id = uuid.uuid7()
+    service, uow, auth, content_id, tenant_id = _guarded_append_fixture(
+        owner_id=owner_id,
+        caller_id=intruder_id,
+    )
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=intruder_id,
+        effective_actor_id=owner_id,
+    )
+    with pytest.raises(InvalidContentRequest):
+        service.append(
+            tenant_id,
+            intruder_id,
+            content_id=content_id,
+            expected_aggregate_revision=AggregateRevision(0),
+            payload=_worksheet_v2_payload(),
+            authoring_class_ref="class-a",
+            idempotency_key=f"spoof-eff-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=__import__(
+                "aieos.domains.content.application.audit",
+                fromlist=["api_mutation_audit_provenance"],
+            ).api_mutation_audit_provenance(intruder_id),
+        )
+    assert auth.calls == [(intruder_id, CONTENT_VERSION_CREATE)]
+    uow.idempotency.acquire_scope.assert_not_called()
