@@ -55,8 +55,6 @@ class TestA360s010002Static:
         assert "ALTER TABLE teaching." not in sql
         assert "ALTER TABLE content." not in sql
         assert "DROP TABLE" not in sql
-        names = [path.name for path in MIGRATIONS.glob("a360s010005*.py")]
-        assert names == []
 
     def test_r1_30_33_learning_actions_added_and_existing_vocab_retained(self) -> None:
         sql = I03_MIGRATION.read_text(encoding="utf-8")

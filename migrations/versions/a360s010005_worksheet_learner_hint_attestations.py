@@ -412,6 +412,7 @@ def downgrade() -> None:
     security_owner = _require_role(
         SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
     )
+    op.execute(f"SET LOCAL ROLE {content_owner}")
     bind = op.get_bind()
     attestation_count = bind.execute(
         text(
@@ -420,6 +421,7 @@ def downgrade() -> None:
     ).scalar_one()
     if int(attestation_count) > 0:
         raise RuntimeError(_DOWNGRADE_BLOCKED)
+    op.execute(f"SET LOCAL ROLE {security_owner}")
     audit_count = bind.execute(
         text(
             """
@@ -431,6 +433,7 @@ def downgrade() -> None:
     ).scalar_one()
     if int(audit_count) > 0:
         raise RuntimeError(_DOWNGRADE_BLOCKED)
+    op.execute(f"SET LOCAL ROLE {content_owner}")
     op.execute(
         "DROP TABLE IF EXISTS content.worksheet_learner_hint_version_attestations"
     )
