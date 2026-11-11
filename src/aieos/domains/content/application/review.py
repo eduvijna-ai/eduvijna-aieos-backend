@@ -82,6 +82,9 @@ from aieos.platform.workflows.identities import (
     WorkflowStartIntentId,
 )
 from aieos.platform.workflows.models import WorkflowCommandIntent, WorkflowStartIntent
+from aieos.domains.content.application.worksheet_hint_interlock import (
+    enforce_worksheet_hint_review_interlock,
+)
 from aieos.platform.security.audit import SecurityAuditAction
 
 _FROZEN_SUBMIT_STATE = StewardshipState.IN_REVIEW.value
@@ -431,6 +434,9 @@ class ReviewCommandService:
             if existing is not None:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise IdempotencyKeyReused("idempotency key already bound")
+                if decision is ReviewDecisionCode.APPROVE:
+                    version_row = _require_visible_version(uow, content_id, version_id)
+                    enforce_worksheet_hint_review_interlock(version_row)
                 return self._replay_decision(uow, existing, frozen_state)
             self._comment_policy.evaluate(text)
             stored, revision = self._decide_new(
@@ -532,12 +538,14 @@ class ReviewCommandService:
         head = uow.contents.get_head_for_update(content_id)
         if head is None or head.tenant_id != execution_tenant_id:
             raise ContentNotFound("Content is not visible in the execution tenant")
-        _require_visible_version(uow, content_id, version_id)
+        version_row = _require_visible_version(uow, content_id, version_id)
         if head.aggregate_revision != expected_aggregate_revision:
             raise AggregateRevisionConflict(
                 "expected aggregate_revision does not match stored head"
             )
         _require_current(head, version_id)
+        if decision is ReviewDecisionCode.APPROVE:
+            enforce_worksheet_hint_review_interlock(version_row)
         if head.stewardship_state != StewardshipState.IN_REVIEW.value:
             raise ReviewDecisionNotAllowed(
                 "review decision is not allowed in the current stewardship state"

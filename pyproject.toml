@@ -77,6 +77,7 @@ markers = [
     "postgres_candidate_authority: disposable PostgreSQL 18 candidate-authority acceptance",
     "ped_i11: Production EVENT dispatcher runtime source (ADR-AIEOS-045/046)",
     "ped_i12: Production WORKFLOW dispatcher runtime source (ADR-AIEOS-045/047)",
+    "aieos_v1_hint_t1: ADR-063 worksheet@2 schema, generic bypass, guarded append (PK-HINT-A)",
     "tos_dev02: Teaching Work durable aggregate and Today's Mission projection",
     "tos_dev03: Real AI worksheet generation via Model Gateway and Educational Quality",
     "tos_dev03r1: TOS-DEV03R1 work fence, lease recovery, and materialization uniqueness",

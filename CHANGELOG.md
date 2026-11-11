@@ -9,6 +9,31 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T1-I01R3 (PK-HINT-A) — ADR-063 §7.2 tenant-visible Content before
+  AuthorizationKernel `content.version.create`, trusted `effective_actor_id` aligned
+  with owner and durable provenance, class-ref validation after authority gates, and
+  adversarial concealment / actor-mismatch regression tests.
+
+- AIEOS-V1-HINT-T1-I01R2 (PK-HINT-A) — ADR-063 §7.2 guarded-append check order
+  (human/tenant/capability/owner/ClassRef before payload validation and
+  idempotency), review/publish idempotent replay interlock for hint-bearing
+  worksheet@2, HTTP generic bypass matrix tests, and exact v2 audit/idempotency
+  PostgreSQL acceptance proofs.
+
+- AIEOS-V1-HINT-T1-I01R1 (PK-HINT-A) — Security corrections on worksheet@2
+  guarded append: reject explicit `learner_hint: null`, re-check capability/owner/ClassRef
+  before idempotent replay, persist normalized hints and human provenance
+  (`authoring_class_ref`), expanded grade vocabulary hard-block, PostgreSQL/service
+  regression tests for guarded append, generic bypass, and APPROVE/publish interlock,
+  and Content application pydantic-boundary plus SAI-I05 mutation inventory wiring.
+
+- AIEOS-V1-HINT-T1-I01 (PK-HINT-A) — `education.worksheet@2` typed schema with
+  optional per-question `learner_hint`, generic `HttpAppendContentVersionService`
+  §7.5 hint-key presence fail-close before idempotency, guarded
+  `AppendWorksheetLearnerHintsContentVersionService`, and fail-closed APPROVE/publish
+  interlock pending ADR-063 §5.3 attestation (T2). No public HTTP route, OpenAPI, or
+  migration change. Student/Assessment `@2` consumption unchanged.
+
 - AIEOS360-S04-I02 — Integrate the I01 coherent NON_PRODUCTION School Context
   provider into canonical local API composition. `ApiRuntimeDependencies`
   optionally carries Teacher class and Learning membership readers and forwards

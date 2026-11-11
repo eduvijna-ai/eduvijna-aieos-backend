@@ -51,6 +51,9 @@ from aieos.platform.events.content_events import published_outbox
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.idempotency.hashing import fingerprint_material, hash_idempotency_key
 from aieos.platform.idempotency.models import CONTENT_PUBLISH_V1, IdempotencyOutcome, IdempotencyScope
+from aieos.domains.content.application.worksheet_hint_interlock import (
+    enforce_worksheet_hint_publish_interlock,
+)
 from aieos.platform.security.audit import SecurityAuditAction
 
 
@@ -131,6 +134,9 @@ class PublishContentService:
             if existing is not None:
                 if existing.request_fingerprint_sha256 != fingerprint:
                     raise IdempotencyKeyReused("idempotency key already bound")
+                version = uow.versions.get(version_id)
+                if version is not None and version.content_id == content_id:
+                    enforce_worksheet_hint_publish_interlock(version)
                 return self._replay(uow, existing)
             result = self._publish_new(
                 uow,
@@ -235,6 +241,7 @@ class PublishContentService:
             raise PublicationNotAllowed(
                 "publish requires APPROVED stewardship state"
             )
+        enforce_worksheet_hint_publish_interlock(version)
         decision = uow.reviews.get_for_version(content_id, version_id)
         if decision is None or decision.decision is not ReviewDecisionCode.APPROVE:
             raise PublicationApprovalRequired(

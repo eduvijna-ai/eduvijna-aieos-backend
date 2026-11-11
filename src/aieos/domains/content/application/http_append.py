@@ -47,6 +47,10 @@ from aieos.domains.content.domain.identities import (
 from aieos.domains.content.domain.origin import ContentOrigin
 from aieos.domains.content.domain.schema import ContentSchemaRegistry, SchemaId, SchemaVersion
 from aieos.domains.content.domain.version import ContentPayload, ContentVersion
+from aieos.domains.education.worksheet_hint_safety import (
+    LearnerHintValidationError,
+    assert_generic_worksheet_v2_hint_append_forbidden,
+)
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.idempotency.hashing import fingerprint_material, hash_idempotency_key
 from aieos.platform.idempotency.models import (
@@ -93,6 +97,14 @@ class HttpAppendContentVersionService:
         raw_asset_refs: list[Mapping[str, Any]] = (
             [] if asset_refs is None else list(asset_refs)
         )
+        try:
+            assert_generic_worksheet_v2_hint_append_forbidden(
+                schema_id=schema_id,
+                schema_version=schema_version,
+                payload=payload,
+            )
+        except LearnerHintValidationError as exc:
+            raise ContentPayloadInvalid("payload failed schema validation") from exc
         fingerprint = fingerprint_material(
             {
                 "content_id": str(content_id),
