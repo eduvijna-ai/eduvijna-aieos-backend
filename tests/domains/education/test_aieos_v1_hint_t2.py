@@ -62,16 +62,6 @@ pytestmark = pytest.mark.aieos_v1_hint_t2
 FIXED_HINT = "Think about equivalent fractions."
 
 
-@pytest.fixture(autouse=True)
-def _clear_hint_attestation_evidence_after_test(request, bootstrap_engine) -> None:
-    yield
-    if "bootstrap_engine" not in request.fixturenames:
-        return
-    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
-
-    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
-
-
 def _positive_outcomes(question_ids: list[str]) -> list[dict[str, object]]:
     return [
         {

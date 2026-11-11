@@ -333,28 +333,30 @@ class TestMigrationGraph:
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
         clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
-        command.downgrade(cfg, "pedi090001")
-        insp = inspect(bootstrap_engine)
-        schemas = set(insp.get_schema_names())
-        assert "asset" not in schemas
-        assert "content" in schemas
-        assert "security" in schemas
-        assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES
-        assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES
-        with bootstrap_engine.connect() as conn:
-            assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "pedi090001"
-            )
-        command.upgrade(cfg, "head")
-        provision_runtime_grants(bootstrap_engine)
+        try:
+            command.downgrade(cfg, "pedi090001")
+            insp = inspect(bootstrap_engine)
+            schemas = set(insp.get_schema_names())
+            assert "asset" not in schemas
+            assert "content" in schemas
+            assert "security" in schemas
+            assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES
+            assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES
+            with bootstrap_engine.connect() as conn:
+                assert (
+                    conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                    == "pedi090001"
+                )
+        finally:
+            command.upgrade(cfg, "head")
+            provision_runtime_grants(bootstrap_engine)
         insp = inspect(bootstrap_engine)
         assert "asset" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="asset")) == set(ASSET_TABLES)
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010005"
+                == EXPECTED_ALEMBIC_HEAD
             )
 
 

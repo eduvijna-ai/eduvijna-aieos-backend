@@ -440,7 +440,7 @@ class TestReviewPublishInterlockServices:
             idempotency_retention=IDEMPOTENCY_RETENTION,
             principal_classification=StubHumanClassification(),
         )
-        with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+        with pytest.raises(WorksheetLearnerHintAttestationRequired):
             publish.publish(
                 tenant_id,
                 principal_id,
@@ -598,7 +598,7 @@ class TestReviewPublishInterlockServices:
             idempotency_retention=IDEMPOTENCY_RETENTION,
             principal_classification=StubHumanClassification(),
         )
-        with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+        with pytest.raises(WorksheetLearnerHintAttestationRequired):
             publish.publish(
                 tenant_id,
                 principal_id,
