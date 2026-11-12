@@ -11,6 +11,7 @@ from aieos.domains.learning.api.v1.dependencies import (
     cursor_codec,
     get_attempt_service,
     get_current_assignment_service,
+    get_learner_hints_service,
     get_student_home_service,
     list_current_assignments_service,
     resolve_trusted_context,
@@ -22,6 +23,8 @@ from aieos.domains.learning.api.v1.models import (
     AttemptResponse,
     AttemptResponseItemResponse,
     AttemptResponsesReplaceRequest,
+    LearnerHintItemResponse,
+    LearnerHintsResponse,
     LearnerObjectiveResponse,
     LearnerQuestionResponse,
     LearnerResourceResponse,
@@ -39,6 +42,7 @@ from aieos.domains.learning.application.current_assignments import (
 )
 from aieos.domains.learning.application.errors import InvalidLearnerRequest
 from aieos.domains.learning.application.get_attempt import GetAttemptService
+from aieos.domains.learning.application.get_learner_hints import GetLearnerHintsService
 from aieos.domains.learning.application.models import (
     AttemptReadModel,
     LearnerResource,
@@ -286,6 +290,30 @@ def learning_attempt_get(
     model = service.get(context.tenant_id, context.principal_id, attempt_id)
     response.headers["ETag"] = encode_revision_etag(int(model.aggregate_revision))
     return _attempt_response(model)
+
+
+@router.get(
+    "/learning/attempts/{attempt_id}/learner-hints",
+    response_model=LearnerHintsResponse,
+    operation_id="learning_attempt_learner_hints_get",
+    responses=_GET_RESPONSES,
+)
+def learning_attempt_learner_hints_get(
+    attempt_id: UUID,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[GetLearnerHintsService, Depends(get_learner_hints_service)],
+) -> LearnerHintsResponse:
+    model = service.get(context.tenant_id, context.principal_id, attempt_id)
+    return LearnerHintsResponse(
+        attempt_id=model.attempt_id,
+        content_version_id=model.content_version_id,
+        hints=[
+            LearnerHintItemResponse(
+                question_id=item.question_id, hint_text=item.hint_text
+            )
+            for item in model.hints
+        ],
+    )
 
 
 @router.put(

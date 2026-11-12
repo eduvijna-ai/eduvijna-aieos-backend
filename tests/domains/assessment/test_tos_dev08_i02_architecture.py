@@ -124,7 +124,7 @@ class TestI02ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-    "4042FB2725DA70A02A70EE09563B7698AE2E5DA82927614CAF1B5F7E6AA7C1D0"
+    "E8DEE8E2110BF42FA1405745BFA0EB1475406E9D39AAD7CAE1078DD617699C7E"
         )
         schema = OPENAPI.read_text(encoding="utf-8")
         assert "/api/v1/assessment/classroom-assessments" in schema

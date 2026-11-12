@@ -181,6 +181,8 @@ from aieos.domains.learning.application.current_assignments import (
     ListCurrentAssignmentsService,
 )
 from aieos.domains.learning.application.get_attempt import GetAttemptService
+from aieos.domains.learning.application.get_learner_hints import GetLearnerHintsService
+from aieos.domains.learning.api.cache_control import LearnerHintsCacheControlMiddleware
 from aieos.domains.learning.application.learner_membership import (
     SchoolContextLearnerMembershipAuthorityService,
     SchoolContextLearnerMembershipReader,
@@ -355,6 +357,7 @@ def create_app(
         redoc_url=None,
     )
     install_exception_handlers(app)
+    app.add_middleware(LearnerHintsCacheControlMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.include_router(content_v1_router)
     app.include_router(teaching_v1_router)
@@ -734,6 +737,11 @@ def create_app(
             membership_authority,
             classification,
         )
+        app.state.get_learner_hints_service = GetLearnerHintsService(
+            student_uow_factory,
+            membership_authority,
+            classification,
+        )
     else:
         app.state.list_current_assignments_service = None
         app.state.get_current_assignment_service = None
@@ -742,6 +750,7 @@ def create_app(
         app.state.save_responses_service = None
         app.state.submit_attempt_service = None
         app.state.get_attempt_service = None
+        app.state.get_learner_hints_service = None
 
     app.state.get_principal_school_intelligence_service = (
         GetPrincipalSchoolIntelligenceService(

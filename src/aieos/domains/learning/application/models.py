@@ -22,6 +22,12 @@ ASSIGNMENT_LIFECYCLE_CANCELLED = "CANCELLED"
 
 
 @dataclass(frozen=True, slots=True)
+class LearnerHintItem:
+    question_id: str
+    hint_text: str
+
+
+@dataclass(frozen=True, slots=True)
 class LearnerObjective:
     id: str
     text: str

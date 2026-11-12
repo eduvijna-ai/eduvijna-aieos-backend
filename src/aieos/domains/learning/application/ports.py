@@ -13,6 +13,7 @@ from aieos.domains.learning.application.models import (
 )
 from aieos.domains.learning.domain.attempt import LearnerAttempt
 from aieos.domains.learning.domain.identities import AggregateRevision, AttemptId
+from aieos.domains.learning.application.models import LearnerHintItem
 from aieos.domains.learning.domain.response_item import AttemptResponseItem
 from aieos.domains.learning.domain.submission import LearnerSubmission
 from aieos.platform.events.ports import OutboxRepository
@@ -83,6 +84,10 @@ class StudentLearningCommandUnitOfWork(Protocol):
     def load_exact_assigned_content(
         self, content_id: UUID, content_version_id: UUID
     ) -> ExactAssignedContent | None: ...
+
+    def load_governed_worksheet_learner_hints(
+        self, content_id: UUID, content_version_id: UUID
+    ) -> tuple[LearnerHintItem, ...]: ...
 
     def persist_working_response_save(
         self,
