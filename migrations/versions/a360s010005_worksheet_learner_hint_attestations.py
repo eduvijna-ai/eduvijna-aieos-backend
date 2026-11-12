@@ -12,7 +12,10 @@ import re
 from collections.abc import Sequence
 
 from alembic import op
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
+
+_PREDECESSOR_REVISION = "a360s010004"
 
 revision: str = "a360s010005"
 down_revision: str | None = "a360s010004"
@@ -28,6 +31,34 @@ _ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 _DOWNGRADE_BLOCKED = (
     "PK-V1-HINT-T2 downgrade refused: worksheet learner hint attestation evidence exists"
 )
+
+
+def _predecessor_upgrade_audit_statements() -> tuple[str, ...]:
+    """Load ``a360s010004`` audit CHECK SQL via Alembic's revision graph (CLI-safe)."""
+    migrate_context = op.get_context()
+    script = ScriptDirectory.from_config(migrate_context.config)
+    current = script.get_revision(revision)
+    if current is None:
+        raise RuntimeError(
+            f"PK-V1-HINT-T2: migration {revision!r} missing from Alembic script directory"
+        )
+    if current.down_revision != _PREDECESSOR_REVISION:
+        raise RuntimeError(
+            f"PK-V1-HINT-T2: expected down_revision {_PREDECESSOR_REVISION!r}, "
+            f"got {current.down_revision!r}"
+        )
+    pred = script.get_revision(_PREDECESSOR_REVISION)
+    if pred is None:
+        raise RuntimeError(
+            f"PK-V1-HINT-T2: predecessor revision {_PREDECESSOR_REVISION!r} not found"
+        )
+    pred_module = pred.module
+    statements = getattr(pred_module, "UPGRADE_AUDIT_STATEMENTS", None)
+    if not statements:
+        raise RuntimeError(
+            "PK-V1-HINT-T2: a360s010004 UPGRADE_AUDIT_STATEMENTS missing or empty"
+        )
+    return tuple(statements)
 
 _CONTENT_ACTIONS_SQL = """
                     'content.create',
@@ -445,9 +476,7 @@ def downgrade() -> None:
     op.execute(
         "DROP FUNCTION IF EXISTS content.validate_worksheet_hint_per_question_outcomes(jsonb)"
     )
-    from migrations.versions import a360s010004_learner_evaluation_audit_vocab as prev
-
     op.execute(f"SET LOCAL ROLE {security_owner}")
-    for statement in prev.UPGRADE_AUDIT_STATEMENTS:
+    for statement in _predecessor_upgrade_audit_statements():
         op.execute(statement)
     op.execute(f"SET LOCAL ROLE {content_owner}")
