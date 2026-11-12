@@ -34,11 +34,14 @@ from aieos.domains.education.schema import (
     WORKSHEET_CONTENT_TYPE,
     WORKSHEET_SCHEMA_ID,
     WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
 )
 from aieos.domains.education.worksheet_v1 import WorksheetV1
+from aieos.domains.education.worksheet_v2 import WorksheetV2
 
 _SUPPORTED: dict[tuple[str, str, int], object] = {
     (WORKSHEET_CONTENT_TYPE, WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION): WorksheetV1,
+    (WORKSHEET_CONTENT_TYPE, WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2): WorksheetV2,
     (QUIZ_CONTENT_TYPE, QUIZ_SCHEMA_ID, QUIZ_SCHEMA_VERSION): QuizV1,
     (HOMEWORK_CONTENT_TYPE, HOMEWORK_SCHEMA_ID, HOMEWORK_SCHEMA_VERSION): HomeworkV1,
 }
