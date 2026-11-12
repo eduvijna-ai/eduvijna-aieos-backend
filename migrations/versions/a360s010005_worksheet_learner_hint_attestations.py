@@ -455,6 +455,7 @@ def downgrade() -> None:
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(f"SET LOCAL ROLE {security_owner}")
+    op.execute("ALTER TABLE security.audit_records DISABLE ROW LEVEL SECURITY")
     audit_count = bind.execute(
         text(
             """
@@ -464,7 +465,9 @@ def downgrade() -> None:
             """
         )
     ).scalar_one()
+    op.execute("ALTER TABLE security.audit_records ENABLE ROW LEVEL SECURITY")
     if int(audit_count) > 0:
+        op.execute(f"SET LOCAL ROLE {content_owner}")
         raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(f"SET LOCAL ROLE {content_owner}")
     op.execute(

@@ -19,3 +19,4 @@ Backend-only semantic QA + immutable `WorksheetLearnerHintVersionAttestationV1` 
 - Idempotent attestation replay re-loads the version-bound attestation record (no typed idempotency result column)
 - FLAG heuristics are deterministic placeholders; they do not prove semantic pedagogical safety
 - R3: `provision_runtime_grants` applies T2 attestation `SELECT`/`INSERT` only when the table exists; at forward Alembic head the table must exist or grant provisioning fails closed
+- R5: T2 `downgrade()` temporarily disables `security.audit_records` RLS under the Security schema-owner role so the audit-evidence guard can see rows (FORCE RLS has no SELECT policy); RLS is re-enabled before fail-closed rollback or DROP

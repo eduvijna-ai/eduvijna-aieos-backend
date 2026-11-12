@@ -707,3 +707,233 @@ class TestR3GrantProvisioningRegression:
                 ),
                 {"role": RUNTIME_USER},
             ).scalar_one() is False
+
+
+_T2_DOWNGRADE_BLOCKED = (
+    "PK-V1-HINT-T2 downgrade refused: worksheet learner hint attestation evidence exists"
+)
+
+
+def _insert_worksheet_hint_attest_audit(
+    migration_runtime_engine, *, tenant_id: uuid.UUID
+) -> None:
+    from datetime import UTC, datetime
+
+    from aieos.platform.events.models import MutationEventContext
+    from aieos.platform.resources import ResourceRef
+    from aieos.platform.security.audit import (
+        SecurityAuditAction,
+        SecurityAuditExecutionChannel,
+        build_security_mutation_audit_record,
+    )
+    from aieos.platform.security.audit.persistence import (
+        SqlAlchemySecurityMutationAuditRepository,
+    )
+    from tests.dbutil import set_tenant
+
+    rev = 3
+    event = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=uuid.uuid7(),
+        effective_actor_id=uuid.uuid7(),
+    )
+    record = build_security_mutation_audit_record(
+        tenant_id=tenant_id,
+        action=SecurityAuditAction.CONTENT_WORKSHEET_HINT_ATTEST,
+        primary_resource_ref=ResourceRef("content.content", uuid.uuid7(), rev),
+        resource_revision_before=rev,
+        resource_revision_after=rev,
+        related_resource_refs=(
+            ResourceRef("content.content_version", uuid.uuid7(), 1),
+            ResourceRef("content.worksheet_hint_attestation", uuid.uuid7(), 0),
+        ),
+        mutation_event_context=event,
+        executing_principal_id=uuid.uuid7(),
+        execution_channel=SecurityAuditExecutionChannel.API,
+        occurred_at=datetime(2026, 8, 15, 6, 0, tzinfo=UTC),
+        trace_id="b" * 31 + "2",
+    )
+    with migration_runtime_engine.begin() as conn:
+        set_tenant(conn, tenant_id)
+        SqlAlchemySecurityMutationAuditRepository(conn).insert(record)
+
+
+class TestR5HintT2DowngradeEvidenceGuards:
+    """R5-F1: explicit T2 downgrade blocked on attestation and audit-only evidence."""
+
+    def test_empty_downgrade_and_reupgrade(
+        self, postgres18, bootstrap_engine
+    ) -> None:
+        from alembic import command
+
+        from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+        from tests.conftest import alembic_config, provision_runtime_grants
+        from tests.dbutil import (
+            clear_asset_audit_rows_for_schema_downgrade,
+            worksheet_hint_attestation_table_exists,
+        )
+
+        cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        command.downgrade(cfg, "a360s010004")
+        with bootstrap_engine.connect() as conn:
+            assert not worksheet_hint_attestation_table_exists(conn)
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == "a360s010004"
+            )
+        command.upgrade(cfg, "head")
+        provision_runtime_grants(bootstrap_engine)
+        with bootstrap_engine.connect() as conn:
+            assert worksheet_hint_attestation_table_exists(conn)
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == EXPECTED_ALEMBIC_HEAD
+            )
+
+    def test_nonempty_attestation_downgrade_refused(
+        self, postgres18, bootstrap_engine, runtime_engine
+    ) -> None:
+        from alembic import command
+
+        from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+        from tests.conftest import alembic_config, provision_runtime_grants
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        author_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        content_id = _seed_worksheet_content(
+            bootstrap_engine, tenant_id=tenant_id, owner_principal_id=author_id
+        )
+        _, rev_after_v1 = _append_v1(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            content_id=content_id,
+        )
+        version_read, _revision = _guarded_service(runtime_engine).append(
+            tenant_id,
+            author_id,
+            content_id=content_id,
+            expected_aggregate_revision=rev_after_v1,
+            payload=_worksheet_v2_payload(hint=FIXED_HINT),
+            authoring_class_ref="class-5a",
+            idempotency_key=f"r5-attest-{uuid.uuid7()}",
+            event_context=_event_context(author_id),
+            audit_provenance=api_mutation_audit_provenance(author_id),
+            now=FIXED_NOW,
+        )
+        outcomes = _positive_outcomes(
+            _hinted_ids_from_version(runtime_engine, tenant_id, version_read.version_id)
+        )
+        with runtime_engine.begin() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO content.worksheet_learner_hint_version_attestations (
+                        attestation_id, tenant_id, content_id, version_id,
+                        payload_digest, qa_policy_version, author_principal_id,
+                        reviewer_principal_id, per_question_outcomes, attested_at,
+                        correlation_id
+                    ) VALUES (
+                        :aid, :tid, :cid, :vid, :digest, 'O63-03-v1',
+                        :author, :reviewer,
+                        CAST(:outcomes AS jsonb), :now, :corr
+                    )
+                    """
+                ),
+                {
+                    "aid": uuid.uuid7(),
+                    "tid": tenant_id,
+                    "cid": content_id.value,
+                    "vid": version_read.version_id.value,
+                    "digest": "b" * 64,
+                    "author": author_id,
+                    "reviewer": reviewer_id,
+                    "outcomes": json.dumps(outcomes),
+                    "now": FIXED_NOW,
+                    "corr": uuid.uuid7(),
+                },
+            )
+        cfg = alembic_config(postgres18["migrator_url"])
+        with pytest.raises(RuntimeError, match=_T2_DOWNGRADE_BLOCKED):
+            command.downgrade(cfg, "a360s010004")
+        with bootstrap_engine.connect() as conn:
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == EXPECTED_ALEMBIC_HEAD
+            )
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM content.worksheet_learner_hint_version_attestations"
+                    )
+                ).scalar_one()
+                == 1
+            )
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        command.upgrade(cfg, "head")
+        provision_runtime_grants(bootstrap_engine)
+
+    def test_audit_only_downgrade_refused(
+        self,
+        postgres18,
+        bootstrap_engine,
+        migration_runtime_engine,
+    ) -> None:
+        from alembic import command
+
+        from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+        from tests.conftest import alembic_config, provision_runtime_grants
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        _insert_worksheet_hint_attest_audit(
+            migration_runtime_engine, tenant_id=tenant_id
+        )
+        with bootstrap_engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM content.worksheet_learner_hint_version_attestations"
+                    )
+                ).scalar_one()
+                == 0
+            )
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM security.audit_records "
+                        "WHERE action = 'content.worksheet_hint.attest'"
+                    )
+                ).scalar_one()
+                == 1
+            )
+        cfg = alembic_config(postgres18["migrator_url"])
+        with pytest.raises(RuntimeError, match=_T2_DOWNGRADE_BLOCKED):
+            command.downgrade(cfg, "a360s010004")
+        with bootstrap_engine.connect() as conn:
+            assert (
+                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == EXPECTED_ALEMBIC_HEAD
+            )
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM security.audit_records "
+                        "WHERE action = 'content.worksheet_hint.attest'"
+                    )
+                ).scalar_one()
+                == 1
+            )
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+        command.upgrade(cfg, "head")
+        provision_runtime_grants(bootstrap_engine)
