@@ -25,6 +25,7 @@ from aieos.platform.security.authorization.assessment_adapters import (
     AIEOS_ASSESSMENT_CAPABILITIES as ADAPTER_CAPABILITIES,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i05_b2
 
@@ -114,11 +115,11 @@ class TestB2ArchitectureGuards:
         assert "roster" not in text.lower()
 
     def test_64_65_66_migration_identity_and_scope(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
         sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010004"' in sql
         assert 'down_revision: str | None = "a360s010003"' in sql

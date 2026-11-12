@@ -32,6 +32,7 @@ from aieos.platform.security.audit.actions import (
     is_teaching_increment_action,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev06_i03
 
@@ -79,8 +80,8 @@ class TestI03ArchitectureGuards:
         assert 'revision: str = "tosd060002"' in text_002
         assert 'down_revision: str | None = "tosd060001"' in text_002
         assert "teaching.assignment.create" in text_002
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_create_checks_idempotency_before_class_authority(self) -> None:
         source = CREATE_SERVICE.read_text(encoding="utf-8")

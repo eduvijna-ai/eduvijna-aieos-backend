@@ -12,6 +12,7 @@ from alembic.script import ScriptDirectory
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i05_b1
 
@@ -47,11 +48,11 @@ def _imports(path: Path) -> list[str]:
 
 class TestB1ArchitectureGuards:
     def test_alembic_head_and_parent(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
         sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010003"' in sql
         assert 'down_revision: str | None = "a360s010002"' in sql

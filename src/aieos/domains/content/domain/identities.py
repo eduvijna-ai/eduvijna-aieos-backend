@@ -98,6 +98,25 @@ class ReviewDecisionId:
 
 
 @dataclass(frozen=True, slots=True)
+class WorksheetLearnerHintAttestationId:
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "value",
+            _require_uuid7(self.value, label="worksheet_learner_hint_attestation_id"),
+        )
+
+    @classmethod
+    def generate(cls) -> WorksheetLearnerHintAttestationId:
+        return cls(uuid.uuid7())
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+@dataclass(frozen=True, slots=True)
 class PublicationId:
     value: UUID
 

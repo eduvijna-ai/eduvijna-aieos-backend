@@ -120,6 +120,7 @@ class TestActionsAndChannels:
             "content.publish",
             "content.ai.materialize",
             "content.migration.import",
+            "content.worksheet_hint.attest",
             "asset.create",
             "asset.revision.register",
             "asset.revision.activate",

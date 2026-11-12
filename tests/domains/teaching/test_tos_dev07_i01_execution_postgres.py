@@ -37,6 +37,7 @@ from aieos.domains.teaching.infrastructure.persistence.uow import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i01
 
@@ -156,12 +157,12 @@ def _execution(
 
 class TestMigrationAndSchema:
     def test_alembic_head_tosd070002(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"

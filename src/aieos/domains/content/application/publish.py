@@ -55,6 +55,9 @@ from aieos.domains.content.application.worksheet_hint_interlock import (
     enforce_worksheet_hint_publish_interlock,
 )
 from aieos.platform.security.audit import SecurityAuditAction
+from aieos.platform.security.authorization.principal_classification import (
+    CurrentPrincipalClassificationAuthority,
+)
 
 
 def _now(now: datetime | None) -> datetime:
@@ -86,6 +89,7 @@ class PublishContentService:
         schema_registry: ContentSchemaRegistry,
         *,
         idempotency_retention: timedelta,
+        principal_classification: CurrentPrincipalClassificationAuthority | None = None,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be a positive duration")
@@ -95,6 +99,7 @@ class PublishContentService:
         self._asset_governance = asset_governance
         self._schema_registry = schema_registry
         self._idempotency_retention = idempotency_retention
+        self._principal_classification = principal_classification
 
     def publish(
         self,
@@ -136,7 +141,13 @@ class PublishContentService:
                     raise IdempotencyKeyReused("idempotency key already bound")
                 version = uow.versions.get(version_id)
                 if version is not None and version.content_id == content_id:
-                    enforce_worksheet_hint_publish_interlock(version)
+                    enforce_worksheet_hint_publish_interlock(
+                        uow,
+                        version,
+                        publisher_principal_id=principal_id,
+                        principal_classification=self._principal_classification,
+                        effective_actor_id=event_context.effective_actor_id,
+                    )
                 return self._replay(uow, existing)
             result = self._publish_new(
                 uow,
@@ -241,7 +252,13 @@ class PublishContentService:
             raise PublicationNotAllowed(
                 "publish requires APPROVED stewardship state"
             )
-        enforce_worksheet_hint_publish_interlock(version)
+        enforce_worksheet_hint_publish_interlock(
+            uow,
+            version,
+            publisher_principal_id=principal_id,
+            principal_classification=self._principal_classification,
+            effective_actor_id=event_context.effective_actor_id,
+        )
         decision = uow.reviews.get_for_version(content_id, version_id)
         if decision is None or decision.decision is not ReviewDecisionCode.APPROVE:
             raise PublicationApprovalRequired(

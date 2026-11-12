@@ -15,8 +15,10 @@ from sqlalchemy.engine import Engine
 
 from tests.dbutil import (
     REPO_ROOT,
+    assert_worksheet_hint_attestation_present_at_forward_head,
     clear_asset_audit_rows_for_schema_downgrade,
     set_tenant,
+    worksheet_hint_attestation_table_exists,
 )
 
 __all__ = ["REPO_ROOT", "set_tenant"]
@@ -292,6 +294,22 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                     f"REVOKE UPDATE, DELETE ON content.review_decisions FROM {RUNTIME_USER}"
                 )
             )
+            assert_worksheet_hint_attestation_present_at_forward_head(conn)
+            if worksheet_hint_attestation_table_exists(conn):
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON "
+                        "content.worksheet_learner_hint_version_attestations "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON "
+                        "content.worksheet_learner_hint_version_attestations "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
             conn.execute(
                 text(
                     f"GRANT SELECT, INSERT ON content.publications TO {RUNTIME_USER}"

@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -19,7 +20,13 @@ from tests.conftest import (
     alembic_config,
     provision_runtime_grants,
 )
-from tests.dbutil import REPO_ROOT, clear_asset_audit_rows_for_schema_downgrade, set_tenant
+from tests.dbutil import (
+    CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION,
+    CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION,
+    REPO_ROOT,
+    clear_asset_audit_rows_for_schema_downgrade,
+    set_tenant,
+)
 
 pytestmark = pytest.mark.ped_i10b2
 
@@ -59,14 +66,8 @@ FORBIDDEN_RESOURCE_TYPES = (
     "Asset.Image",
     "asset.Image",
 )
-CONTENT_TABLES = {
-    "contents",
-    "content_versions",
-    "review_decisions",
-    "publications",
-    "version_asset_refs",
-    "migration_import_records",
-}
+CONTENT_TABLES = CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION
+CONTENT_TABLES_PRE_HINT_T2 = CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION
 SECURITY_TABLES = {
     "audit_records",
     "principals",
@@ -311,7 +312,7 @@ class TestMigrationGraph:
     def test_script_directory_single_head_and_parent(self) -> None:
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
         revision = script.get_revision("pedi10b2001")
         assert revision is not None
         assert revision.down_revision == "pedi090001"
@@ -323,7 +324,7 @@ class TestMigrationGraph:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
 
     def test_downgrade_removes_asset_keeps_content_security_then_reupgrade(
@@ -331,28 +332,30 @@ class TestMigrationGraph:
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
         clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
-        command.downgrade(cfg, "pedi090001")
-        insp = inspect(bootstrap_engine)
-        schemas = set(insp.get_schema_names())
-        assert "asset" not in schemas
-        assert "content" in schemas
-        assert "security" in schemas
-        assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES
-        assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES
-        with bootstrap_engine.connect() as conn:
-            assert (
-                conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "pedi090001"
-            )
-        command.upgrade(cfg, "head")
-        provision_runtime_grants(bootstrap_engine)
+        try:
+            command.downgrade(cfg, "pedi090001")
+            insp = inspect(bootstrap_engine)
+            schemas = set(insp.get_schema_names())
+            assert "asset" not in schemas
+            assert "content" in schemas
+            assert "security" in schemas
+            assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES_PRE_HINT_T2
+            assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES
+            with bootstrap_engine.connect() as conn:
+                assert (
+                    conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                    == "pedi090001"
+                )
+        finally:
+            command.upgrade(cfg, "head")
+            provision_runtime_grants(bootstrap_engine)
         insp = inspect(bootstrap_engine)
         assert "asset" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="asset")) == set(ASSET_TABLES)
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == EXPECTED_ALEMBIC_HEAD
             )
 
 

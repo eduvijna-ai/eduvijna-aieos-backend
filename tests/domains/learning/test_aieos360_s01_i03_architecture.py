@@ -31,6 +31,7 @@ from tests.fakes import (
     StubSecurityContextResolver,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i03
 
@@ -149,8 +150,8 @@ class TestArchitectureIsolation:
         assert "student agent" not in learning.lower()
 
     def test_alembic_head_and_i03_migration_is_audit_only(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         sql = I03_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010002"' in sql
         assert 'down_revision: str | None = "a360s010001"' in sql

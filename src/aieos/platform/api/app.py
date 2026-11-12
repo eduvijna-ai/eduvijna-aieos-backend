@@ -398,6 +398,7 @@ def create_app(
         review_authorization,
         review_comment_policy,
         idempotency_retention=idempotency_retention,
+        principal_classification=classification,
     )
     app.state.publish_content_service = PublishContentService(
         uow_factory,
@@ -406,6 +407,7 @@ def create_app(
         asset_current_governance,
         schema_registry,
         idempotency_retention=idempotency_retention,
+        principal_classification=classification,
     )
     app.state.validate_version_asset_governance_service = (
         ValidateVersionAssetGovernanceService(uow_factory, asset_current_governance)

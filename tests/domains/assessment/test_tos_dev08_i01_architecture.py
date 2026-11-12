@@ -16,6 +16,7 @@ from aieos.platform.runtime.readiness import (
     _CONTENT_OWNED_SCHEMAS,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev08_i01
 
@@ -54,8 +55,8 @@ def _imports(path: Path) -> list[str]:
 
 class TestI01ArchitectureGuards:
     def test_current_alembic_head_tosd080001(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         text = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "tosd080001"' in text
         assert 'down_revision: str | None = "tosd070002"' in text

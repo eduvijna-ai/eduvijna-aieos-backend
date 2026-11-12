@@ -9,6 +9,23 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AIEOS-V1-HINT-T2-I01R2 — Chief R2 corrections: PostgreSQL validation function
+  for attestation JSON outcomes (no CHECK subqueries), fail-closed human classification
+  on hint APPROVE/publish, stored outcome set equality, effective-actor binding,
+  idempotency replay bindings, least-privilege migration grants, downgrade audit guard,
+  forward Alembic head architecture tests, and expanded T2 PostgreSQL negatives.
+
+- AIEOS-V1-HINT-T2-I01R1 — Chief R1 corrections: principal classification import,
+  split-role audit migration choreography, runtime attestation grants, strict boolean
+  outcomes, IN_REVIEW-only attestation, version-bound idempotency replay, APPROVE/publish
+  human and reviewer alignment, and expanded hint T2 PostgreSQL proofs.
+
+- AIEOS-V1-HINT-T2-I01 (PK-V1-HINT-T2) — ADR-063 §5.3 immutable
+  `WorksheetLearnerHintVersionAttestationV1` persistence (`a360s010005`), canonical
+  schema+payload digest, `O63-03-v1` FLAG heuristics, `RecordWorksheetLearnerHintAttestationService`,
+  and evidence-gated APPROVE/publish replacing the T1 unconditional interlock. OpenAPI
+  unchanged.
+
 - AIEOS-V1-HINT-T1-I01R3 (PK-HINT-A) — ADR-063 §7.2 tenant-visible Content before
   AuthorizationKernel `content.version.create`, trusted `effective_actor_id` aligned
   with owner and durable provenance, class-ref validation after authority gates, and

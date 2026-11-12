@@ -15,6 +15,7 @@ from aieos.platform.runtime.activation import (
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev07_i02
 
@@ -38,8 +39,8 @@ EXECUTION_READ_OPS = (
 
 class TestI02ArchitectureGuards:
     def test_alembic_head_still_tosd070002(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
         )

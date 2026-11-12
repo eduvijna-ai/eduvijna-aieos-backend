@@ -20,6 +20,7 @@ from aieos.platform.security.audit.persistence.models import audit_records_table
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev06_i03
 
@@ -162,8 +163,8 @@ def _seed_assignment_row(conn, *, tenant_id: uuid.UUID) -> uuid.UUID:
 
 class TestTosd060002Migration:
     def test_head_constants_and_chain(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         text_002 = (MIGRATIONS / "tosd060002_teaching_assignment_audit.py").read_text(
             encoding="utf-8"
         )
@@ -312,7 +313,7 @@ class TestTosd060002Migration:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
         finally:
             clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)

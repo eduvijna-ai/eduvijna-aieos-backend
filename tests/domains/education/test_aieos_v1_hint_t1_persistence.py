@@ -366,6 +366,7 @@ class TestReviewPublishInterlockServices:
             AllowReviewAuthorization(),
             AllowReviewCommentPolicy(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
+            principal_classification=StubHumanClassification(),
         )
         with pytest.raises(WorksheetLearnerHintAttestationRequired):
             review.approve(
@@ -435,10 +436,11 @@ class TestReviewPublishInterlockServices:
             AllowPublicationAuthorization(),
             AllowPublicationGovernance(),
             AllowAssetCurrentGovernance(),
-            make_test_schema_registry(),
+            build_preparation_content_schema_registry(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
+            principal_classification=StubHumanClassification(),
         )
-        with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+        with pytest.raises(WorksheetLearnerHintAttestationRequired):
             publish.publish(
                 tenant_id,
                 principal_id,
@@ -592,10 +594,11 @@ class TestReviewPublishInterlockServices:
             AllowPublicationAuthorization(),
             AllowPublicationGovernance(),
             AllowAssetCurrentGovernance(),
-            make_test_schema_registry(),
+            build_preparation_content_schema_registry(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
+            principal_classification=StubHumanClassification(),
         )
-        with pytest.raises(WorksheetLearnerHintPublicationBlocked):
+        with pytest.raises(WorksheetLearnerHintAttestationRequired):
             publish.publish(
                 tenant_id,
                 principal_id,

@@ -294,8 +294,10 @@ def test_memory_audit_actions_accepted_and_downgrade_blocked_with_evidence(
     with pytest.raises(Exception):
         command.downgrade(cfg, "pedi090002")
 
+    from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
+
     with bootstrap_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "a360s010004"
+            == EXPECTED_ALEMBIC_HEAD
         )

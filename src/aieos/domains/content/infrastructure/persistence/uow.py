@@ -24,6 +24,7 @@ from aieos.domains.content.infrastructure.persistence.repositories import (
     SqlAlchemyReviewDecisionRepository,
     SqlAlchemyReviewQueueReadRepository,
     SqlAlchemyVersionAssetRefRepository,
+    SqlAlchemyWorksheetHintAttestationRepository,
 )
 from aieos.platform.api.infrastructure.persistence.repositories import (
     SqlAlchemyIdempotencyRepository,
@@ -42,6 +43,7 @@ class SqlAlchemyContentUnitOfWork:
         self._transaction: Transaction | None = None
         self.contents: SqlAlchemyContentRepository
         self.versions: SqlAlchemyContentVersionRepository
+        self.worksheet_hint_attestations: SqlAlchemyWorksheetHintAttestationRepository
         self.reviews: SqlAlchemyReviewDecisionRepository
         self.publications: SqlAlchemyPublicationRepository
         self.version_asset_refs: SqlAlchemyVersionAssetRefRepository
@@ -65,6 +67,9 @@ class SqlAlchemyContentUnitOfWork:
                 self._connection, self._execution_tenant_id
             )
             self.versions = SqlAlchemyContentVersionRepository(self._connection)
+            self.worksheet_hint_attestations = SqlAlchemyWorksheetHintAttestationRepository(
+                self._connection
+            )
             self.reviews = SqlAlchemyReviewDecisionRepository(self._connection)
             self.publications = SqlAlchemyPublicationRepository(self._connection)
             self.version_asset_refs = SqlAlchemyVersionAssetRefRepository(

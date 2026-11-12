@@ -16,6 +16,7 @@ from aieos.platform.security.audit.actions import (
     is_asset_create_action,
     is_asset_increment_action,
     is_asset_stable_registration_action,
+    is_content_stable_registration_action,
     is_content_audit_action,
     is_content_create_action,
     is_content_increment_action,
@@ -115,6 +116,16 @@ def _validate_revision_pair(
         if before is not None or after != 0:
             raise InvalidSecurityAuditError(
                 "asset.create requires before=None and after=0"
+            )
+        return
+    if is_content_stable_registration_action(action):
+        if before is None:
+            raise InvalidSecurityAuditError(
+                f"{action.value} requires a non-null resource_revision_before"
+            )
+        if after != before:
+            raise InvalidSecurityAuditError(
+                f"{action.value} requires resource_revision_after == before"
             )
         return
     if is_asset_stable_registration_action(action):

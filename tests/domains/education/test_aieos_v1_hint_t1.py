@@ -13,8 +13,8 @@ from aieos.domains.content.application.errors import (
     ContentNotFound,
     ContentPayloadInvalid,
     InvalidContentRequest,
+    WorksheetLearnerHintAttestationInvalid,
     WorksheetLearnerHintAttestationRequired,
-    WorksheetLearnerHintPublicationBlocked,
 )
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
 from aieos.domains.content.application.ports import CONTENT_VERSION_CREATE
@@ -398,10 +398,16 @@ def test_hint_interlock_blocks_review_and_publish():
         created_at=datetime.now(UTC),
         created_by_principal_id=uuid.uuid7(),
     )
-    with pytest.raises(WorksheetLearnerHintAttestationRequired):
-        enforce_worksheet_hint_review_interlock(version)
-    with pytest.raises(WorksheetLearnerHintPublicationBlocked):
-        enforce_worksheet_hint_publish_interlock(version)
+    uow = MagicMock()
+    uow.worksheet_hint_attestations.get_for_version.return_value = None
+    with pytest.raises(WorksheetLearnerHintAttestationInvalid):
+        enforce_worksheet_hint_review_interlock(
+            uow, version, reviewer_principal_id=uuid.uuid7()
+        )
+    with pytest.raises(WorksheetLearnerHintAttestationInvalid):
+        enforce_worksheet_hint_publish_interlock(
+            uow, version, publisher_principal_id=uuid.uuid7()
+        )
 
 
 def test_guarded_append_denies_non_human():

@@ -190,6 +190,48 @@ contents_table.append_constraint(
     )
 )
 
+worksheet_hint_attestations_table = Table(
+    "worksheet_learner_hint_version_attestations",
+    content_metadata,
+    Column("attestation_id", UUID(as_uuid=True), nullable=False),
+    Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    Column("content_id", UUID(as_uuid=True), nullable=False),
+    Column("version_id", UUID(as_uuid=True), nullable=False),
+    Column("payload_digest", Text, nullable=False),
+    Column("qa_policy_version", Text, nullable=False),
+    Column("author_principal_id", UUID(as_uuid=True), nullable=False),
+    Column("reviewer_principal_id", UUID(as_uuid=True), nullable=False),
+    Column("per_question_outcomes", JSONB, nullable=False),
+    Column("attested_at", DateTime(timezone=True), nullable=False),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    PrimaryKeyConstraint("attestation_id", name="pk_worksheet_hint_attestations"),
+    UniqueConstraint(
+        "tenant_id",
+        "version_id",
+        name="uq_worksheet_hint_attestations_tenant_version",
+    ),
+    CheckConstraint(
+        "payload_digest ~ '^[0-9a-f]{64}$'",
+        name="ck_worksheet_hint_attestations_payload_digest",
+    ),
+    CheckConstraint(
+        "qa_policy_version ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'",
+        name="ck_worksheet_hint_attestations_qa_policy_version",
+    ),
+    ForeignKeyConstraint(
+        ["tenant_id", "content_id", "version_id"],
+        [
+            "content.content_versions.tenant_id",
+            "content.content_versions.content_id",
+            "content.content_versions.version_id",
+        ],
+        name="fk_worksheet_hint_attestations_version",
+        ondelete="RESTRICT",
+    ),
+    Index("ix_worksheet_hint_attestations_tenant_id", "tenant_id"),
+    schema="content",
+)
+
 review_decisions_table = Table(
     "review_decisions",
     content_metadata,

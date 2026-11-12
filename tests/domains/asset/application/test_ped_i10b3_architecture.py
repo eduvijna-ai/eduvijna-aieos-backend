@@ -17,6 +17,7 @@ from aieos.domains.asset.application.reconciliation import (
 )
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.dbutil import REPO_ROOT
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.ped_i10b3
 
@@ -213,7 +214,7 @@ class TestArchitectureScope:
     def test_no_migration_and_alembic_head_unchanged(self) -> None:
         assert not any(p.name.startswith("pedi10b3") for p in MIGRATIONS.glob("*.py"))
         assert (MIGRATIONS / "pedi10b2001_asset_authority_sor.py").is_file()
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_no_asset_persistence_or_content_or_composition_change(self) -> None:
         models = (

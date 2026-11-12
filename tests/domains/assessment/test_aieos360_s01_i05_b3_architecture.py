@@ -20,6 +20,7 @@ from aieos.platform.security.authorization.assessment_adapters import (
     AIEOS_ASSESSMENT_CAPABILITIES as ADAPTER_CAPABILITIES,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i05_b3
 
@@ -59,15 +60,23 @@ class TestB3ArchitectureGuards:
         assert "assessment_assignment_intelligence" in READ_ONLY_OPERATION_IDS
 
     def test_alembic_head_unchanged(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = Config(str(REPO_ROOT / "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_heads() == ["a360s010004"]
+        assert script.get_heads() == [EXPECTED_ALEMBIC_HEAD]
 
     def test_no_persistence_migration_for_b3(self) -> None:
-        versions = REPO_ROOT / "migrations" / "versions"
-        assert not any(path.name.startswith("a360s010005") for path in versions.glob("*.py"))
+        """B3 delivery scope is audit vocabulary only at ``a360s010004``."""
+        vocab = (
+            REPO_ROOT
+            / "migrations"
+            / "versions"
+            / "a360s010004_learner_evaluation_audit_vocab.py"
+        )
+        sql = vocab.read_text(encoding="utf-8")
+        assert 'revision: str = "a360s010004"' in sql
+        assert "CREATE TABLE" not in sql
 
     def test_intelligence_service_is_read_only_composition(self) -> None:
         imports = _imports(INTELLIGENCE)

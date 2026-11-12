@@ -30,6 +30,7 @@ from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 from tools.release.common import EXPECTED_MIGRATION_HEAD
 
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 @pytest.fixture(autouse=True)
 def _clear_assessment_rows_after_test(bootstrap_engine: Engine) -> None:
@@ -110,12 +111,12 @@ def _assessment(**overrides) -> ClassroomAssessment:
 
 class TestP01P03MigrationAndShape:
     def test_p01_alembic_head_tosd080001(self, bootstrap_engine: Engine) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010004"
+                == "a360s010005"
             )
         versions = sorted(
             p.name for p in MIGRATIONS.glob("*.py") if p.name != "__init__.py"
@@ -495,7 +496,7 @@ class TestP18P19Downgrade:
                     conn.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
             with factory(tenant_id) as uow:
                 loaded = uow.classroom_assessments.get(created.assessment_id)

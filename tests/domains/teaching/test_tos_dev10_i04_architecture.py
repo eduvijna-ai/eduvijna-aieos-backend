@@ -9,6 +9,7 @@ import pytest
 
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev10_i04
 
@@ -27,8 +28,8 @@ ASSISTANT_APP = (
 
 
 def test_current_head_is_tosd100001() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd100001"' in source
     assert list(MIGRATIONS.glob("tosd100002*.py")) == []

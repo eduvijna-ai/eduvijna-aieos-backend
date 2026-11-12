@@ -32,6 +32,9 @@ from aieos.domains.content.domain.identities import (
 from aieos.domains.content.domain.publication import Publication
 from aieos.domains.content.domain.review import ReviewDecision
 from aieos.domains.content.domain.version import ContentVersion
+from aieos.domains.content.domain.worksheet_hint_attestation import (
+    WorksheetLearnerHintVersionAttestationV1,
+)
 from aieos.domains.content.domain.version_asset_ref import VersionAssetRef
 from aieos.platform.events.ports import OutboxRepository
 from aieos.platform.idempotency.ports import IdempotencyRepository
@@ -72,6 +75,14 @@ class ContentVersionRepository(Protocol):
 
 class ContentTypeCatalog(Protocol):
     def contains(self, content_type: str) -> bool: ...
+
+
+class WorksheetHintAttestationRepository(Protocol):
+    def insert(self, attestation: WorksheetLearnerHintVersionAttestationV1) -> None: ...
+
+    def get_for_version(
+        self, content_id: ContentId, version_id: ContentVersionId
+    ) -> WorksheetLearnerHintVersionAttestationV1 | None: ...
 
 
 class ReviewRepository(Protocol):
@@ -350,6 +361,7 @@ class ContentRepository(Protocol):
 class ContentUnitOfWork(Protocol):
     contents: ContentRepository
     versions: ContentVersionRepository
+    worksheet_hint_attestations: WorksheetHintAttestationRepository
     reviews: ReviewRepository
     publications: PublicationRepository
     version_asset_refs: VersionAssetRefRepository

@@ -32,6 +32,7 @@ from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.dbutil import set_tenant
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s01_i02
 
@@ -39,6 +40,12 @@ FIXED_NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = REPO_ROOT / "migrations" / "versions"
 LEARNING_TABLES = ("attempts", "attempt_response_items", "submissions")
+
+
+def _clear_hint_attestation_downgrade_blockers(bootstrap_engine: Engine) -> None:
+    from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
 
 
 def _clear_learning(bootstrap_engine: Engine) -> None:
@@ -131,9 +138,10 @@ class TestMigrationAndSchema:
     def test_i02_21_upgrade_from_tosd100001_to_a360s010001(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")
         try:
@@ -760,6 +768,7 @@ class TestDowngradeSafety:
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         _clear_learning(bootstrap_engine)
         command.downgrade(cfg, "tosd100001")
         try:
@@ -787,6 +796,7 @@ class TestDowngradeSafety:
         self, postgres18, bootstrap_engine: Engine, runtime_engine: Engine
     ) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
+        _clear_hint_attestation_downgrade_blockers(bootstrap_engine)
         tenant_id = uuid.uuid7()
         factory = SqlAlchemyLearningUnitOfWorkFactory(runtime_engine)
         created = _start(tenant_id=tenant_id)
@@ -804,7 +814,7 @@ class TestDowngradeSafety:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
             with factory(tenant_id) as uow:
                 assert uow.attempts.get(created.attempt_id) is not None

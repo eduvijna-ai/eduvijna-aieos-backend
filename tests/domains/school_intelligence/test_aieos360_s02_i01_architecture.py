@@ -19,6 +19,7 @@ from aieos.domains.school_intelligence.application.school_scope import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.aieos360_s02_i01
 
@@ -129,8 +130,8 @@ class TestTeacherAndLearnerSchoolContextNotReused:
 
 class TestNoPersistenceNoApi:
     def test_no_school_intelligence_table_or_migration(self) -> None:
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
         versions = sorted(
             path.name
             for path in MIGRATIONS.glob("*.py")

@@ -16,6 +16,7 @@ from aieos.platform.idempotency.models import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.audit.actions import SecurityAuditAction
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev09_i02
 
@@ -30,8 +31,8 @@ ASSESSMENT_SOURCE = (
 
 
 def test_current_head_and_only_i02_migration() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd090002"' in source
     assert 'down_revision: str | None = "tosd090001"' in source

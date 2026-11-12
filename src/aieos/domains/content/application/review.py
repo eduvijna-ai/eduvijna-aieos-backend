@@ -86,6 +86,9 @@ from aieos.domains.content.application.worksheet_hint_interlock import (
     enforce_worksheet_hint_review_interlock,
 )
 from aieos.platform.security.audit import SecurityAuditAction
+from aieos.platform.security.authorization.principal_classification import (
+    CurrentPrincipalClassificationAuthority,
+)
 
 _FROZEN_SUBMIT_STATE = StewardshipState.IN_REVIEW.value
 _FROZEN_APPROVE_STATE = StewardshipState.APPROVED.value
@@ -170,6 +173,7 @@ class ReviewCommandService:
         comment_policy: ReviewCommentPolicy,
         *,
         idempotency_retention: timedelta,
+        principal_classification: CurrentPrincipalClassificationAuthority | None = None,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be a positive duration")
@@ -177,6 +181,7 @@ class ReviewCommandService:
         self._authorization = authorization
         self._comment_policy = comment_policy
         self._idempotency_retention = idempotency_retention
+        self._principal_classification = principal_classification
 
     def submit(
         self,
@@ -436,7 +441,13 @@ class ReviewCommandService:
                     raise IdempotencyKeyReused("idempotency key already bound")
                 if decision is ReviewDecisionCode.APPROVE:
                     version_row = _require_visible_version(uow, content_id, version_id)
-                    enforce_worksheet_hint_review_interlock(version_row)
+                    enforce_worksheet_hint_review_interlock(
+                        uow,
+                        version_row,
+                        reviewer_principal_id=principal_id,
+                        principal_classification=self._principal_classification,
+                        effective_actor_id=event_context.effective_actor_id,
+                    )
                 return self._replay_decision(uow, existing, frozen_state)
             self._comment_policy.evaluate(text)
             stored, revision = self._decide_new(
@@ -545,7 +556,13 @@ class ReviewCommandService:
             )
         _require_current(head, version_id)
         if decision is ReviewDecisionCode.APPROVE:
-            enforce_worksheet_hint_review_interlock(version_row)
+            enforce_worksheet_hint_review_interlock(
+                uow,
+                version_row,
+                reviewer_principal_id=principal_id,
+                principal_classification=self._principal_classification,
+                effective_actor_id=event_context.effective_actor_id,
+            )
         if head.stewardship_state != StewardshipState.IN_REVIEW.value:
             raise ReviewDecisionNotAllowed(
                 "review decision is not allowed in the current stewardship state"

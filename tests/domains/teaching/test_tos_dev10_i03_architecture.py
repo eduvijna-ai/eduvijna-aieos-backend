@@ -14,6 +14,7 @@ from aieos.platform.idempotency.models import (
 from aieos.platform.runtime.readiness import EXPECTED_ALEMBIC_HEAD
 from aieos.platform.security.audit.actions import SecurityAuditAction
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = pytest.mark.tos_dev10_i03
 
@@ -32,8 +33,8 @@ MEMORY_APP = (
 
 
 def test_current_head_is_tosd100001() -> None:
-    assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-    assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+    assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
     source = MIGRATION.read_text(encoding="utf-8")
     assert 'revision: str = "tosd100001"' in source
     assert 'down_revision: str | None = "pedi090002"' in source

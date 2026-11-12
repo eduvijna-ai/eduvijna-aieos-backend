@@ -14,6 +14,7 @@ CONTENT_REVIEW_APPROVE_V1 = "content_review_approve.v1"
 CONTENT_REVIEW_REQUEST_CHANGES_V1 = "content_review_request_changes.v1"
 CONTENT_REVIEW_REJECT_V1 = "content_review_reject.v1"
 CONTENT_PUBLISH_V1 = "content_publish.v1"
+CONTENT_WORKSHEET_HINT_ATTEST_V1 = "content_worksheet_hint_attest.v1"
 TEACHING_WORK_CREATE_V1 = "teaching_work_create.v1"
 TEACHING_WORK_FROM_CLASSROOM_ASSESSMENT_CREATE_V1 = (
     "teaching_work_from_classroom_assessment_create.v1"

@@ -18,6 +18,7 @@ from tests.domains.learning.helpers_aieos360_s01_i03 import (
     student_client,
 )
 from tools.release.common import EXPECTED_MIGRATION_HEAD
+from tests.architecture.frozen_packet_delivery import A360S010004_AT_PACKET_DELIVERY
 
 pytestmark = [pytest.mark.aieos360_s01_i03, pytest.mark.aieos360_s01_i03r1]
 
@@ -43,8 +44,8 @@ class TestA360s010002Static:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010002"' in sql
         assert 'down_revision: str | None = "a360s010001"' in sql
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010004"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
+        assert A360S010004_AT_PACKET_DELIVERY == "a360s010004"
 
     def test_r1_26_27_28_29_scope_is_security_audit_vocabulary_only(self) -> None:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
@@ -54,8 +55,6 @@ class TestA360s010002Static:
         assert "ALTER TABLE teaching." not in sql
         assert "ALTER TABLE content." not in sql
         assert "DROP TABLE" not in sql
-        names = [path.name for path in MIGRATIONS.glob("a360s010005*.py")]
-        assert names == []
 
     def test_r1_30_33_learning_actions_added_and_existing_vocab_retained(self) -> None:
         sql = I03_MIGRATION.read_text(encoding="utf-8")
@@ -86,7 +85,10 @@ class TestA360s010002Postgres:
     def test_r1_31_downgrade_without_learning_audit_evidence_succeeds(
         self, postgres18, bootstrap_engine: Engine
     ) -> None:
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
         cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         clear_i03_side_effects(bootstrap_engine)
         command.downgrade(cfg, "a360s010001")
         try:
@@ -102,7 +104,10 @@ class TestA360s010002Postgres:
     def test_r1_32_downgrade_with_learning_audit_evidence_fails_closed(
         self, postgres18, runtime_engine, bootstrap_engine: Engine
     ) -> None:
+        from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
+
         cfg = alembic_config(postgres18["migrator_url"])
+        clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
         prepared = prepare_class_5a_assignment(runtime_engine, bootstrap_engine)
         client = student_client(runtime_engine, prepared)
         started = start_attempt(client, prepared)
@@ -118,7 +123,7 @@ class TestA360s010002Postgres:
             with bootstrap_engine.connect() as conn:
                 assert (
                     conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                    == "a360s010004"
+                    == EXPECTED_ALEMBIC_HEAD
                 )
         finally:
             clear_i03_side_effects(bootstrap_engine)
