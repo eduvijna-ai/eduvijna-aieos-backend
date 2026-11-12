@@ -24,6 +24,11 @@ from aieos.domains.education.schema import (
     WORKSHEET_CONTENT_TYPE,
     WORKSHEET_SCHEMA_ID,
     WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
+)
+from tests.domains.education.test_aieos_v1_hint_t1 import (
+    _hint_free_v2_payload,
+    _worksheet_v2_payload,
 )
 from aieos.domains.learning.application.errors import ContentNotLearnerConsumable
 from aieos.domains.learning.application.learner_projection import project_learner_resource
@@ -41,6 +46,7 @@ pytestmark = pytest.mark.aieos360_s01_i03
 _FORBIDDEN = (
     "answer",
     "explanation",
+    "learner_hint",
     "teacher_summary",
     "teacher_notes",
     "difficulty",
@@ -48,6 +54,8 @@ _FORBIDDEN = (
     "visual_description",
     "objective_ids",
     "payload",
+    "evaluation",
+    "score",
 )
 
 
@@ -229,13 +237,55 @@ class TestLearnerProjectionAllowlist:
             )
 
     def test_i03_11_unknown_schema_version_fails_closed(self) -> None:
+        # Worksheet@2 learner consumption is authorized separately (PK-V1-HINT-T1b).
         with pytest.raises(ContentNotLearnerConsumable):
             project_learner_resource(
                 _assigned(
                     content_type=WORKSHEET_CONTENT_TYPE,
                     schema_id=WORKSHEET_SCHEMA_ID,
-                    schema_version=2,
+                    schema_version=3,
                     payload=valid_worksheet_payload(),
+                )
+            )
+
+    def test_i03_14_worksheet_v2_hint_bearing_projection_succeeds(self) -> None:
+        """PK-V1-HINT-T1b — typed Worksheet@2 maps to learner-safe allowlist only."""
+        payload = _worksheet_v2_payload(hint="Consider equivalent fractions.")
+        payload["questions"][1]["learner_hint"] = "Think about the numerator."
+        resource = project_learner_resource(
+            _assigned(
+                content_type=WORKSHEET_CONTENT_TYPE,
+                schema_id=WORKSHEET_SCHEMA_ID,
+                schema_version=WORKSHEET_SCHEMA_VERSION_V2,
+                payload=payload,
+            )
+        )
+        _assert_safe(resource)
+        assert resource.schema_version == WORKSHEET_SCHEMA_VERSION_V2
+        assert len(resource.questions) == len(payload["questions"])
+
+    def test_i03_15_worksheet_v2_hint_free_projection_succeeds(self) -> None:
+        resource = project_learner_resource(
+            _assigned(
+                content_type=WORKSHEET_CONTENT_TYPE,
+                schema_id=WORKSHEET_SCHEMA_ID,
+                schema_version=WORKSHEET_SCHEMA_VERSION_V2,
+                payload=_hint_free_v2_payload(),
+            )
+        )
+        _assert_safe(resource)
+        assert resource.schema_version == WORKSHEET_SCHEMA_VERSION_V2
+
+    def test_i03_16_worksheet_v2_malformed_hint_fails_closed(self) -> None:
+        payload = _worksheet_v2_payload(hint="valid hint")
+        payload["questions"][0]["learner_hint"] = "a" * 501
+        with pytest.raises(ContentNotLearnerConsumable):
+            project_learner_resource(
+                _assigned(
+                    content_type=WORKSHEET_CONTENT_TYPE,
+                    schema_id=WORKSHEET_SCHEMA_ID,
+                    schema_version=WORKSHEET_SCHEMA_VERSION_V2,
+                    payload=payload,
                 )
             )
 

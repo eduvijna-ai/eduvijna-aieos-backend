@@ -344,11 +344,15 @@ def seed_published_learner_content(
     content_type: str = WORKSHEET_CONTENT_TYPE,
     owner_id: UUID | None = None,
     payload: dict[str, object] | None = None,
+    schema_version: int | None = None,
 ) -> tuple[UUID, UUID]:
     content_id = uuid.uuid7()
     version_id = uuid.uuid7()
     owner = owner_id or uuid.uuid7()
-    schema_id, schema_version = _SCHEMA_BY_TYPE[content_type]
+    schema_id, default_schema_version = _SCHEMA_BY_TYPE[content_type]
+    resolved_schema_version = (
+        schema_version if schema_version is not None else default_schema_version
+    )
     body = payload if payload is not None else learner_payload(content_type)
     typed = ContentPayload.from_mapping(body)
     with bootstrap_engine.begin() as conn:
@@ -396,7 +400,7 @@ def seed_published_learner_content(
                 "tid": tenant_id,
                 "cid": content_id,
                 "schema_id": schema_id,
-                "schema_version": schema_version,
+                "schema_version": resolved_schema_version,
                 "payload": canonical_payload_json(typed.body),
                 "sha": typed.sha256.value,
                 "prov": json.dumps({}),
@@ -617,6 +621,8 @@ def prepare_class_5a_assignment(
     due_at: datetime | None = None,
     content_type: str = WORKSHEET_CONTENT_TYPE,
     membership: DevelopmentSchoolContextLearnerMembershipReader | None = None,
+    schema_version: int | None = None,
+    payload: dict[str, object] | None = None,
 ) -> PreparedAssignment:
     tenant_id = uuid.uuid7()
     teacher_id = uuid.uuid7()
@@ -627,6 +633,8 @@ def prepare_class_5a_assignment(
         tenant_id=tenant_id,
         content_type=content_type,
         owner_id=teacher_id,
+        schema_version=schema_version,
+        payload=payload,
     )
     assignment = create_learner_assignment(
         runtime_engine,

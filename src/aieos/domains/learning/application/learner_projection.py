@@ -22,8 +22,10 @@ from aieos.domains.education.schema import (
     WORKSHEET_CONTENT_TYPE,
     WORKSHEET_SCHEMA_ID,
     WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
 )
 from aieos.domains.education.worksheet_v1 import QuestionType, WorksheetV1
+from aieos.domains.education.worksheet_v2 import WorksheetV2
 from aieos.domains.learning.application.errors import ContentNotLearnerConsumable
 from aieos.domains.learning.application.models import (
     ExactAssignedContent,
@@ -39,8 +41,12 @@ _QUESTION_TYPE_MAP = {
     QuestionType.TRUE_FALSE: AttemptResponseKind.TRUE_FALSE.value,
 }
 
-_SUPPORTED: dict[tuple[str, str, int], type[WorksheetV1] | type[QuizV1] | type[HomeworkV1]] = {
+_SUPPORTED: dict[
+    tuple[str, str, int],
+    type[WorksheetV1] | type[WorksheetV2] | type[QuizV1] | type[HomeworkV1],
+] = {
     (WORKSHEET_CONTENT_TYPE, WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION): WorksheetV1,
+    (WORKSHEET_CONTENT_TYPE, WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2): WorksheetV2,
     (QUIZ_CONTENT_TYPE, QUIZ_SCHEMA_ID, QUIZ_SCHEMA_VERSION): QuizV1,
     (HOMEWORK_CONTENT_TYPE, HOMEWORK_SCHEMA_ID, HOMEWORK_SCHEMA_VERSION): HomeworkV1,
 }
@@ -71,7 +77,7 @@ def project_learner_resource(assigned: ExactAssignedContent) -> LearnerResource:
 
 
 def _payload_for_model(
-    model_cls: type[WorksheetV1] | type[QuizV1] | type[HomeworkV1],
+    model_cls: type[WorksheetV1] | type[WorksheetV2] | type[QuizV1] | type[HomeworkV1],
     payload: Mapping[str, object],
 ) -> dict[str, object]:
     if not isinstance(payload, Mapping):
@@ -89,7 +95,7 @@ def _from_parsed(
     content_type: str,
     schema_id: str,
     schema_version: int,
-    parsed: WorksheetV1 | QuizV1 | HomeworkV1,
+    parsed: WorksheetV1 | WorksheetV2 | QuizV1 | HomeworkV1,
 ) -> LearnerResource:
     instructions = getattr(parsed, "instructions", "")
     if not isinstance(instructions, str) or not instructions.strip():
