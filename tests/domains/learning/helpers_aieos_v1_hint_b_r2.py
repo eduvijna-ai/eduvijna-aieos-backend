@@ -114,7 +114,7 @@ class EventOrderStudentUowFactory:
 
 
 class SubmitHoldingStudentUow(SqlAlchemyStudentLearningCommandUnitOfWork):
-    """Hold assignment FOR UPDATE until release (submit-first races)."""
+    """Hold assignment+attempt FOR UPDATE until release (submit-first races)."""
 
     def __init__(
         self,
@@ -131,17 +131,31 @@ class SubmitHoldingStudentUow(SqlAlchemyStudentLearningCommandUnitOfWork):
         self._both_locks_held = both_locks_held
         self._holder_pid = holder_pid
         self._release = release
+        self._assignment_done = False
+
+    def __enter__(self):
+        uow = super().__enter__()
+        real_attempt_update = uow.attempts.get_for_update
+
+        def wrapped_attempt_update(attempt_id):
+            loaded = real_attempt_update(attempt_id)
+            if loaded is not None and self._assignment_done:
+                self._holder_pid[0] = self.connection.execute(
+                    text("SELECT pg_backend_pid()")
+                ).scalar_one()
+                self._assignment_locked.set()
+                self._both_locks_held.set()
+                if not self._release.wait(timeout=25):
+                    raise TimeoutError("submit locks were not released")
+            return loaded
+
+        uow.attempts.get_for_update = wrapped_attempt_update  # type: ignore[method-assign]
+        return uow
 
     def get_assignment_for_update(self, assignment_id):
         loaded = super().get_assignment_for_update(assignment_id)
         if loaded is not None:
-            self._holder_pid[0] = self.connection.execute(
-                text("SELECT pg_backend_pid()")
-            ).scalar_one()
-            self._assignment_locked.set()
-            self._both_locks_held.set()
-            if not self._release.wait(timeout=25):
-                raise TimeoutError("submit assignment lock was not released")
+            self._assignment_done = True
         return loaded
 
 
@@ -352,28 +366,34 @@ def assert_genuine_lock_contention(
     locks_held: threading.Event,
     release: threading.Event,
 ) -> None:
-    if waiter_pid is not None and holder_pid is not None:
-        if wait_pid_blocked_by(
-            observer_engine, waiter_pid=waiter_pid, holder_pid=holder_pid
-        ):
-            return
-    deadline = time.monotonic() + 4.0
-    while time.monotonic() < deadline:
-        if locks_held.is_set() and not release.is_set() and waiter_thread.is_alive():
-            if waiter_pid is not None and holder_pid is not None:
-                if wait_pid_blocked_by(
-                    observer_engine,
-                    waiter_pid=waiter_pid,
-                    holder_pid=holder_pid,
-                    deadline_s=0.25,
-                ):
-                    return
-            time.sleep(0.02)
-            continue
-        break
+    assert holder_pid is not None, "holder backend PID was not recorded"
+    assert waiter_pid is not None, "waiter backend PID was not recorded"
+    assert waiter_pid != holder_pid, "holder and waiter must use distinct DB connections"
     assert locks_held.is_set(), "holder did not acquire expected locks"
     assert not release.is_set(), "holder released before contention check"
-    assert waiter_thread.is_alive(), "waiter finished without genuine lock wait"
+    assert waiter_thread.is_alive(), "waiter finished before contention observation"
+    blocked = wait_pid_blocked_by(
+        observer_engine,
+        waiter_pid=waiter_pid,
+        holder_pid=holder_pid,
+        deadline_s=12.0,
+    )
+    assert blocked, (
+        f"pg_blocking_pids({waiter_pid}) did not list holder {holder_pid} "
+        "while holder still holds the row lock"
+    )
+
+
+_DEFAULT_FORBIDDEN = (
+    "answer",
+    "explanation",
+    "teacher_notes",
+    "teacher_summary",
+    '"payload"',
+    "evaluation",
+    "Consider the denominator.",
+    "Compare to one half.",
+)
 
 
 def assert_problem(
@@ -382,12 +402,28 @@ def assert_problem(
     status: int,
     code: str,
     no_store: str = "private, no-store",
-) -> None:
+    forbidden_substrings: tuple[str, ...] = (),
+) -> dict[str, Any]:
     assert response.status_code == status, response.text
     assert response.headers.get("Cache-Control") == no_store
+    content_type = response.headers.get("content-type", "")
+    assert content_type.startswith(
+        "application/problem+json"
+    ), f"unexpected content-type: {content_type!r}"
     body = response.json()
-    assert body.get("type", "").endswith(code) or body.get("code") == code
-    assert "hint_text" not in response.text.lower()
+    assert isinstance(body, dict)
+    assert body.get("status") == status
+    assert body.get("code") == code
+    assert isinstance(body.get("type"), str) and body["type"]
+    assert isinstance(body.get("title"), str) and body["title"]
+    lowered = response.text.lower()
+    assert "hint_text" not in lowered
+    assert "learner_hint" not in lowered
+    for snippet in (*_DEFAULT_FORBIDDEN, *forbidden_substrings):
+        assert snippet not in response.text, (
+            f"problem response leaked forbidden fragment: {snippet!r}"
+        )
+    return body
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,13 +437,28 @@ class SuccessiveV2Pins:
     content_id: UUID
 
 
-def prepare_successive_published_v2_on_same_content(
+@dataclass(frozen=True, slots=True)
+class SuccessiveV2Context:
+    """First published @2 assignment before a successor publication on same Content."""
+
+    first_assignment: PreparedAssignment
+    first_content_version_id: UUID
+    first_hint_text: str
+    second_hint_text: str
+    content_id: UUID
+    tenant_id: UUID
+    author_id: UUID
+    reviewer_id: UUID
+    publisher_id: UUID
+
+
+def begin_successive_v2_same_content(
     runtime_engine: Engine,
     bootstrap_engine: Engine,
     *,
     first_hint: str = FIXED_T1B_HINT,
     second_hint: str = "Use the least common denominator carefully.",
-) -> SuccessiveV2Pins:
+) -> SuccessiveV2Context:
     first_payload = _worksheet_v2_payload(hint=first_hint)
     publication = publish_worksheet_v2_three_human(
         runtime_engine, bootstrap_engine, payload=first_payload
@@ -416,7 +467,6 @@ def prepare_successive_published_v2_on_same_content(
     author_id = publication.author_id
     reviewer_id = publication.reviewer_id
     publisher_id = publication.publisher_id
-    content_id = ContentId(publication.content_id)
     first_version_id = ContentVersionId(publication.content_version_id)
 
     first_assignment = create_learner_assignment(
@@ -438,21 +488,49 @@ def prepare_successive_published_v2_on_same_content(
         assignment=first_assignment,
         membership=reader,
     )
+    assert_publication_evidence(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        content_id=publication.content_id,
+        version_id=first_version_id.value,
+        author_id=author_id,
+        reviewer_id=reviewer_id,
+        publisher_id=publisher_id,
+        expect_attestation=True,
+    )
+    return SuccessiveV2Context(
+        first_assignment=prepared_first,
+        first_content_version_id=first_version_id.value,
+        first_hint_text=first_hint,
+        second_hint_text=second_hint,
+        content_id=publication.content_id,
+        tenant_id=tenant_id,
+        author_id=author_id,
+        reviewer_id=reviewer_id,
+        publisher_id=publisher_id,
+    )
 
-    second_payload = _worksheet_v2_payload(hint=second_hint)
+
+def complete_successive_v2_second_publication(
+    ctx: SuccessiveV2Context,
+    runtime_engine: Engine,
+    bootstrap_engine: Engine,
+) -> SuccessiveV2Pins:
+    content_id = ContentId(ctx.content_id)
+    second_payload = _worksheet_v2_payload(hint=ctx.second_hint_text)
     expected_rev = _current_content_revision(
-        bootstrap_engine, tenant_id=tenant_id, content_id=publication.content_id
+        bootstrap_engine, tenant_id=ctx.tenant_id, content_id=ctx.content_id
     )
     version_read, revision = _guarded_service(runtime_engine).append(
-        tenant_id,
-        author_id,
+        ctx.tenant_id,
+        ctx.author_id,
         content_id=content_id,
         expected_aggregate_revision=expected_rev,
         payload=second_payload,
         authoring_class_ref=CLASS_REF_5A,
         idempotency_key=f"r2-v2b-append-{uuid.uuid7()}",
-        event_context=_event_context(author_id),
-        audit_provenance=api_mutation_audit_provenance(author_id),
+        event_context=_event_context(ctx.author_id),
+        audit_provenance=api_mutation_audit_provenance(ctx.author_id),
         now=FIXED_NOW,
     )
     assert int(version_read.version_number) >= 3
@@ -465,17 +543,17 @@ def prepare_successive_published_v2_on_same_content(
                 WHERE tenant_id = :tid AND version_id = :vid
                 """
             ),
-            {"tid": tenant_id, "vid": version_read.version_id.value},
+            {"tid": ctx.tenant_id, "vid": version_read.version_id.value},
         ).one()
     assert int(schema_v.version_number) >= 3
     assert int(schema_v.schema_version) == WORKSHEET_SCHEMA_VERSION_V2
     second_version_id = _complete_v2_publish(
         runtime_engine,
         bootstrap_engine,
-        tenant_id=tenant_id,
-        author_id=author_id,
-        reviewer_id=reviewer_id,
-        publisher_id=publisher_id,
+        tenant_id=ctx.tenant_id,
+        author_id=ctx.author_id,
+        reviewer_id=ctx.reviewer_id,
+        publisher_id=ctx.publisher_id,
         content_id=content_id,
         version_read=version_read,
         revision=revision,
@@ -484,51 +562,70 @@ def prepare_successive_published_v2_on_same_content(
     )
     assert_publication_evidence(
         bootstrap_engine,
-        tenant_id=tenant_id,
-        content_id=publication.content_id,
-        version_id=first_version_id.value,
-        author_id=author_id,
-        reviewer_id=reviewer_id,
-        publisher_id=publisher_id,
+        tenant_id=ctx.tenant_id,
+        content_id=ctx.content_id,
+        version_id=ctx.first_content_version_id,
+        author_id=ctx.author_id,
+        reviewer_id=ctx.reviewer_id,
+        publisher_id=ctx.publisher_id,
         expect_attestation=True,
     )
     assert_publication_evidence(
         bootstrap_engine,
-        tenant_id=tenant_id,
-        content_id=publication.content_id,
+        tenant_id=ctx.tenant_id,
+        content_id=ctx.content_id,
         version_id=second_version_id.value,
-        author_id=author_id,
-        reviewer_id=reviewer_id,
-        publisher_id=publisher_id,
+        author_id=ctx.author_id,
+        reviewer_id=ctx.reviewer_id,
+        publisher_id=ctx.publisher_id,
         expect_attestation=True,
     )
 
+    reader = default_membership_reader(ctx.tenant_id)
     second_assignment = create_learner_assignment(
         runtime_engine,
-        tenant_id=tenant_id,
-        principal_id=author_id,
-        content_id=publication.content_id,
+        tenant_id=ctx.tenant_id,
+        principal_id=ctx.author_id,
+        content_id=ctx.content_id,
         content_version_id=second_version_id.value,
         idempotency_key=f"r2-v2b-assign-{uuid.uuid7()}",
         class_ref=CLASS_REF_5A,
     )
     prepared_second = PreparedAssignment(
-        tenant_id=tenant_id,
-        teacher_id=author_id,
+        tenant_id=ctx.tenant_id,
+        teacher_id=ctx.author_id,
         student_id=STUDENT_A_PRINCIPAL_ID,
-        content_id=publication.content_id,
+        content_id=ctx.content_id,
         content_version_id=second_version_id.value,
         assignment=second_assignment,
         membership=reader,
     )
     return SuccessiveV2Pins(
-        first_assignment=prepared_first,
+        first_assignment=ctx.first_assignment,
         second_assignment=prepared_second,
-        first_content_version_id=first_version_id.value,
+        first_content_version_id=ctx.first_content_version_id,
         second_content_version_id=second_version_id.value,
-        first_hint_text=first_hint,
-        second_hint_text=second_hint,
-        content_id=publication.content_id,
+        first_hint_text=ctx.first_hint_text,
+        second_hint_text=ctx.second_hint_text,
+        content_id=ctx.content_id,
+    )
+
+
+def prepare_successive_published_v2_on_same_content(
+    runtime_engine: Engine,
+    bootstrap_engine: Engine,
+    *,
+    first_hint: str = FIXED_T1B_HINT,
+    second_hint: str = "Use the least common denominator carefully.",
+) -> SuccessiveV2Pins:
+    ctx = begin_successive_v2_same_content(
+        runtime_engine,
+        bootstrap_engine,
+        first_hint=first_hint,
+        second_hint=second_hint,
+    )
+    return complete_successive_v2_second_publication(
+        ctx, runtime_engine, bootstrap_engine
     )
 
 
@@ -580,6 +677,50 @@ def patch_assignment_and_attempt_version_pin(
     content_version_id: UUID,
 ) -> None:
     with bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE teaching.assignments
+                SET content_version_id = :cvid
+                WHERE tenant_id = :tid AND assignment_id = :asgid
+                """
+            ),
+            {
+                "cvid": content_version_id,
+                "tid": tenant_id,
+                "asgid": assignment_id,
+            },
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE learning.attempts
+                SET content_version_id = :cvid
+                WHERE tenant_id = :tid AND attempt_id = :aid
+                """
+            ),
+            {"cvid": content_version_id, "tid": tenant_id, "aid": attempt_id},
+        )
+
+
+def patch_coherent_pins_bypass_assignment_version_fk(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: UUID,
+    assignment_id: UUID,
+    attempt_id: UUID,
+    content_version_id: UUID,
+) -> None:
+    """Align assignment+attempt version pins for B7 loader negatives (disposable PG only)."""
+    with bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                ALTER TABLE teaching.assignments
+                DROP CONSTRAINT IF EXISTS fk_teaching_assignments_content_version
+                """
+            )
+        )
         conn.execute(
             text(
                 """

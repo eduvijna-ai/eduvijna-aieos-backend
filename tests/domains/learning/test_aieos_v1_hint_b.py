@@ -82,12 +82,14 @@ from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
     HintHoldingStudentUowFactory,
     SubmitHoldingStudentUowFactory,
     assert_problem,
+    begin_successive_v2_same_content,
+    complete_successive_v2_second_publication,
     corrupt_content_type,
     corrupt_version_payload,
     corrupt_version_schema,
     assert_genuine_lock_contention,
     delete_hint_attestation,
-    prepare_successive_published_v2_on_same_content,
+    patch_coherent_pins_bypass_assignment_version_fk,
 )
 from aieos.domains.learning.application.start_attempt import StartAttemptService
 pytestmark = pytest.mark.aieos_v1_hint_b
@@ -625,25 +627,29 @@ class TestLearnerHintsConcurrency:
                 results["hint_error"] = exc
 
         submit_thread = threading.Thread(target=submit, name="submit-first")
-        submit_thread.start()
-        assert both_locks_held.wait(timeout=25)
-        hint_thread = threading.Thread(target=hint_get, name="hint-blocked")
-        hint_thread.start()
-        assert hint_contending.wait(timeout=25)
-        assert holder_pid[0] is not None and waiter_pid[0] is not None
-        assert_genuine_lock_contention(
-            bootstrap_engine,
-            waiter_thread=hint_thread,
-            waiter_pid=waiter_pid[0],
-            holder_pid=holder_pid[0],
-            locks_held=both_locks_held,
-            release=release,
-        )
-        release.set()
-        submit_thread.join(timeout=30)
-        hint_thread.join(timeout=30)
+        hint_thread: threading.Thread | None = None
+        try:
+            submit_thread.start()
+            assert both_locks_held.wait(timeout=25)
+            hint_thread = threading.Thread(target=hint_get, name="hint-blocked")
+            hint_thread.start()
+            assert hint_contending.wait(timeout=25)
+            assert holder_pid[0] is not None and waiter_pid[0] is not None
+            assert_genuine_lock_contention(
+                bootstrap_engine,
+                waiter_thread=hint_thread,
+                waiter_pid=waiter_pid[0],
+                holder_pid=holder_pid[0],
+                locks_held=both_locks_held,
+                release=release,
+            )
+        finally:
+            release.set()
+            submit_thread.join(timeout=30)
+            if hint_thread is not None:
+                hint_thread.join(timeout=30)
         assert not submit_thread.is_alive()
-        assert not hint_thread.is_alive()
+        assert hint_thread is not None and not hint_thread.is_alive()
         assert "submit" in results
         assert results.get("submit_error") is None
         assert isinstance(results.get("hint_error"), InvalidAttemptState)
@@ -651,8 +657,12 @@ class TestLearnerHintsConcurrency:
         denied = client.get(
             _hints_url(attempt_id), headers=headers(prepared.tenant_id)
         )
-        assert denied.status_code == 409
-        assert denied.headers.get("Cache-Control") == _NO_STORE
+        assert_problem(
+            denied,
+            status=409,
+            code="invalid_attempt_state",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     def test_hint_b_hint_wins_lock_commits_before_submit(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -709,25 +719,29 @@ class TestLearnerHintsConcurrency:
                 results["submit_error"] = exc
 
         hint_thread = threading.Thread(target=hint_get, name="hint-first")
-        hint_thread.start()
-        assert both_locks_held.wait(timeout=25)
-        submit_thread = threading.Thread(target=submit, name="submit-waiting")
-        submit_thread.start()
-        assert submit_contending.wait(timeout=25)
-        assert holder_pid[0] is not None and submit_waiter_pid[0] is not None
-        assert_genuine_lock_contention(
-            bootstrap_engine,
-            waiter_thread=submit_thread,
-            waiter_pid=submit_waiter_pid[0],
-            holder_pid=holder_pid[0],
-            locks_held=both_locks_held,
-            release=release,
-        )
-        release.set()
-        hint_thread.join(timeout=30)
-        submit_thread.join(timeout=30)
+        submit_thread: threading.Thread | None = None
+        try:
+            hint_thread.start()
+            assert both_locks_held.wait(timeout=25)
+            submit_thread = threading.Thread(target=submit, name="submit-waiting")
+            submit_thread.start()
+            assert submit_contending.wait(timeout=25)
+            assert holder_pid[0] is not None and submit_waiter_pid[0] is not None
+            assert_genuine_lock_contention(
+                bootstrap_engine,
+                waiter_thread=submit_thread,
+                waiter_pid=submit_waiter_pid[0],
+                holder_pid=holder_pid[0],
+                locks_held=both_locks_held,
+                release=release,
+            )
+        finally:
+            release.set()
+            hint_thread.join(timeout=30)
+            if submit_thread is not None:
+                submit_thread.join(timeout=30)
         assert not hint_thread.is_alive()
-        assert not submit_thread.is_alive()
+        assert submit_thread is not None and not submit_thread.is_alive()
         assert "hint" in results
         assert results.get("hint_error") is None
         hint_model = results["hint"]
@@ -736,10 +750,12 @@ class TestLearnerHintsConcurrency:
         assert "submit" in results
         assert results.get("submit_error") is None
         denied = _get_hints(client, prepared, attempt_id)
-        assert denied.status_code == 409
-        assert denied.headers.get("Cache-Control") == _NO_STORE
-        assert denied.json()["code"] == "invalid_attempt_state"
-        assert FIXED_T1B_HINT not in denied.text
+        assert_problem(
+            denied,
+            status=409,
+            code="invalid_attempt_state",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     def test_hint_b_close_wins_assignment_lock_hint_denied(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -818,8 +834,12 @@ class TestLearnerHintsConcurrency:
         assert isinstance(results.get("hint_error"), AssignmentClosedOrCancelled)
         assert "hint" not in results
         denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(denied, status=409, code="assignment_closed_or_cancelled")
-        assert FIXED_T1B_HINT not in denied.text
+        assert_problem(
+            denied,
+            status=409,
+            code="assignment_closed_or_cancelled",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     @pytest.fixture(autouse=True)
     def _i03_cleanup(self, bootstrap_engine: Engine) -> Iterator[None]:
@@ -1017,15 +1037,31 @@ class TestLearnerHintsSecurityNegatives:
     def test_hint_b_successive_published_v2_pins_keep_exact_hints(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
-        pins = prepare_successive_published_v2_on_same_content(
-            runtime_engine, bootstrap_engine
-        )
-        client_old = student_client(runtime_engine, pins.first_assignment)
-        started_old = start_attempt(client_old, pins.first_assignment)
+        ctx = begin_successive_v2_same_content(runtime_engine, bootstrap_engine)
+        client_old = student_client(runtime_engine, ctx.first_assignment)
+        started_old = start_attempt(client_old, ctx.first_assignment)
+        assert started_old.status_code == 201
         attempt_old = uuid.UUID(started_old.json()["attempt_id"])
+        before_pub = _get_hints(client_old, ctx.first_assignment, attempt_old)
+        assert before_pub.status_code == 200
+        assert before_pub.headers.get("Cache-Control") == _NO_STORE
+        assert before_pub.json()["content_version_id"] == str(
+            ctx.first_content_version_id
+        )
+        assert any(
+            ctx.first_hint_text in item["hint_text"]
+            for item in before_pub.json()["hints"]
+        )
+        assert ctx.second_hint_text not in before_pub.text
+
+        pins = complete_successive_v2_second_publication(
+            ctx, runtime_engine, bootstrap_engine
+        )
         old_hints = _get_hints(client_old, pins.first_assignment, attempt_old)
         assert old_hints.status_code == 200
-        assert old_hints.json()["content_version_id"] == str(pins.first_content_version_id)
+        assert old_hints.json()["content_version_id"] == str(
+            pins.first_content_version_id
+        )
         assert any(
             pins.first_hint_text in item["hint_text"] for item in old_hints.json()["hints"]
         )
@@ -1036,7 +1072,9 @@ class TestLearnerHintsSecurityNegatives:
         attempt_new = uuid.UUID(started_new.json()["attempt_id"])
         new_hints = _get_hints(client_new, pins.second_assignment, attempt_new)
         assert new_hints.status_code == 200
-        assert new_hints.json()["content_version_id"] == str(pins.second_content_version_id)
+        assert new_hints.json()["content_version_id"] == str(
+            pins.second_content_version_id
+        )
         assert any(
             pins.second_hint_text in item["hint_text"] for item in new_hints.json()["hints"]
         )
@@ -1075,9 +1113,12 @@ class TestLearnerHintsSecurityNegatives:
                 )
             )
         denied = _get_hints(client, prepared, attempt_id)
-        assert denied.status_code == 422
-        assert denied.headers.get("Cache-Control") == _NO_STORE
-        assert FIXED_T1B_HINT not in denied.text
+        assert_problem(
+            denied,
+            status=422,
+            code="content_not_learner_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     def test_hint_b_submitted_still_allows_historical_attempt_get(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -1110,11 +1151,17 @@ class TestLearnerHintsR2ContentNegatives:
             version_id=prepared.content_version_id,
         )
         denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(denied, status=422, code="content_not_learner_consumable")
+        assert_problem(
+            denied,
+            status=422,
+            code="content_not_learner_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
-    def test_hint_b_missing_exact_content_version(
+    def test_hint_b_binding_drift_attempt_version_only_denies(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
+        """Attempt pin drift without assignment alignment → B5/consumable, not B7 loader."""
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
@@ -1136,10 +1183,35 @@ class TestLearnerHintsR2ContentNegatives:
             )
         denied = _get_hints(client, prepared, attempt_id)
         assert_problem(
-            denied, status=409, code="assignment_not_currently_consumable"
+            denied,
+            status=409,
+            code="assignment_not_currently_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
         )
 
-    def test_hint_b_foreign_content_version_binding(
+    def test_hint_b_b7_missing_exact_content_version_loader(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        ghost_version = uuid.uuid7()
+        patch_coherent_pins_bypass_assignment_version_fk(
+            bootstrap_engine,
+            tenant_id=prepared.tenant_id,
+            assignment_id=prepared.assignment_id,
+            attempt_id=attempt_id,
+            content_version_id=ghost_version,
+        )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(
+            denied,
+            status=404,
+            code="content_version_not_found",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
+
+    def test_hint_b_b7_foreign_content_version_loader(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
         first, client_a, attempt_a, _rev, _etag = _start_governed_v2(
@@ -1148,24 +1220,19 @@ class TestLearnerHintsR2ContentNegatives:
         second = prepare_governed_worksheet_v2_assignment(
             runtime_engine, bootstrap_engine, payload=_hinted_payload()
         )
-        with bootstrap_engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    UPDATE learning.attempts
-                    SET content_version_id = :cvid
-                    WHERE tenant_id = :tid AND attempt_id = :aid
-                    """
-                ),
-                {
-                    "cvid": second.content_version_id,
-                    "tid": first.tenant_id,
-                    "aid": attempt_a,
-                },
-            )
+        patch_coherent_pins_bypass_assignment_version_fk(
+            bootstrap_engine,
+            tenant_id=first.tenant_id,
+            assignment_id=first.assignment_id,
+            attempt_id=attempt_a,
+            content_version_id=second.content_version_id,
+        )
         denied = _get_hints(client_a, first, attempt_a)
         assert_problem(
-            denied, status=409, code="assignment_not_currently_consumable"
+            denied,
+            status=404,
+            code="content_version_not_found",
+            forbidden_substrings=(FIXED_T1B_HINT,),
         )
 
     def test_hint_b_malformed_v2_payload_denied(
@@ -1182,7 +1249,12 @@ class TestLearnerHintsR2ContentNegatives:
             payload=payload,
         )
         denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(denied, status=422, code="content_not_learner_consumable")
+        assert_problem(
+            denied,
+            status=422,
+            code="content_not_learner_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     def test_hint_b_worksheet_schema_v3_unsupported(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -1196,7 +1268,12 @@ class TestLearnerHintsR2ContentNegatives:
             schema_version=3,
         )
         denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(denied, status=422, code="content_not_learner_consumable")
+        assert_problem(
+            denied,
+            status=422,
+            code="content_not_learner_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
 
     def test_hint_b_non_worksheet_content_type_denied(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -1211,4 +1288,9 @@ class TestLearnerHintsR2ContentNegatives:
             content_type="quiz",
         )
         denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(denied, status=422, code="content_not_learner_consumable")
+        assert_problem(
+            denied,
+            status=422,
+            code="content_not_learner_consumable",
+            forbidden_substrings=(FIXED_T1B_HINT,),
+        )
