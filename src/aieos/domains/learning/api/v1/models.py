@@ -111,3 +111,18 @@ class AttemptResponsesReplaceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     responses: list[AttemptResponseWriteRequest] = Field(default_factory=list)
+
+
+class LearnerHintItemResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(min_length=1)
+    hint_text: str = Field(min_length=1)
+
+
+class LearnerHintsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attempt_id: UUID
+    content_version_id: UUID
+    hints: list[LearnerHintItemResponse]

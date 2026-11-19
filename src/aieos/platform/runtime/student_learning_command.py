@@ -24,6 +24,9 @@ from aieos.domains.content.domain.version import thaw_json_value
 from aieos.domains.content.infrastructure.persistence.repositories import (
     SqlAlchemyContentRepository,
     SqlAlchemyContentVersionRepository,
+    SqlAlchemyPublicationRepository,
+    SqlAlchemyReviewDecisionRepository,
+    SqlAlchemyWorksheetHintAttestationRepository,
 )
 from aieos.domains.learning.application.errors import (
     AttemptAlreadySubmitted,
@@ -88,6 +91,9 @@ class SqlAlchemyStudentLearningCommandUnitOfWork:
         self.submissions: SqlAlchemyLearnerSubmissionRepository
         self.contents: SqlAlchemyContentRepository
         self.content_versions: SqlAlchemyContentVersionRepository
+        self.publications: SqlAlchemyPublicationRepository
+        self.reviews: SqlAlchemyReviewDecisionRepository
+        self.worksheet_hint_attestations: SqlAlchemyWorksheetHintAttestationRepository
         self.idempotency: SqlAlchemyIdempotencyRepository
         self.outbox: SqlAlchemyOutboxRepository
         self.audit: _LearningAuditRepository
@@ -131,6 +137,11 @@ class SqlAlchemyStudentLearningCommandUnitOfWork:
             connection, self._execution_tenant_id
         )
         self.content_versions = SqlAlchemyContentVersionRepository(connection)
+        self.publications = SqlAlchemyPublicationRepository(connection)
+        self.reviews = SqlAlchemyReviewDecisionRepository(connection)
+        self.worksheet_hint_attestations = SqlAlchemyWorksheetHintAttestationRepository(
+            connection
+        )
         self.idempotency = SqlAlchemyIdempotencyRepository(
             connection, self._execution_tenant_id
         )
@@ -177,6 +188,20 @@ class SqlAlchemyStudentLearningCommandUnitOfWork:
     ) -> int:
         return self.assignments.count_current_for_class_refs(
             class_refs=class_refs, now=now
+        )
+
+    def load_governed_worksheet_learner_hints(
+        self, content_id: UUID, content_version_id: UUID
+    ) -> tuple:
+        from aieos.platform.runtime.worksheet_learner_hints import (
+            load_governed_worksheet_learner_hints,
+        )
+
+        return load_governed_worksheet_learner_hints(
+            self,
+            execution_tenant_id=self._execution_tenant_id,
+            content_id=content_id,
+            content_version_id=content_version_id,
         )
 
     def load_exact_assigned_content(

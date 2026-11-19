@@ -15,6 +15,7 @@ from aieos.domains.learning.application.current_assignments import (
 )
 from aieos.domains.learning.application.errors import PersistenceOperationFailed
 from aieos.domains.learning.application.get_attempt import GetAttemptService
+from aieos.domains.learning.application.get_learner_hints import GetLearnerHintsService
 from aieos.domains.learning.application.save_responses import SaveResponsesService
 from aieos.domains.learning.application.start_attempt import StartAttemptService
 from aieos.domains.learning.application.submit_attempt import SubmitAttemptService
@@ -24,6 +25,7 @@ __all__ = [
     "cursor_codec",
     "get_attempt_service",
     "get_current_assignment_service",
+    "get_learner_hints_service",
     "get_student_home_service",
     "list_current_assignments_service",
     "resolve_trusted_context",
@@ -58,6 +60,10 @@ def submit_attempt_service(request: Request) -> SubmitAttemptService:
 
 def get_attempt_service(request: Request) -> GetAttemptService:
     return _require(request, "get_attempt_service")
+
+
+def get_learner_hints_service(request: Request) -> GetLearnerHintsService:
+    return _require(request, "get_learner_hints_service")
 
 
 def list_current_assignments_service(request: Request) -> ListCurrentAssignmentsService:

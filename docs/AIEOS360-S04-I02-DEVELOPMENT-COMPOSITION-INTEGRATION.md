@@ -101,5 +101,7 @@ No environment flag may silently select the development provider.
   through the shared instance; unrelated ports remain unchanged; fresh composition
   does not leak mutated state
 - Alembic head remains `a360s010004`
-- OpenAPI SHA-256 remains
+- At S04-I02 closure, canonical OpenAPI SHA-256 remained
   `4042FB2725DA70A02A70EE09563B7698AE2E5DA82927614CAF1B5F7E6AA7C1D0`
+  (pre–PK-V1-HINT-B). The active release pin after B is recorded in
+  `docs/AIEOS-V1-HINT-B-IMPLEMENTATION-LIMITATIONS.md`.

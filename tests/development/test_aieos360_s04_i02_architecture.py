@@ -236,4 +236,4 @@ class TestNoPersistenceNoOpenApi:
     def test_openapi_digest_unchanged(self) -> None:
         digest = hashlib.sha256(OPENAPI_SNAPSHOT.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
-        assert digest == "4042FB2725DA70A02A70EE09563B7698AE2E5DA82927614CAF1B5F7E6AA7C1D0"
+        assert digest == "43F877E122389A7347DDB00D25F37D8BE8BD907F43FF6960E5DC6E794B1A0071"
