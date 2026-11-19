@@ -23,6 +23,7 @@ from aieos.domains.learning.application.errors import (
     AssignmentClosedOrCancelled,
     AssignmentNotYetAvailable,
     AttemptNotFound,
+    ExactContentVersionNotFound,
     InvalidAttemptState,
 )
 from aieos.domains.learning.application.learner_membership import (
@@ -74,6 +75,10 @@ from tests.domains.learning.helpers_aieos_v1_hint_t1b import (
     prepare_exact_pin_v1_then_v2_assignments,
     prepare_governed_worksheet_v2_assignment,
 )
+from aieos.platform.api.problems import _LEARNING_PROBLEMS
+from aieos.platform.runtime.worksheet_learner_hints import (
+    load_governed_worksheet_learner_hints,
+)
 from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
     B8_EVENT_ORDER,
     ContentionHintUowFactory,
@@ -81,6 +86,8 @@ from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
     EventOrderStudentUowFactory,
     HintHoldingStudentUowFactory,
     SubmitHoldingStudentUowFactory,
+    assert_assignment_content_version_fk,
+    assert_fk_rejects_coherent_assignment_version_pin,
     assert_problem,
     begin_successive_v2_same_content,
     complete_successive_v2_second_publication,
@@ -89,7 +96,9 @@ from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
     corrupt_version_schema,
     assert_genuine_lock_contention,
     delete_hint_attestation,
-    patch_coherent_pins_bypass_assignment_version_fk,
+    guarded_hint_b_schema_integrity,
+    require_disposable_hint_b_postgres,
+    snapshot_assignment_content_version_fk,
 )
 from aieos.domains.learning.application.start_attempt import StartAttemptService
 pytestmark = pytest.mark.aieos_v1_hint_b
@@ -1189,50 +1198,126 @@ class TestLearnerHintsR2ContentNegatives:
             forbidden_substrings=(FIXED_T1B_HINT,),
         )
 
-    def test_hint_b_b7_missing_exact_content_version_loader(
+    def test_hint_b_frozen_fk_blocks_missing_version_coherent_pin(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
-        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+        """Coherent missing ContentVersion pin is unreachable: FK rejects before B7 HTTP."""
+        require_disposable_hint_b_postgres(postgres18)
+        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
         ghost_version = uuid.uuid7()
-        patch_coherent_pins_bypass_assignment_version_fk(
+        assert_fk_rejects_coherent_assignment_version_pin(
             bootstrap_engine,
             tenant_id=prepared.tenant_id,
             assignment_id=prepared.assignment_id,
-            attempt_id=attempt_id,
+            content_id=prepared.content_id,
             content_version_id=ghost_version,
         )
-        denied = _get_hints(client, prepared, attempt_id)
-        assert_problem(
-            denied,
-            status=404,
-            code="content_version_not_found",
-            forbidden_substrings=(FIXED_T1B_HINT,),
-        )
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
 
-    def test_hint_b_b7_foreign_content_version_loader(
+    def test_hint_b_b7_loader_missing_exact_content_version_fail_closed(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
-        first, client_a, attempt_a, _rev, _etag = _start_governed_v2(
+        """B7 governed loader fail-closed for missing exact version (HTTP 404 contract)."""
+        require_disposable_hint_b_postgres(postgres18)
+        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        ghost_version = uuid.uuid7()
+        with SqlAlchemyStudentLearningCommandUnitOfWork(
+            runtime_engine, prepared.tenant_id
+        ) as uow:
+            with pytest.raises(ExactContentVersionNotFound, match="not visible"):
+                load_governed_worksheet_learner_hints(
+                    uow,
+                    execution_tenant_id=prepared.tenant_id,
+                    content_id=prepared.content_id,
+                    content_version_id=ghost_version,
+                )
+        status, code, _, _ = _LEARNING_PROBLEMS[ExactContentVersionNotFound]
+        assert status == 404
+        assert code == "content_version_not_found"
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+
+    def test_hint_b_frozen_fk_blocks_foreign_content_version_coherent_pin(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        """Foreign aggregate version pin is unreachable under frozen tenant/content/version FK."""
+        require_disposable_hint_b_postgres(postgres18)
+        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        first, _client_a, _attempt_a, _rev, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
         second = prepare_governed_worksheet_v2_assignment(
             runtime_engine, bootstrap_engine, payload=_hinted_payload()
         )
-        patch_coherent_pins_bypass_assignment_version_fk(
+        assert_fk_rejects_coherent_assignment_version_pin(
             bootstrap_engine,
             tenant_id=first.tenant_id,
             assignment_id=first.assignment_id,
-            attempt_id=attempt_a,
+            content_id=first.content_id,
             content_version_id=second.content_version_id,
         )
-        denied = _get_hints(client_a, first, attempt_a)
-        assert_problem(
-            denied,
-            status=404,
-            code="content_version_not_found",
-            forbidden_substrings=(FIXED_T1B_HINT,),
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+
+    def test_hint_b_b7_loader_foreign_content_version_fail_closed(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        """B7 loader denies version from a different Content aggregate (mismatched binding)."""
+        require_disposable_hint_b_postgres(postgres18)
+        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        first, _client_a, _attempt_a, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        second = prepare_governed_worksheet_v2_assignment(
+            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+        )
+        with SqlAlchemyStudentLearningCommandUnitOfWork(
+            runtime_engine, first.tenant_id
+        ) as uow:
+            with pytest.raises(ExactContentVersionNotFound, match="not visible"):
+                load_governed_worksheet_learner_hints(
+                    uow,
+                    execution_tenant_id=first.tenant_id,
+                    content_id=first.content_id,
+                    content_version_id=second.content_version_id,
+                )
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+
+    def test_hint_b_assignment_fk_survives_failure_path_probe(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        """Schema integrity restoration runs even when the negative-case body fails."""
+        require_disposable_hint_b_postgres(postgres18)
+        baseline = snapshot_assignment_content_version_fk(bootstrap_engine)
+        prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        ghost_version = uuid.uuid7()
+        try:
+            with guarded_hint_b_schema_integrity(bootstrap_engine, baseline=baseline):
+                assert_fk_rejects_coherent_assignment_version_pin(
+                    bootstrap_engine,
+                    tenant_id=prepared.tenant_id,
+                    assignment_id=prepared.assignment_id,
+                    content_id=prepared.content_id,
+                    content_version_id=ghost_version,
+                )
+                raise RuntimeError("PK-V1-HINT-B-I01R4 deliberate failure-path probe")
+        except RuntimeError as exc:
+            assert "deliberate failure-path probe" in str(exc)
+        else:
+            pytest.fail("expected deliberate failure-path probe")
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_fk_rejects_coherent_assignment_version_pin(
+            bootstrap_engine,
+            tenant_id=prepared.tenant_id,
+            assignment_id=prepared.assignment_id,
+            content_id=prepared.content_id,
+            content_version_id=ghost_version,
         )
 
     def test_hint_b_malformed_v2_payload_denied(

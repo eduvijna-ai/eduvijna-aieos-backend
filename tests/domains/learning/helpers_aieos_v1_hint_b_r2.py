@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from aieos.development.learner_principals import CLASS_REF_5A, STUDENT_A_PRINCIPAL_ID
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
@@ -668,83 +671,145 @@ def delete_hint_attestation(
         )
 
 
-def patch_assignment_and_attempt_version_pin(
-    bootstrap_engine: Engine,
-    *,
-    tenant_id: UUID,
-    assignment_id: UUID,
-    attempt_id: UUID,
-    content_version_id: UUID,
-) -> None:
-    with bootstrap_engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE teaching.assignments
-                SET content_version_id = :cvid
-                WHERE tenant_id = :tid AND assignment_id = :asgid
-                """
-            ),
-            {
-                "cvid": content_version_id,
-                "tid": tenant_id,
-                "asgid": assignment_id,
-            },
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE learning.attempts
-                SET content_version_id = :cvid
-                WHERE tenant_id = :tid AND attempt_id = :aid
-                """
-            ),
-            {"cvid": content_version_id, "tid": tenant_id, "aid": attempt_id},
-        )
+_ASSIGNMENT_CONTENT_VERSION_FK = "fk_teaching_assignments_content_version"
+def _compact_sql(fragment: str) -> str:
+    return "".join(fragment.lower().split())
 
 
-def patch_coherent_pins_bypass_assignment_version_fk(
-    bootstrap_engine: Engine,
-    *,
-    tenant_id: UUID,
-    assignment_id: UUID,
-    attempt_id: UUID,
-    content_version_id: UUID,
-) -> None:
-    """Align assignment+attempt version pins for B7 loader negatives (disposable PG only)."""
-    with bootstrap_engine.begin() as conn:
-        conn.execute(
+_CANONICAL_FK_COMPACT_MARKERS = (
+    _compact_sql(
+        "FOREIGN KEY (tenant_id, content_id, content_version_id) "
+        "REFERENCES content.content_versions (tenant_id, content_id, version_id)"
+    ),
+    _compact_sql("ON DELETE RESTRICT"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AssignmentContentVersionFkSnapshot:
+    conname: str
+    convalidated: bool
+    confdeltype: str
+    definition: str
+
+
+def require_disposable_hint_b_postgres(postgres18: dict[str, str]) -> None:
+    """Refuse schema-sensitive B7 probes against user-supplied external databases."""
+    if os.environ.get("AIEOS_TEST_DATABASE_URL"):
+        raise RuntimeError(
+            "Hint-B schema integrity probes require agent-owned disposable PostgreSQL 18 "
+            "(unset AIEOS_TEST_DATABASE_URL)."
+        )
+    if not str(postgres18.get("server_version", "")).startswith("18."):
+        raise RuntimeError("PostgreSQL 18 required for Hint-B acceptance")
+
+
+def snapshot_assignment_content_version_fk(engine: Engine) -> AssignmentContentVersionFkSnapshot:
+    with engine.connect() as conn:
+        row = conn.execute(
             text(
                 """
-                ALTER TABLE teaching.assignments
-                DROP CONSTRAINT IF EXISTS fk_teaching_assignments_content_version
+                SELECT c.conname,
+                       c.convalidated,
+                       c.confdeltype,
+                       pg_get_constraintdef(c.oid) AS definition
+                  FROM pg_constraint c
+                  JOIN pg_class cl ON cl.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = cl.relnamespace
+                 WHERE n.nspname = 'teaching'
+                   AND cl.relname = 'assignments'
+                   AND c.conname = :cname
+                   AND c.contype = 'f'
                 """
+            ),
+            {"cname": _ASSIGNMENT_CONTENT_VERSION_FK},
+        ).one()
+    return AssignmentContentVersionFkSnapshot(
+        conname=str(row.conname),
+        convalidated=bool(row.convalidated),
+        confdeltype=str(row.confdeltype),
+        definition=str(row.definition),
+    )
+
+
+def assert_assignment_content_version_fk(
+    engine: Engine,
+    *,
+    baseline: AssignmentContentVersionFkSnapshot | None = None,
+) -> AssignmentContentVersionFkSnapshot:
+    snap = snapshot_assignment_content_version_fk(engine)
+    if snap.conname != _ASSIGNMENT_CONTENT_VERSION_FK:
+        raise AssertionError(f"unexpected FK name: {snap.conname}")
+    if not snap.convalidated:
+        raise AssertionError(f"{_ASSIGNMENT_CONTENT_VERSION_FK} is not validated")
+    if snap.confdeltype != "r":
+        raise AssertionError(
+            f"{_ASSIGNMENT_CONTENT_VERSION_FK} ON DELETE must be RESTRICT"
+        )
+    compact = _compact_sql(snap.definition)
+    for marker in _CANONICAL_FK_COMPACT_MARKERS:
+        if marker not in compact:
+            raise AssertionError(
+                f"{_ASSIGNMENT_CONTENT_VERSION_FK} definition missing canonical "
+                f"fragment {marker!r}: {snap.definition}"
             )
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE teaching.assignments
-                SET content_version_id = :cvid
-                WHERE tenant_id = :tid AND assignment_id = :asgid
-                """
-            ),
-            {
-                "cvid": content_version_id,
-                "tid": tenant_id,
-                "asgid": assignment_id,
-            },
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE learning.attempts
-                SET content_version_id = :cvid
-                WHERE tenant_id = :tid AND attempt_id = :aid
-                """
-            ),
-            {"cvid": content_version_id, "tid": tenant_id, "aid": attempt_id},
-        )
+    if baseline is not None:
+        if snap.definition != baseline.definition:
+            raise AssertionError(
+                "assignment content-version FK definition drifted: "
+                f"expected {baseline.definition!r}, got {snap.definition!r}"
+            )
+        if snap.convalidated != baseline.convalidated:
+            raise AssertionError("assignment content-version FK convalidated drifted")
+    return snap
+
+
+def assert_fk_rejects_coherent_assignment_version_pin(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: UUID,
+    assignment_id: UUID,
+    content_id: UUID,
+    content_version_id: UUID,
+) -> None:
+    try:
+        with bootstrap_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE teaching.assignments
+                       SET content_version_id = :cvid
+                     WHERE tenant_id = :tid
+                       AND assignment_id = :asgid
+                       AND content_id = :cid
+                    """
+                ),
+                {
+                    "cvid": content_version_id,
+                    "tid": tenant_id,
+                    "asgid": assignment_id,
+                    "cid": content_id,
+                },
+            )
+    except IntegrityError:
+        return
+    raise AssertionError(
+        "fk_teaching_assignments_content_version must reject invalid "
+        f"(tenant_id, content_id, content_version_id)=({tenant_id}, {content_id}, "
+        f"{content_version_id})"
+    )
+
+
+@contextmanager
+def guarded_hint_b_schema_integrity(
+    bootstrap_engine: Engine,
+    *,
+    baseline: AssignmentContentVersionFkSnapshot,
+) -> Iterator[None]:
+    try:
+        yield
+    finally:
+        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
 
 
 def corrupt_version_schema(
