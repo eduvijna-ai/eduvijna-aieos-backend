@@ -77,6 +77,27 @@ _MUTATION_RESPONSES = _problem_responses(
     400, 401, 403, 404, 409, 412, 422, 428, 500, 503
 )
 
+_LEARNER_HINTS_NO_STORE_HEADER: dict[str, dict[str, object]] = {
+    "Cache-Control": {
+        "description": "Learner hints must not be stored in shared HTTP caches",
+        "schema": {"type": "string"},
+        "example": "private, no-store",
+    }
+}
+
+
+def _learner_hints_get_responses() -> dict[int, dict[str, object]]:
+    problems = _problem_responses(400, 401, 403, 404, 409, 422, 500, 503)
+    for spec in problems.values():
+        spec["headers"] = dict(_LEARNER_HINTS_NO_STORE_HEADER)
+    return {
+        200: {
+            "model": LearnerHintsResponse,
+            "headers": dict(_LEARNER_HINTS_NO_STORE_HEADER),
+        },
+        **problems,
+    }
+
 
 def _mutation_event_context(
     request: Request, context: TrustedSecurityContext
@@ -296,7 +317,7 @@ def learning_attempt_get(
     "/learning/attempts/{attempt_id}/learner-hints",
     response_model=LearnerHintsResponse,
     operation_id="learning_attempt_learner_hints_get",
-    responses=_GET_RESPONSES,
+    responses=_learner_hints_get_responses(),
 )
 def learning_attempt_learner_hints_get(
     attempt_id: UUID,

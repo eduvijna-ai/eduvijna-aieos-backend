@@ -156,7 +156,7 @@ class TestI01ArchitectureGuards:
         digest = hashlib.sha256(OPENAPI.read_bytes()).hexdigest().upper()
         assert digest == EXPECTED_OPENAPI_SHA256
         assert digest == (
-    "E8DEE8E2110BF42FA1405745BFA0EB1475406E9D39AAD7CAE1078DD617699C7E"
+    "43F877E122389A7347DDB00D25F37D8BE8BD907F43FF6960E5DC6E794B1A0071"
         )
 
     def test_i01_domain_has_no_audit_or_idempotency_wiring(self) -> None:

@@ -28,6 +28,7 @@ from aieos.domains.learning.application.models import LearnerHintItem
 from aieos.domains.learning.application.ports import (
     StudentLearningCommandUnitOfWorkFactory,
 )
+from aieos.domains.learning.domain.attempt import LearnerAttempt
 from aieos.domains.learning.domain.identities import AttemptId
 from aieos.domains.learning.domain.lifecycle import AttemptLifecycleState
 from aieos.platform.security.authorization.principal_classification import (
@@ -48,6 +49,22 @@ class LearnerHintsReadModel:
     attempt_id: UUID
     content_version_id: UUID
     hints: tuple[LearnerHintItem, ...]
+
+
+def _require_locked_matches_preview(
+    locked: LearnerAttempt,
+    preview: AttemptHintPreview,
+    principal_id: UUID,
+) -> None:
+    """ADR-063 §8.2 B5: locked attempt bindings must match Phase A preview."""
+    require_owner(locked, principal_id)
+    if (
+        locked.teaching_assignment_id != preview.teaching_assignment_id
+        or locked.class_ref != preview.class_ref
+        or locked.content_id != preview.content_id
+        or locked.content_version_id != preview.content_version_id
+    ):
+        raise AttemptNotFound("LearnerAttempt is not visible")
 
 
 def _now(now: datetime | None) -> datetime:
@@ -122,7 +139,9 @@ class GetLearnerHintsService:
             locked_attempt = uow.attempts.get_for_update(typed_attempt_id)
             if locked_attempt is None:
                 raise AttemptNotFound("LearnerAttempt is not visible")
-            require_owner(locked_attempt, principal_id)
+            _require_locked_matches_preview(
+                locked_attempt, preview_state, principal_id
+            )
             require_attempt_matches_assignment(locked_attempt, locked_assignment)
             if locked_attempt.lifecycle_state is not AttemptLifecycleState.IN_PROGRESS:
                 raise InvalidAttemptState(
@@ -132,7 +151,13 @@ class GetLearnerHintsService:
                 locked_attempt.content_id,
                 locked_attempt.content_version_id,
             )
-            if locked_attempt.lifecycle_state is not AttemptLifecycleState.IN_PROGRESS:
+            linearized = uow.attempts.get(typed_attempt_id)
+            if linearized is None:
+                raise AttemptNotFound("LearnerAttempt is not visible")
+            _require_locked_matches_preview(
+                linearized, preview_state, principal_id
+            )
+            if linearized.lifecycle_state is not AttemptLifecycleState.IN_PROGRESS:
                 raise InvalidAttemptState(
                     "learner hints are only available for IN_PROGRESS attempts"
                 )
