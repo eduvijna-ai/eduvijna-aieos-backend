@@ -20,6 +20,8 @@ from aieos.development.learner_principals import STUDENT_B_PRINCIPAL_ID
 from aieos.development.principal_school_context import PRINCIPAL_OS_HUMAN_PRINCIPAL_ID
 from aieos.domains.learning.application.audit import api_mutation_audit_provenance
 from aieos.domains.learning.application.errors import (
+    AssignmentClosedOrCancelled,
+    AssignmentNotYetAvailable,
     AttemptNotFound,
     InvalidAttemptState,
 )
@@ -72,6 +74,22 @@ from tests.domains.learning.helpers_aieos_v1_hint_t1b import (
     prepare_exact_pin_v1_then_v2_assignments,
     prepare_governed_worksheet_v2_assignment,
 )
+from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
+    B8_EVENT_ORDER,
+    ContentionHintUowFactory,
+    ContentionSubmitUowFactory,
+    EventOrderStudentUowFactory,
+    HintHoldingStudentUowFactory,
+    SubmitHoldingStudentUowFactory,
+    assert_problem,
+    corrupt_content_type,
+    corrupt_version_payload,
+    corrupt_version_schema,
+    assert_genuine_lock_contention,
+    delete_hint_attestation,
+    prepare_successive_published_v2_on_same_content,
+)
+from aieos.domains.learning.application.start_attempt import StartAttemptService
 pytestmark = pytest.mark.aieos_v1_hint_b
 
 HINTS_PATH = "/api/v1/learning/attempts/{attempt_id}/learner-hints"
@@ -328,32 +346,6 @@ class TestLearnerHintsLockOrder:
         assert events.index("attempt_for_update") < events.index("commit")
 
 
-class _CountingRereadUow(SqlAlchemyStudentLearningCommandUnitOfWork):
-    def __init__(self, engine, tenant_id, reread_count: list[int]):
-        super().__init__(engine, tenant_id)
-        self._reread_count = reread_count
-
-    def __enter__(self):
-        super().__enter__()
-        real_get = self.attempts.get
-
-        def wrapped_get(attempt_id):
-            self._reread_count[0] += 1
-            return real_get(attempt_id)
-
-        self.attempts.get = wrapped_get  # type: ignore[method-assign]
-        return self
-
-
-class _CountingRereadFactory:
-    def __init__(self, engine, reread_count: list[int]):
-        self._engine = engine
-        self._reread_count = reread_count
-
-    def __call__(self, execution_tenant_id):
-        return _CountingRereadUow(self._engine, execution_tenant_id, self._reread_count)
-
-
 class _DriftLockedAttemptUow(SqlAlchemyStudentLearningCommandUnitOfWork):
     """Test-only: drift locked attempt class_ref away from Phase A preview (B5)."""
 
@@ -426,10 +418,17 @@ class HoldingHintUowFactory:
 
 
 class _HoldingTeachingProxy:
-    def __init__(self, inner, locked: threading.Event, release: threading.Event):
+    def __init__(
+        self,
+        inner,
+        locked: threading.Event,
+        release: threading.Event,
+        holder_pid: list[int | None] | None = None,
+    ):
         self._inner = inner
         self._locked = locked
         self._release = release
+        self._holder_pid = holder_pid
 
     def __enter__(self):
         uow = self._inner.__enter__()
@@ -438,8 +437,12 @@ class _HoldingTeachingProxy:
         def wrapped(assignment_id):
             loaded = real(assignment_id)
             if loaded is not None:
+                if self._holder_pid is not None:
+                    self._holder_pid[0] = uow._connection.execute(  # noqa: SLF001
+                        text("SELECT pg_backend_pid()")
+                    ).scalar_one()
                 self._locked.set()
-                if not self._release.wait(timeout=20):
+                if not self._release.wait(timeout=25):
                     raise TimeoutError("teacher assignment lock was not released")
             return loaded
 
@@ -451,14 +454,24 @@ class _HoldingTeachingProxy:
 
 
 class HoldingTeachingUowFactory:
-    def __init__(self, engine, locked: threading.Event, release: threading.Event):
+    def __init__(
+        self,
+        engine,
+        locked: threading.Event,
+        release: threading.Event,
+        holder_pid: list[int | None] | None = None,
+    ):
         self._inner = SqlAlchemyTeachingUnitOfWorkFactory(engine)
         self._locked = locked
         self._release = release
+        self._holder_pid = holder_pid
 
     def __call__(self, execution_tenant_id):
         return _HoldingTeachingProxy(
-            self._inner(execution_tenant_id), self._locked, self._release
+            self._inner(execution_tenant_id),
+            self._locked,
+            self._release,
+            self._holder_pid,
         )
 
 
@@ -518,19 +531,25 @@ class TestLearnerHintsB5B8:
         with pytest.raises(AttemptNotFound):
             service.get(prepared.tenant_id, prepared.student_id, attempt_id)
 
-    def test_hint_b_b8_persisted_reread_after_hint_extraction(
+    def test_hint_b_b8_event_order_after_hint_extraction_before_commit(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
         prepared, _client, attempt_id, _revision, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
-        reread: list[int] = [0]
+        events: list[str] = []
         service = _hints_service(
-            runtime_engine, prepared, _CountingRereadFactory(runtime_engine, reread)
+            runtime_engine,
+            prepared,
+            EventOrderStudentUowFactory(runtime_engine, events),
         )
         model = service.get(prepared.tenant_id, prepared.student_id, attempt_id)
+        events.append("HTTP-body-after-commit")
         assert model.hints
-        assert reread[0] >= 2, "B8 requires a post-lock attempt.get after hint extraction"
+        assert events == [
+            *B8_EVENT_ORDER,
+            "HTTP-body-after-commit",
+        ]
 
 
 class TestLearnerHintsConcurrency:
@@ -556,19 +575,31 @@ class TestLearnerHintsConcurrency:
         prepared, client, attempt_id, revision, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
-        locked = threading.Event()
+        both_locks_held = threading.Event()
+        holder_pid: list[int | None] = [None]
+        hint_contending = threading.Event()
+        waiter_pid: list[int | None] = [None]
         release = threading.Event()
-        hint_started = threading.Event()
         results: dict[str, object] = {}
         submit_service = _submit_service(
             runtime_engine,
             prepared,
-            HoldingStudentUowFactory(runtime_engine, locked, release),
+            SubmitHoldingStudentUowFactory(
+                runtime_engine,
+                assignment_locked=threading.Event(),
+                both_locks_held=both_locks_held,
+                holder_pid=holder_pid,
+                release=release,
+            ),
         )
         hint_service = _hints_service(
             runtime_engine,
             prepared,
-            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(runtime_engine),
+            ContentionHintUowFactory(
+                runtime_engine,
+                contending_on_assignment=hint_contending,
+                waiter_pid=waiter_pid,
+            ),
         )
 
         def submit() -> None:
@@ -586,7 +617,6 @@ class TestLearnerHintsConcurrency:
                 results["submit_error"] = exc
 
         def hint_get() -> None:
-            hint_started.set()
             try:
                 results["hint"] = hint_service.get(
                     prepared.tenant_id, prepared.student_id, attempt_id
@@ -594,39 +624,66 @@ class TestLearnerHintsConcurrency:
             except BaseException as exc:  # noqa: BLE001
                 results["hint_error"] = exc
 
-        submit_thread = threading.Thread(target=submit)
+        submit_thread = threading.Thread(target=submit, name="submit-first")
         submit_thread.start()
-        assert locked.wait(timeout=20)
-        hint_thread = threading.Thread(target=hint_get)
+        assert both_locks_held.wait(timeout=25)
+        hint_thread = threading.Thread(target=hint_get, name="hint-blocked")
         hint_thread.start()
-        assert hint_started.wait(timeout=20)
+        assert hint_contending.wait(timeout=25)
+        assert holder_pid[0] is not None and waiter_pid[0] is not None
+        assert_genuine_lock_contention(
+            bootstrap_engine,
+            waiter_thread=hint_thread,
+            waiter_pid=waiter_pid[0],
+            holder_pid=holder_pid[0],
+            locks_held=both_locks_held,
+            release=release,
+        )
         release.set()
         submit_thread.join(timeout=30)
         hint_thread.join(timeout=30)
+        assert not submit_thread.is_alive()
+        assert not hint_thread.is_alive()
         assert "submit" in results
         assert results.get("submit_error") is None
         assert isinstance(results.get("hint_error"), InvalidAttemptState)
         assert "hint" not in results
+        denied = client.get(
+            _hints_url(attempt_id), headers=headers(prepared.tenant_id)
+        )
+        assert denied.status_code == 409
+        assert denied.headers.get("Cache-Control") == _NO_STORE
 
     def test_hint_b_hint_wins_lock_commits_before_submit(
         self, runtime_engine, bootstrap_engine, postgres18
     ) -> None:
-        prepared, client, attempt_id, revision, etag = _start_governed_v2(
+        prepared, client, attempt_id, revision, _etag = _start_governed_v2(
             runtime_engine, bootstrap_engine
         )
-        locked = threading.Event()
+        both_locks_held = threading.Event()
+        holder_pid: list[int | None] = [None]
+        submit_contending = threading.Event()
+        submit_waiter_pid: list[int | None] = [None]
         release = threading.Event()
-        submit_started = threading.Event()
         results: dict[str, object] = {}
         hint_service = _hints_service(
             runtime_engine,
             prepared,
-            HoldingHintUowFactory(runtime_engine, locked, release),
+            HintHoldingStudentUowFactory(
+                runtime_engine,
+                both_locks_held=both_locks_held,
+                holder_pid=holder_pid,
+                release=release,
+            ),
         )
         submit_service = _submit_service(
             runtime_engine,
             prepared,
-            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(runtime_engine),
+            ContentionSubmitUowFactory(
+                runtime_engine,
+                contending_on_assignment=submit_contending,
+                waiter_pid=submit_waiter_pid,
+            ),
         )
 
         def hint_get() -> None:
@@ -638,7 +695,6 @@ class TestLearnerHintsConcurrency:
                 results["hint_error"] = exc
 
         def submit() -> None:
-            submit_started.set()
             try:
                 results["submit"] = submit_service.submit(
                     prepared.tenant_id,
@@ -652,22 +708,38 @@ class TestLearnerHintsConcurrency:
             except BaseException as exc:  # noqa: BLE001
                 results["submit_error"] = exc
 
-        hint_thread = threading.Thread(target=hint_get)
+        hint_thread = threading.Thread(target=hint_get, name="hint-first")
         hint_thread.start()
-        assert locked.wait(timeout=20)
-        submit_thread = threading.Thread(target=submit)
+        assert both_locks_held.wait(timeout=25)
+        submit_thread = threading.Thread(target=submit, name="submit-waiting")
         submit_thread.start()
-        assert submit_started.wait(timeout=20)
+        assert submit_contending.wait(timeout=25)
+        assert holder_pid[0] is not None and submit_waiter_pid[0] is not None
+        assert_genuine_lock_contention(
+            bootstrap_engine,
+            waiter_thread=submit_thread,
+            waiter_pid=submit_waiter_pid[0],
+            holder_pid=holder_pid[0],
+            locks_held=both_locks_held,
+            release=release,
+        )
         release.set()
         hint_thread.join(timeout=30)
         submit_thread.join(timeout=30)
+        assert not hint_thread.is_alive()
+        assert not submit_thread.is_alive()
         assert "hint" in results
         assert results.get("hint_error") is None
+        hint_model = results["hint"]
+        assert hint_model.hints
+        assert any(FIXED_T1B_HINT in item.hint_text for item in hint_model.hints)
         assert "submit" in results
         assert results.get("submit_error") is None
         denied = _get_hints(client, prepared, attempt_id)
         assert denied.status_code == 409
         assert denied.headers.get("Cache-Control") == _NO_STORE
+        assert denied.json()["code"] == "invalid_attempt_state"
+        assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_close_wins_assignment_lock_hint_denied(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -677,16 +749,24 @@ class TestLearnerHintsConcurrency:
         )
         locked = threading.Event()
         release = threading.Event()
-        hint_started = threading.Event()
+        holder_pid: list[int | None] = [None]
+        hint_contending = threading.Event()
+        waiter_pid: list[int | None] = [None]
         results: dict[str, object] = {}
         close_service = CloseTeachingAssignmentService(
-            HoldingTeachingUowFactory(runtime_engine, locked, release),
+            HoldingTeachingUowFactory(
+                runtime_engine, locked, release, holder_pid=holder_pid
+            ),
             idempotency_retention=IDEMPOTENCY_RETENTION,
         )
         hint_service = _hints_service(
             runtime_engine,
             prepared,
-            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(runtime_engine),
+            ContentionHintUowFactory(
+                runtime_engine,
+                contending_on_assignment=hint_contending,
+                waiter_pid=waiter_pid,
+            ),
         )
 
         def close() -> None:
@@ -704,7 +784,6 @@ class TestLearnerHintsConcurrency:
                 results["close_error"] = exc
 
         def hint_get() -> None:
-            hint_started.set()
             try:
                 results["hint"] = hint_service.get(
                     prepared.tenant_id, prepared.student_id, attempt_id
@@ -712,21 +791,34 @@ class TestLearnerHintsConcurrency:
             except BaseException as exc:  # noqa: BLE001
                 results["hint_error"] = exc
 
-        teacher = threading.Thread(target=close)
-        teacher.start()
-        assert locked.wait(timeout=20)
-        hint_thread = threading.Thread(target=hint_get)
-        hint_thread.start()
-        assert hint_started.wait(timeout=20)
-        release.set()
-        teacher.join(timeout=30)
-        hint_thread.join(timeout=30)
+        try:
+            teacher = threading.Thread(target=close, name="close-first")
+            teacher.start()
+            assert locked.wait(timeout=25)
+            hint_thread = threading.Thread(target=hint_get, name="hint-close-race")
+            hint_thread.start()
+            assert hint_contending.wait(timeout=25)
+            assert_genuine_lock_contention(
+                bootstrap_engine,
+                waiter_thread=hint_thread,
+                waiter_pid=waiter_pid[0],
+                holder_pid=holder_pid[0],
+                locks_held=locked,
+                release=release,
+            )
+            release.set()
+            teacher.join(timeout=30)
+            hint_thread.join(timeout=30)
+        finally:
+            release.set()
+        assert not teacher.is_alive()
+        assert not hint_thread.is_alive()
         assert "close" in results
         assert results.get("close_error") is None
-        assert "hint_error" in results
+        assert isinstance(results.get("hint_error"), AssignmentClosedOrCancelled)
         assert "hint" not in results
         denied = _get_hints(client, prepared, attempt_id)
-        assert denied.status_code in (404, 409, 422)
+        assert_problem(denied, status=409, code="assignment_closed_or_cancelled")
         assert FIXED_T1B_HINT not in denied.text
 
     @pytest.fixture(autouse=True)
@@ -747,9 +839,7 @@ class TestLearnerHintsSecurityNegatives:
             _hints_url(attempt_id),
             headers={"X-AIEOS-Tenant-ID": str(wrong_tenant)},
         )
-        assert response.status_code in (403, 404)
-        assert response.headers.get("Cache-Control") == _NO_STORE
-        assert FIXED_T1B_HINT not in response.text
+        assert_problem(response, status=403, code="forbidden")
 
     def test_hint_b_workload_and_disabled_human_denied(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -809,6 +899,8 @@ class TestLearnerHintsSecurityNegatives:
             )
             denied = _get_hints(alt, prepared, attempt_id)
             assert denied.status_code in (403, 404)
+            assert denied.headers.get("Cache-Control") == _NO_STORE
+            assert denied.json()["code"] in ("attempt_not_found", "forbidden")
             assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_school_context_unavailable_and_contract_errors(
@@ -859,12 +951,23 @@ class TestLearnerHintsSecurityNegatives:
         )
         future_client = student_client(runtime_engine, future_prep)
         future_started = start_attempt(future_client, future_prep)
-        assert future_started.status_code in (404, 409, 422)
-        denied_future = _get_hints(
-            future_client, future_prep, uuid.uuid7()
+        assert future_started.status_code == 409
+        assert future_started.json()["code"] == "assignment_not_yet_available"
+        start_service = StartAttemptService(
+            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(runtime_engine),
+            SchoolContextLearnerMembershipAuthorityService(future_prep.membership),
+            CurrentPrincipalClassificationAuthority(runtime_engine),
+            idempotency_retention=IDEMPOTENCY_RETENTION,
         )
-        assert denied_future.status_code == 404
-        assert FIXED_T1B_HINT not in denied_future.text
+        with pytest.raises(AssignmentNotYetAvailable):
+            start_service.start(
+                future_prep.tenant_id,
+                future_prep.student_id,
+                future_prep.assignment_id,
+                idempotency_key=f"future-blocked-{uuid.uuid7()}",
+                event_context=_learning_event(future_prep.student_id),
+                audit_provenance=api_mutation_audit_provenance(future_prep.student_id),
+            )
 
         past_due_prepared = prepare_governed_worksheet_v2_assignment(
             runtime_engine,
@@ -910,6 +1013,34 @@ class TestLearnerHintsSecurityNegatives:
         assert res_v2.status_code == 200
         assert res_v2.json()["content_version_id"] == str(pins.v2_content_version_id)
         assert any(FIXED_T1B_HINT in item["hint_text"] for item in res_v2.json()["hints"])
+
+    def test_hint_b_successive_published_v2_pins_keep_exact_hints(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        pins = prepare_successive_published_v2_on_same_content(
+            runtime_engine, bootstrap_engine
+        )
+        client_old = student_client(runtime_engine, pins.first_assignment)
+        started_old = start_attempt(client_old, pins.first_assignment)
+        attempt_old = uuid.UUID(started_old.json()["attempt_id"])
+        old_hints = _get_hints(client_old, pins.first_assignment, attempt_old)
+        assert old_hints.status_code == 200
+        assert old_hints.json()["content_version_id"] == str(pins.first_content_version_id)
+        assert any(
+            pins.first_hint_text in item["hint_text"] for item in old_hints.json()["hints"]
+        )
+        assert pins.second_hint_text not in old_hints.text
+
+        client_new = student_client(runtime_engine, pins.second_assignment)
+        started_new = start_attempt(client_new, pins.second_assignment)
+        attempt_new = uuid.UUID(started_new.json()["attempt_id"])
+        new_hints = _get_hints(client_new, pins.second_assignment, attempt_new)
+        assert new_hints.status_code == 200
+        assert new_hints.json()["content_version_id"] == str(pins.second_content_version_id)
+        assert any(
+            pins.second_hint_text in item["hint_text"] for item in new_hints.json()["hints"]
+        )
+        assert pins.first_content_version_id != pins.second_content_version_id
 
     def test_hint_b_tampered_hint_attestation_digest_fails_closed(
         self, runtime_engine, bootstrap_engine, postgres18
@@ -964,3 +1095,120 @@ class TestLearnerHintsSecurityNegatives:
         assert "learner_hint" not in json.dumps(historical.json()).lower()
         denied_hints = _get_hints(client, prepared, attempt_id)
         assert denied_hints.status_code == 409
+
+
+class TestLearnerHintsR2ContentNegatives:
+    def test_hint_b_missing_attestation_row(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        delete_hint_attestation(
+            bootstrap_engine,
+            tenant_id=prepared.tenant_id,
+            version_id=prepared.content_version_id,
+        )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(denied, status=422, code="content_not_learner_consumable")
+
+    def test_hint_b_missing_exact_content_version(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        ghost_version = uuid.uuid7()
+        with bootstrap_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE learning.attempts
+                    SET content_version_id = :cvid
+                    WHERE tenant_id = :tid AND attempt_id = :aid
+                    """
+                ),
+                {
+                    "cvid": ghost_version,
+                    "tid": prepared.tenant_id,
+                    "aid": attempt_id,
+                },
+            )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(
+            denied, status=409, code="assignment_not_currently_consumable"
+        )
+
+    def test_hint_b_foreign_content_version_binding(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        first, client_a, attempt_a, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        second = prepare_governed_worksheet_v2_assignment(
+            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+        )
+        with bootstrap_engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE learning.attempts
+                    SET content_version_id = :cvid
+                    WHERE tenant_id = :tid AND attempt_id = :aid
+                    """
+                ),
+                {
+                    "cvid": second.content_version_id,
+                    "tid": first.tenant_id,
+                    "aid": attempt_a,
+                },
+            )
+        denied = _get_hints(client_a, first, attempt_a)
+        assert_problem(
+            denied, status=409, code="assignment_not_currently_consumable"
+        )
+
+    def test_hint_b_malformed_v2_payload_denied(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        payload = _hinted_payload()
+        payload["questions"][0]["learner_hint"] = 42
+        corrupt_version_payload(
+            bootstrap_engine,
+            version_id=prepared.content_version_id,
+            payload=payload,
+        )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(denied, status=422, code="content_not_learner_consumable")
+
+    def test_hint_b_worksheet_schema_v3_unsupported(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        corrupt_version_schema(
+            bootstrap_engine,
+            version_id=prepared.content_version_id,
+            schema_version=3,
+        )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(denied, status=422, code="content_not_learner_consumable")
+
+    def test_hint_b_non_worksheet_content_type_denied(
+        self, runtime_engine, bootstrap_engine, postgres18
+    ) -> None:
+        prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
+            runtime_engine, bootstrap_engine
+        )
+        corrupt_content_type(
+            bootstrap_engine,
+            tenant_id=prepared.tenant_id,
+            content_id=prepared.content_id,
+            content_type="quiz",
+        )
+        denied = _get_hints(client, prepared, attempt_id)
+        assert_problem(denied, status=422, code="content_not_learner_consumable")
