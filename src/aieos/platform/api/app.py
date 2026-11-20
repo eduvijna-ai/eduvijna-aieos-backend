@@ -46,6 +46,12 @@ from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
     ListTeacherReviewQueueService,
 )
+from aieos.domains.content.application.worksheet_hint_append import (
+    AppendWorksheetLearnerHintsContentVersionService,
+)
+from aieos.domains.content.application.worksheet_hint_attestation_record import (
+    RecordWorksheetLearnerHintAttestationService,
+)
 from aieos.domains.content.domain.schema import ContentSchemaRegistry
 from aieos.domains.education.application.generate_preparation_kit import (
     GeneratePreparationKitCapability,
@@ -503,6 +509,32 @@ def create_app(
         app.state.update_teaching_assignment_due_service = None
         app.state.close_teaching_assignment_service = None
         app.state.cancel_teaching_assignment_service = None
+    class_authority_for_hints = app.state.school_context_class_authority
+    if (
+        class_authority_for_hints is not None
+        and ai_generation_authorization is not None
+    ):
+        app.state.append_worksheet_learner_hints_service = (
+            AppendWorksheetLearnerHintsContentVersionService(
+                uow_factory,
+                schema_registry,
+                asset_reference_validation,
+                ai_generation_authorization,
+                classification,
+                class_authority_for_hints,
+                idempotency_retention=idempotency_retention,
+            )
+        )
+    else:
+        app.state.append_worksheet_learner_hints_service = None
+    app.state.record_worksheet_learner_hint_attestation_service = (
+        RecordWorksheetLearnerHintAttestationService(
+            uow_factory,
+            review_authorization,
+            classification,
+            idempotency_retention=idempotency_retention,
+        )
+    )
     app.state.get_teaching_assignment_service = GetTeachingAssignmentService(
         teaching_uow_factory
     )

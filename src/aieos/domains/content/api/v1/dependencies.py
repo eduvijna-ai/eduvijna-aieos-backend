@@ -11,6 +11,12 @@ from aieos.domains.content.application.http_append import (
     GetContentVersionService,
     HttpAppendContentVersionService,
 )
+from aieos.domains.content.application.worksheet_hint_append import (
+    AppendWorksheetLearnerHintsContentVersionService,
+)
+from aieos.domains.content.application.worksheet_hint_attestation_record import (
+    RecordWorksheetLearnerHintAttestationService,
+)
 from aieos.domains.content.application.queries import GetContentService, ListContentsService
 from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
@@ -76,6 +82,42 @@ def cursor_codec(request: Request) -> CursorCodec:
 
 def http_append_service(request: Request) -> HttpAppendContentVersionService:
     return request.app.state.http_append_service
+
+
+def _require_worksheet_hint_append_services(request: Request) -> None:
+    if request.app.state.school_context_class_authority is None:
+        from aieos.domains.teaching.application.errors import SchoolContextUnavailable
+
+        raise SchoolContextUnavailable(
+            "School Context is not composed in this runtime"
+        )
+
+
+def append_worksheet_learner_hints_service(
+    request: Request,
+) -> AppendWorksheetLearnerHintsContentVersionService:
+    _require_worksheet_hint_append_services(request)
+    service = request.app.state.append_worksheet_learner_hints_service
+    if service is None:
+        from aieos.domains.teaching.application.errors import SchoolContextUnavailable
+
+        raise SchoolContextUnavailable(
+            "Worksheet learner-hint append is not composed in this runtime"
+        )
+    return service
+
+
+def record_worksheet_learner_hint_attestation_service(
+    request: Request,
+) -> RecordWorksheetLearnerHintAttestationService:
+    service = request.app.state.record_worksheet_learner_hint_attestation_service
+    if service is None:
+        from aieos.domains.content.application.errors import PersistenceOperationFailed
+
+        raise PersistenceOperationFailed(
+            "Worksheet hint attestation is not composed in this runtime"
+        )
+    return service
 
 
 def get_content_version_service(request: Request) -> GetContentVersionService:

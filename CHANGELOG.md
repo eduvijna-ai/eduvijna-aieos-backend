@@ -9,6 +9,11 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PK-V1-HINT-T0-B-I01 (ADR-063 §7) — Teacher HTTP for guarded worksheet@2 learner-hint
+  ContentVersion append and version-scoped structured hint attestation record;
+  production `KernelAIGenerationAuthorization` composition; OpenAPI additive operations
+  `content_worksheet_hint_version_append` and `content_worksheet_hint_attestation_record`.
+
 - AIEOS-V1-HINT-T2-I01R2 — Chief R2 corrections: PostgreSQL validation function
   for attestation JSON outcomes (no CHECK subqueries), fail-closed human classification
   on hint APPROVE/publish, stored outcome set equality, effective-actor binding,

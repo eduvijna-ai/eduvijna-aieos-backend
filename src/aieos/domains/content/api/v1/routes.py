@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from aieos.domains.content.api.v1.dependencies import (
+    append_worksheet_learner_hints_service,
     create_content_service,
     cursor_codec,
     get_content_service,
@@ -20,6 +21,7 @@ from aieos.domains.content.api.v1.dependencies import (
     list_teacher_library_service,
     list_teacher_review_queue_service,
     publish_content_service,
+    record_worksheet_learner_hint_attestation_service,
     resolve_trusted_context,
     review_command_service,
 )
@@ -42,6 +44,9 @@ from aieos.domains.content.api.v1.models import (
     TeacherReviewQueueDetailResponse,
     TeacherReviewQueueItemResponse,
     TeacherReviewQueueListResponse,
+    WorksheetLearnerHintAttestationRecordRequest,
+    WorksheetLearnerHintAttestationRecordResponse,
+    WorksheetLearnerHintVersionAppendRequest,
 )
 from aieos.domains.content.application.create import CreateContentService
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
@@ -76,6 +81,12 @@ from aieos.domains.content.application.library_models import (
 from aieos.domains.content.application.review_queue import (
     GetTeacherReviewQueueItemService,
     ListTeacherReviewQueueService,
+)
+from aieos.domains.content.application.worksheet_hint_append import (
+    AppendWorksheetLearnerHintsContentVersionService,
+)
+from aieos.domains.content.application.worksheet_hint_attestation_record import (
+    RecordWorksheetLearnerHintAttestationService,
 )
 from aieos.domains.content.application.review_queue_models import (
     ListTeacherReviewQueueQuery,
@@ -325,6 +336,91 @@ def content_version_append(
     )
     response.headers["ETag"] = encode_revision_etag(int(revision))
     return _to_version_response(model)
+
+
+@router.post(
+    "/contents/{content_id}/worksheet-learner-hint-versions",
+    status_code=201,
+    response_model=ContentVersionResponse,
+    operation_id="content_worksheet_hint_version_append",
+    responses=_APPEND_RESPONSES,
+)
+def content_worksheet_hint_version_append(
+    content_id: UUID,
+    body: WorksheetLearnerHintVersionAppendRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        AppendWorksheetLearnerHintsContentVersionService,
+        Depends(append_worksheet_learner_hints_service),
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ContentVersionResponse:
+    key = parse_idempotency_key(idempotency_key)
+    expected = AggregateRevision(parse_if_match(if_match))
+    model, revision = service.append(
+        context.tenant_id,
+        context.principal_id,
+        content_id=_content_id(content_id),
+        expected_aggregate_revision=expected,
+        payload=body.payload,
+        authoring_class_ref=body.authoring_class_ref,
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, context),
+        audit_provenance=api_mutation_audit_provenance(context.principal_id),
+        asset_refs=[ref.model_dump(mode="python") for ref in body.asset_refs],
+    )
+    response.headers["Location"] = (
+        f"/api/v1/contents/{model.content_id}/versions/{model.version_id}"
+    )
+    response.headers["ETag"] = encode_revision_etag(int(revision))
+    return _to_version_response(model)
+
+
+@router.post(
+    "/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
+    status_code=201,
+    response_model=WorksheetLearnerHintAttestationRecordResponse,
+    operation_id="content_worksheet_hint_attestation_record",
+    responses=_REVIEW_RESPONSES,
+)
+def content_worksheet_hint_attestation_record(
+    content_id: UUID,
+    version_id: UUID,
+    body: WorksheetLearnerHintAttestationRecordRequest,
+    request: Request,
+    response: Response,
+    context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
+    service: Annotated[
+        RecordWorksheetLearnerHintAttestationService,
+        Depends(record_worksheet_learner_hint_attestation_service),
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> WorksheetLearnerHintAttestationRecordResponse:
+    key = parse_idempotency_key(idempotency_key)
+    expected = AggregateRevision(parse_if_match(if_match))
+    attestation_id = service.record(
+        context.tenant_id,
+        context.principal_id,
+        content_id=_content_id(content_id),
+        version_id=_version_id(version_id),
+        expected_aggregate_revision=expected,
+        per_question_outcomes=[
+            item.model_dump(mode="python") for item in body.per_question_outcomes
+        ],
+        idempotency_key=key,
+        event_context=_mutation_event_context(request, context),
+        audit_provenance=api_mutation_audit_provenance(context.principal_id),
+    )
+    response.headers["ETag"] = encode_revision_etag(int(expected))
+    return WorksheetLearnerHintAttestationRecordResponse(
+        attestation_id=attestation_id.value,
+        content_id=content_id,
+        version_id=version_id,
+    )
 
 
 @router.get(

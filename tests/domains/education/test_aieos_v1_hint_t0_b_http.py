@@ -1,0 +1,417 @@
+"""PK-V1-HINT-T0-B — Teacher worksheet@2 hint append + attestation HTTP (ADR-063 §7)."""
+
+from __future__ import annotations
+
+import uuid
+from uuid import UUID
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
+from aieos.domains.assessment.infrastructure.persistence.uow import (
+    SqlAlchemyAssessmentUnitOfWorkFactory,
+)
+from aieos.domains.content.application.catalog import StaticContentTypeCatalog
+from aieos.domains.content.infrastructure.persistence.uow import (
+    SqlAlchemyContentUnitOfWorkFactory,
+)
+from aieos.domains.education.schema import (
+    WORKSHEET_CONTENT_TYPE,
+    WORKSHEET_SCHEMA_ID,
+    WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
+    build_preparation_content_schema_registry,
+)
+from aieos.domains.teaching.infrastructure.persistence.uow import (
+    SqlAlchemyTeachingUnitOfWorkFactory,
+)
+from aieos.domains.content.domain.identities import ContentId
+from aieos.platform.api.app import create_app
+from aieos.platform.api.etag import encode_revision_etag
+from tests.domains.assessment.helpers_dev08_i02 import MutableSchoolContextClassReader
+from tests.domains.education.test_aieos_v1_hint_t1 import (
+    StubHumanClassification,
+    _hint_free_v2_payload,
+    _worksheet_v2_payload,
+)
+from tests.domains.education.test_aieos_v1_hint_t1_persistence import _append_v1
+from tests.domains.teaching.worksheet_fixtures import valid_worksheet_payload
+from tests.fakes import (
+    AllowAIGenerationAuthorization,
+    AllowAssetCurrentGovernance,
+    AllowAssetReferenceValidation,
+    AllowClassroomAssessmentAuthorization,
+    AllowPublicationAuthorization,
+    AllowPublicationGovernance,
+    AllowReviewAuthorization,
+    AllowReviewCommentPolicy,
+    FixedPrincipalAuthenticator,
+    IDEMPOTENCY_RETENTION,
+    StubSecurityContextResolver,
+)
+
+pytestmark = pytest.mark.aieos_v1_hint_t1
+
+CURSOR_KEY = b"hint-t0-b-http-cursor-key"
+
+
+def _headers(tenant_id: UUID, **extra: str) -> dict[str, str]:
+    out = {"X-AIEOS-Tenant-ID": str(tenant_id), **extra}
+    if "Idempotency-Key" not in out:
+        out["Idempotency-Key"] = f"http-{uuid.uuid7()}"
+    return out
+
+
+def _client(
+    runtime_engine: Engine,
+    *,
+    tenant_id: UUID,
+    principal_id: UUID,
+    school_context_reader: MutableSchoolContextClassReader | None,
+    version_create_auth: AllowAIGenerationAuthorization | None = None,
+    review_auth: AllowReviewAuthorization | None = None,
+) -> TestClient:
+    return TestClient(
+        create_app(
+            uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+            teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(runtime_engine),
+            assessment_uow_factory=SqlAlchemyAssessmentUnitOfWorkFactory(runtime_engine),
+            assessment_authorization=AllowClassroomAssessmentAuthorization(),
+            request_identity_authenticator=FixedPrincipalAuthenticator(principal_id),
+            security_resolver=StubSecurityContextResolver(tenant_id, principal_id),
+            content_types=StaticContentTypeCatalog({WORKSHEET_CONTENT_TYPE}),
+            cursor_signing_key=CURSOR_KEY,
+            schema_registry=build_preparation_content_schema_registry(),
+            idempotency_retention=IDEMPOTENCY_RETENTION,
+            review_authorization=review_auth or AllowReviewAuthorization(),
+            review_comment_policy=AllowReviewCommentPolicy(),
+            publication_authorization=AllowPublicationAuthorization(),
+            publication_governance=AllowPublicationGovernance(),
+            asset_reference_validation=AllowAssetReferenceValidation(),
+            asset_current_governance=AllowAssetCurrentGovernance(),
+            ai_generation_authorization=version_create_auth
+            or AllowAIGenerationAuthorization(),
+            school_context_class_reader=school_context_reader,
+            principal_classification_authority=StubHumanClassification(),
+        ),
+        raise_server_exceptions=False,
+    )
+
+
+def _create_worksheet(client: TestClient, tenant_id: UUID) -> tuple[str, str]:
+    response = client.post(
+        "/api/v1/contents",
+        json={
+            "content_type": WORKSHEET_CONTENT_TYPE,
+            "title": "Fractions",
+            "description": "",
+            "locale": "en-IN",
+        },
+        headers=_headers(tenant_id),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    return body["content_id"], response.headers["ETag"]
+
+
+class TestGuardedHintAppendHttp:
+    def test_positive_guarded_append_returns_location_etag_idempotency(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        reader = MutableSchoolContextClassReader(
+            tenant_id=tenant_id,
+            teacher_principal_id=principal_id,
+            class_refs=("class-5a",),
+        )
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=reader,
+        )
+        content_id, etag = _create_worksheet(client, tenant_id)
+        hint_free = client.post(
+            f"/api/v1/contents/{content_id}/versions",
+            json={
+                "schema_id": WORKSHEET_SCHEMA_ID,
+                "schema_version": WORKSHEET_SCHEMA_VERSION,
+                "payload": valid_worksheet_payload(),
+                "asset_refs": [],
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert hint_free.status_code == 201, hint_free.text
+        etag = hint_free.headers["ETag"]
+        idem = f"guard-hint-{uuid.uuid7()}"
+        append = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+                "asset_refs": [],
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag, "Idempotency-Key": idem}),
+        )
+        assert append.status_code == 201, append.text
+        version = append.json()
+        assert version["schema_id"] == WORKSHEET_SCHEMA_ID
+        assert version["schema_version"] == WORKSHEET_SCHEMA_VERSION_V2
+        assert "Location" in append.headers
+        assert append.headers["ETag"]
+        replay = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(hint="Different body"),
+                "asset_refs": [],
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag, "Idempotency-Key": idem}),
+        )
+        assert replay.status_code == 409
+
+    def test_fail_closed_without_school_context_reader(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=None,
+        )
+        content_id, etag = _create_worksheet(client, tenant_id)
+        response = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 503
+        assert response.headers["content-type"].startswith("application/problem+json")
+
+    def test_denied_without_version_create_grant(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        reader = MutableSchoolContextClassReader(
+            tenant_id=tenant_id,
+            teacher_principal_id=principal_id,
+        )
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=reader,
+            version_create_auth=AllowAIGenerationAuthorization(allow=False),
+        )
+        content_id, etag = _create_worksheet(client, tenant_id)
+        response = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code != 201
+        assert response.headers["content-type"].startswith("application/problem+json")
+
+    @pytest.mark.parametrize(
+        "hint_value",
+        [None, "", "hint", {}, 42],
+    )
+    def test_generic_append_still_rejects_learner_hint_key_presence(
+        self, runtime_engine, bootstrap_engine, hint_value
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=principal_id
+            ),
+        )
+        content_id, etag = _create_worksheet(client, tenant_id)
+        payload = _hint_free_v2_payload()
+        payload["questions"][0]["learner_hint"] = hint_value
+        response = client.post(
+            f"/api/v1/contents/{content_id}/versions",
+            json={
+                "schema_id": WORKSHEET_SCHEMA_ID,
+                "schema_version": WORKSHEET_SCHEMA_VERSION_V2,
+                "payload": payload,
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 422
+
+
+class TestHintAttestationRecordHttp:
+    def _hinted_version_in_review(
+        self, runtime_engine, bootstrap_engine
+    ) -> tuple[UUID, UUID, UUID, UUID, UUID, str]:
+        tenant_id = uuid.uuid7()
+        author_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        reader = MutableSchoolContextClassReader(
+            tenant_id=tenant_id,
+            teacher_principal_id=author_id,
+        )
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            school_context_reader=reader,
+        )
+        content_id_str, etag = _create_worksheet(client, tenant_id)
+        cid = ContentId(UUID(content_id_str))
+        _append_v1(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            content_id=cid,
+        )
+        etag = encode_revision_etag(1)
+        author_client = client
+        append = author_client.post(
+            f"/api/v1/contents/{content_id_str}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert append.status_code == 201, append.text
+        version_id = append.json()["version_id"]
+        submit = author_client.post(
+            f"/api/v1/contents/{content_id_str}/versions/{version_id}/actions/submit-for-review",
+            headers=_headers(
+                tenant_id,
+                **{"If-Match": append.headers["ETag"]},
+            ),
+        )
+        assert submit.status_code == 200, submit.text
+        return (
+            tenant_id,
+            author_id,
+            reviewer_id,
+            UUID(content_id_str),
+            UUID(version_id),
+            submit.headers["ETag"],
+        )
+
+    def test_positive_attestation_record(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        (
+            tenant_id,
+            author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
+        reviewer_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=reviewer_id
+            ),
+        )
+        outcomes = [
+            {
+                "question_id": "q-1",
+                "hard_block_clear": True,
+                "human_review_pass": True,
+            }
+        ]
+        response = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
+            json={"per_question_outcomes": outcomes},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["content_id"] == str(content_id)
+        assert body["version_id"] == str(version_id)
+        assert body["attestation_id"]
+
+    def test_reviewer_must_differ_from_author(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        (
+            tenant_id,
+            author_id,
+            _reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
+        author_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=author_id
+            ),
+        )
+        response = author_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
+            json={
+                "per_question_outcomes": [
+                    {
+                        "question_id": "q-1",
+                        "hard_block_clear": True,
+                        "human_review_pass": True,
+                    }
+                ]
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 409
+
+    def test_denied_without_review_decide_grant(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        (
+            tenant_id,
+            _author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
+        reviewer_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=reviewer_id
+            ),
+            review_auth=AllowReviewAuthorization(allow=False),
+        )
+        response = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
+            json={
+                "per_question_outcomes": [
+                    {
+                        "question_id": "q-1",
+                        "hard_block_clear": True,
+                        "human_review_pass": True,
+                    }
+                ]
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 403
