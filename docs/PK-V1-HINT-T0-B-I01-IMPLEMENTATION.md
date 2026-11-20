@@ -24,10 +24,19 @@ mutation conventions.
 - Attestation record is always composed with `KernelReviewAuthorization` /
   test doubles for `content.review.decide`.
 
+## I01R1 security-contract correction (Draft PR #74)
+
+- PED-I03: `content_worksheet_hint_version_append` and
+  `content_worksheet_hint_attestation_record` added to `FROZEN_API_MUTATION_OPERATION_IDS`.
+- RFC9457: `AIGenerationForbidden` → HTTP 403; `WorksheetLearnerHintAttestationInvalid` → HTTP 409.
+- OpenAPI metadata: required `Idempotency-Key` / `If-Match`; `ETag` (+ `Location` on append) on 201.
+
 ## OpenAPI
 
-- Pre: `43F877E122389A7347DDB00D25F37D8BE8BD907F43FF6960E5DC6E794B1A0071`
-- Post: `1058E5C715EEA1113E7D88D410A540C89B0459BA97C5EE187DF90B813571F13B`
+- T0-B initial post (I01): `1058E5C715EEA1113E7D88D410A540C89B0459BA97C5EE187DF90B813571F13B`
+- After I01R1 header/metadata correction:
+  `0061BCF6065FAFA184F196829A87AF98ADEDFCE6B633D45704141A5B48045D22`
+- Pre-T0-B main: `43F877E122389A7347DDB00D25F37D8BE8BD907F43FF6960E5DC6E794B1A0071`
 - Regenerate: `uv run python` using `build_openapi(create_app(...))` as in
   `tests/domains/education/test_aieos_v1_hint_t0_b_openapi.py`.
 

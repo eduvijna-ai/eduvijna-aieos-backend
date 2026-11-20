@@ -15,6 +15,8 @@ _SUCCESS_STATUSES = {"200", "201"}
 _MUTATION_IDEMPOTENCY_IDS = {
     "content_create",
     "content_version_append",
+    "content_worksheet_hint_version_append",
+    "content_worksheet_hint_attestation_record",
     "content_review_submit",
     "content_review_approve",
     "content_review_request_changes",
@@ -39,6 +41,8 @@ _MUTATION_IDEMPOTENCY_IDS = {
 }
 _IF_MATCH_OPERATION_IDS = {
     "content_version_append",
+    "content_worksheet_hint_version_append",
+    "content_worksheet_hint_attestation_record",
     "content_review_submit",
     "content_review_approve",
     "content_review_request_changes",
@@ -200,6 +204,8 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
                     "content_create",
                     "content_get",
                     "content_version_append",
+                    "content_worksheet_hint_version_append",
+                    "content_worksheet_hint_attestation_record",
                     "content_review_submit",
                     "content_review_approve",
                     "content_review_request_changes",
@@ -245,7 +251,10 @@ def build_openapi(app: FastAPI) -> dict[str, Any]:
                         "description": "Canonical LearnerAttempt URL",
                         "schema": {"type": "string"},
                     }
-                if status == "201" and operation_id == "content_version_append":
+                if status == "201" and operation_id in {
+                    "content_version_append",
+                    "content_worksheet_hint_version_append",
+                }:
                     headers["Location"] = {
                         "description": "Canonical ContentVersion URL",
                         "schema": {"type": "string"},

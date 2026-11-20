@@ -88,7 +88,24 @@ def _minimal_app() -> FastAPI:
     )
 
 
+def test_t0_b_hint_mutations_in_frozen_inventory() -> None:
+    from aieos.platform.runtime.activation import NON_MUTATING_WRITE_OPERATION_IDS
+
+    assert "content_worksheet_hint_version_append" in FROZEN_API_MUTATION_OPERATION_IDS
+    assert "content_worksheet_hint_attestation_record" in FROZEN_API_MUTATION_OPERATION_IDS
+    assert (
+        "content_worksheet_hint_version_append"
+        not in NON_MUTATING_WRITE_OPERATION_IDS
+    )
+    assert (
+        "content_worksheet_hint_attestation_record"
+        not in NON_MUTATING_WRITE_OPERATION_IDS
+    )
+
+
 def test_frozen_mutation_inventory_matches_discovered_writes() -> None:
+    from aieos.platform.runtime.activation import NON_MUTATING_WRITE_OPERATION_IDS
+
     app = _minimal_app()
     discovered = discover_write_operation_ids(app)
     from aieos.platform.runtime.activation import NON_MUTATING_WRITE_OPERATION_IDS

@@ -83,3 +83,32 @@ def test_openapi_snapshot_matches_checked_in_contract() -> None:
     generated = canonical_openapi_json(_schema())
     assert SNAPSHOT.is_file()
     assert SNAPSHOT.read_text(encoding="utf-8") == generated
+
+
+def _header_param(operation: dict, name: str) -> dict | None:
+    for param in operation.get("parameters", []):
+        if param.get("in") == "header" and param.get("name") == name:
+            return param
+    return None
+
+
+def test_openapi_t0_b_mutation_headers_required_and_success_metadata() -> None:
+    schema = _schema()
+    paths = schema["paths"]
+    append_op = paths["/api/v1/contents/{content_id}/worksheet-learner-hint-versions"][
+        "post"
+    ]
+    attest_op = paths[
+        "/api/v1/contents/{content_id}/versions/{version_id}"
+        "/actions/record-worksheet-hint-attestation"
+    ]["post"]
+    for op in (append_op, attest_op):
+        idem = _header_param(op, "Idempotency-Key")
+        if_match = _header_param(op, "If-Match")
+        assert idem is not None and idem.get("required") is True
+        assert if_match is not None and if_match.get("required") is True
+    append_201 = append_op["responses"]["201"]["headers"]
+    assert "ETag" in append_201
+    assert "Location" in append_201
+    attest_201 = attest_op["responses"]["201"]["headers"]
+    assert "ETag" in attest_201

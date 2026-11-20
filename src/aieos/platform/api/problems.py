@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from aieos.domains.content.application.errors import (
+    AIGenerationForbidden,
     AggregateRevisionConflict,
     ContentAlreadyExists,
     ContentApplicationError,
@@ -53,6 +54,7 @@ from aieos.domains.content.application.errors import (
     VersionAlreadyExists,
     VersionLineageConflict,
     WorkflowCoordinationFailed,
+    WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.teaching.application.errors import (
     AggregateRevisionConflict as TeachingAggregateRevisionConflict,
@@ -444,6 +446,18 @@ _APPLICATION_PROBLEMS: dict[type[ContentApplicationError], tuple[int, str, str, 
         "forbidden",
         "Forbidden",
         "The principal is not authorized for this review capability",
+    ),
+    AIGenerationForbidden: (
+        403,
+        "forbidden",
+        "Forbidden",
+        "The principal is not authorized for content.version.create",
+    ),
+    WorksheetLearnerHintAttestationInvalid: (
+        409,
+        "review_decision_not_allowed",
+        "Review decision not allowed",
+        "Worksheet learner-hint attestation failed validation",
     ),
     ReviewCommentRejected: (
         422,

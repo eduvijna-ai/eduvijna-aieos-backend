@@ -221,8 +221,11 @@ class TestGuardedHintAppendHttp:
             },
             headers=_headers(tenant_id, **{"If-Match": etag}),
         )
-        assert response.status_code != 201
+        assert response.status_code == 403
         assert response.headers["content-type"].startswith("application/problem+json")
+        body = response.json()
+        assert body["code"] == "forbidden"
+        assert body["title"] == "Forbidden"
 
     @pytest.mark.parametrize(
         "hint_value",
@@ -380,6 +383,7 @@ class TestHintAttestationRecordHttp:
             headers=_headers(tenant_id, **{"If-Match": etag}),
         )
         assert response.status_code == 409
+        assert response.json()["code"] == "review_decision_not_allowed"
 
     def test_denied_without_review_decide_grant(
         self, runtime_engine, bootstrap_engine
@@ -399,7 +403,7 @@ class TestHintAttestationRecordHttp:
             school_context_reader=MutableSchoolContextClassReader(
                 tenant_id=tenant_id, teacher_principal_id=reviewer_id
             ),
-            review_auth=AllowReviewAuthorization(allow=False),
+            review_auth=AllowReviewAuthorization(allow_decide=False),
         )
         response = reviewer_client.post(
             f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
@@ -415,3 +419,60 @@ class TestHintAttestationRecordHttp:
             headers=_headers(tenant_id, **{"If-Match": etag}),
         )
         assert response.status_code == 403
+        body = response.json()
+        assert body["code"] == "forbidden"
+        assert response.headers["content-type"].startswith("application/problem+json")
+
+    def test_denied_stale_class_ref(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        reader = MutableSchoolContextClassReader(
+            tenant_id=tenant_id,
+            teacher_principal_id=principal_id,
+            class_refs=("class-other",),
+        )
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=reader,
+        )
+        content_id, etag = _create_worksheet(client, tenant_id)
+        response = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_content_request"
+
+    def test_missing_if_match_returns_precondition_required(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        principal_id = uuid.uuid7()
+        client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=principal_id
+            ),
+        )
+        content_id, _etag = _create_worksheet(client, tenant_id)
+        headers = _headers(tenant_id)
+        headers.pop("If-Match", None)
+        response = client.post(
+            f"/api/v1/contents/{content_id}/worksheet-learner-hint-versions",
+            json={
+                "authoring_class_ref": "class-5a",
+                "payload": _worksheet_v2_payload(),
+            },
+            headers=headers,
+        )
+        assert response.status_code == 428

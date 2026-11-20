@@ -406,6 +406,41 @@ class TestPreUowBlocking:
             (
                 "POST",
                 lambda cid, vid: (
+                    f"/api/v1/contents/{cid}/worksheet-learner-hint-versions"
+                ),
+                {
+                    "authoring_class_ref": "class-x",
+                    "payload": {
+                        "version": 2,
+                        "questions": [
+                            {
+                                "question_id": "q-1",
+                                "stem": "s",
+                                "learner_hint": "hint",
+                            }
+                        ],
+                    },
+                },
+            ),
+            (
+                "POST",
+                lambda cid, vid: (
+                    f"/api/v1/contents/{cid}/versions/{vid}/actions/"
+                    "record-worksheet-hint-attestation"
+                ),
+                {
+                    "per_question_outcomes": [
+                        {
+                            "question_id": "q-1",
+                            "hard_block_clear": True,
+                            "human_review_pass": True,
+                        }
+                    ]
+                },
+            ),
+            (
+                "POST",
+                lambda cid, vid: (
                     f"/api/v1/contents/{cid}/versions/{vid}/actions/submit-for-review"
                 ),
                 {},
