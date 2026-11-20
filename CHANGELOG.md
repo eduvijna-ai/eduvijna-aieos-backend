@@ -9,6 +9,20 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PK-V1-HINT-T0-B-I01R1 — Chief-authorized security-contract correction on Draft PR #74:
+  PED-I03 mutation inventory for hint append/attestation, RFC9457 mappings for denied
+  version-create and invalid attestation, and OpenAPI required mutation headers / 201 ETag
+  metadata (digest `0061BCF6…`).
+
+- PK-V1-HINT-T0-B-I01R2 — Exact-type RFC9457 mappings for
+  `WorksheetLearnerHintAttestationRequired` and `WorksheetLearnerHintPublicationBlocked`
+  (409 review/publish problem codes); discriminating T0-B HTTP approve/publish scenarios.
+
+- PK-V1-HINT-T0-B-I01 (ADR-063 §7) — Teacher HTTP for guarded worksheet@2 learner-hint
+  ContentVersion append and version-scoped structured hint attestation record;
+  production `KernelAIGenerationAuthorization` composition; OpenAPI additive operations
+  `content_worksheet_hint_version_append` and `content_worksheet_hint_attestation_record`.
+
 - AIEOS-V1-HINT-T2-I01R2 — Chief R2 corrections: PostgreSQL validation function
   for attestation JSON outcomes (no CHECK subqueries), fail-closed human classification
   on hint APPROVE/publish, stored outcome set equality, effective-actor binding,

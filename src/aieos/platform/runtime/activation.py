@@ -35,6 +35,8 @@ FROZEN_API_MUTATION_OPERATION_IDS: frozenset[str] = frozenset(
     {
         "content_create",
         "content_version_append",
+        "content_worksheet_hint_version_append",
+        "content_worksheet_hint_attestation_record",
         "content_review_submit",
         "content_review_approve",
         "content_review_request_changes",

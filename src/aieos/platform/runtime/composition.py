@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from aieos.domains.content.application.ports import (
+    AIGenerationAuthorizationPort,
     AssetCurrentGovernancePort,
     AssetReferenceValidationPort,
     ContentTypeCatalog,
@@ -91,6 +92,7 @@ class ApiRuntimeDependencies:
     principal_classification_authority: HumanPrincipalClassificationGate
     teaching_authorization: TeachingWorkAuthorization | None = None
     student_learning_uow_factory: StudentLearningCommandUnitOfWorkFactory | None = None
+    ai_generation_authorization: AIGenerationAuthorizationPort | None = None
     school_context_class_reader: SchoolContextClassReader | None = None
     learner_membership_reader: SchoolContextLearnerMembershipReader | None = None
     school_intelligence_authorization: SchoolIntelligenceAuthorization | None = None
@@ -135,6 +137,7 @@ def compose_api_application(
         publication_governance=dependencies.publication_governance,
         asset_reference_validation=dependencies.asset_reference_validation,
         asset_current_governance=dependencies.asset_current_governance,
+        ai_generation_authorization=dependencies.ai_generation_authorization,
         principal_classification_authority=(
             dependencies.principal_classification_authority
         ),

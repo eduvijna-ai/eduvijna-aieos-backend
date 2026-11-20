@@ -113,6 +113,38 @@ class ReviewDecisionResponse(BaseModel):
     aggregate_revision: int
 
 
+class WorksheetLearnerHintVersionAppendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authoring_class_ref: str = Field(min_length=1)
+    payload: dict[str, object]
+    asset_refs: list[VersionAssetRefRequest] = Field(default_factory=list)
+
+
+class WorksheetHintAttestationQuestionOutcomeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(min_length=1)
+    hard_block_clear: StrictBool
+    human_review_pass: StrictBool
+
+
+class WorksheetLearnerHintAttestationRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    per_question_outcomes: list[WorksheetHintAttestationQuestionOutcomeRequest] = Field(
+        min_length=1
+    )
+
+
+class WorksheetLearnerHintAttestationRecordResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attestation_id: UUID
+    content_id: UUID
+    version_id: UUID
+
+
 class ContentPublishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
