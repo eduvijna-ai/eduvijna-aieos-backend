@@ -482,6 +482,10 @@ def _review_decision_count(
     runtime_engine: Engine, tenant_id: UUID, version_id: UUID
 ) -> int:
     with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
         return int(
             conn.execute(
                 text(
@@ -499,6 +503,10 @@ def _publication_count(
     runtime_engine: Engine, tenant_id: UUID, content_id: UUID
 ) -> int:
     with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
         return int(
             conn.execute(
                 text(
