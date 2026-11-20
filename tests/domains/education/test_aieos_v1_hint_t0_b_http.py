@@ -476,3 +476,195 @@ class TestHintAttestationRecordHttp:
             headers=headers,
         )
         assert response.status_code == 428
+
+
+def _review_decision_count(
+    runtime_engine: Engine, tenant_id: UUID, version_id: UUID
+) -> int:
+    with runtime_engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.review_decisions
+                    WHERE tenant_id = :tid AND version_id = :vid
+                    """
+                ),
+                {"tid": tenant_id, "vid": version_id},
+            ).scalar_one()
+        )
+
+
+def _publication_count(
+    runtime_engine: Engine, tenant_id: UUID, content_id: UUID
+) -> int:
+    with runtime_engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.publications
+                    WHERE tenant_id = :tid AND content_id = :cid
+                    """
+                ),
+                {"tid": tenant_id, "cid": content_id},
+            ).scalar_one()
+        )
+
+
+def _assert_problem(response, *, status: int, code: str) -> dict:
+    assert response.status_code == status, response.text
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == code
+    assert body["status"] == status
+    blob = response.text.lower()
+    assert "consider the denominator" not in blob
+    assert "learner_hint" not in blob
+    return body
+
+
+class TestHintReviewPublishProblemTaxonomy:
+    """R2: WorksheetLearnerHintAttestationRequired / PublicationBlocked → HTTP 409."""
+
+    def _hinted_version_approved(
+        self, runtime_engine, bootstrap_engine
+    ) -> tuple[UUID, UUID, UUID, UUID, UUID, str]:
+        (
+            tenant_id,
+            author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = TestHintAttestationRecordHttp()._hinted_version_in_review(
+            runtime_engine, bootstrap_engine
+        )
+        reviewer_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=reviewer_id
+            ),
+        )
+        attest = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
+            json={
+                "per_question_outcomes": [
+                    {
+                        "question_id": "q-1",
+                        "hard_block_clear": True,
+                        "human_review_pass": True,
+                    }
+                ]
+            },
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert attest.status_code == 201, attest.text
+        etag = attest.headers["ETag"]
+        approved = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/approve",
+            json={},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert approved.status_code == 200, approved.text
+        return (
+            tenant_id,
+            author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            approved.headers["ETag"],
+        )
+
+    def test_approve_without_attestation_returns_409_not_500(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        (
+            tenant_id,
+            _author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = TestHintAttestationRecordHttp()._hinted_version_in_review(
+            runtime_engine, bootstrap_engine
+        )
+        before = _review_decision_count(runtime_engine, tenant_id, version_id)
+        reviewer_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=reviewer_id
+            ),
+        )
+        response = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/versions/{version_id}/actions/approve",
+            json={},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        _assert_problem(response, status=409, code="review_decision_not_allowed")
+        assert _review_decision_count(runtime_engine, tenant_id, version_id) == before
+
+    def test_author_and_reviewer_publish_denied_third_publisher_allowed(
+        self, runtime_engine, bootstrap_engine
+    ) -> None:
+        (
+            tenant_id,
+            author_id,
+            reviewer_id,
+            content_id,
+            version_id,
+            etag,
+        ) = self._hinted_version_approved(runtime_engine, bootstrap_engine)
+        pub_before = _publication_count(runtime_engine, tenant_id, content_id)
+
+        author_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=author_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=author_id
+            ),
+        )
+        author_pub = author_client.post(
+            f"/api/v1/contents/{content_id}/actions/publish",
+            json={"version_id": str(version_id)},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        _assert_problem(author_pub, status=409, code="publication_not_allowed")
+
+        reviewer_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=reviewer_id
+            ),
+        )
+        reviewer_pub = reviewer_client.post(
+            f"/api/v1/contents/{content_id}/actions/publish",
+            json={"version_id": str(version_id)},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        _assert_problem(reviewer_pub, status=409, code="publication_not_allowed")
+        assert _publication_count(runtime_engine, tenant_id, content_id) == pub_before
+
+        publisher_id = uuid.uuid7()
+        publisher_client = _client(
+            runtime_engine,
+            tenant_id=tenant_id,
+            principal_id=publisher_id,
+            school_context_reader=MutableSchoolContextClassReader(
+                tenant_id=tenant_id, teacher_principal_id=publisher_id
+            ),
+        )
+        ok = publisher_client.post(
+            f"/api/v1/contents/{content_id}/actions/publish",
+            json={"version_id": str(version_id)},
+            headers=_headers(tenant_id, **{"If-Match": etag}),
+        )
+        assert ok.status_code == 200, ok.text
+        assert _publication_count(runtime_engine, tenant_id, content_id) == pub_before + 1

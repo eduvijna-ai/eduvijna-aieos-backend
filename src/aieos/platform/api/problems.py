@@ -55,6 +55,8 @@ from aieos.domains.content.application.errors import (
     VersionLineageConflict,
     WorkflowCoordinationFailed,
     WorksheetLearnerHintAttestationInvalid,
+    WorksheetLearnerHintAttestationRequired,
+    WorksheetLearnerHintPublicationBlocked,
 )
 from aieos.domains.teaching.application.errors import (
     AggregateRevisionConflict as TeachingAggregateRevisionConflict,
@@ -459,6 +461,12 @@ _APPLICATION_PROBLEMS: dict[type[ContentApplicationError], tuple[int, str, str, 
         "Review decision not allowed",
         "Worksheet learner-hint attestation failed validation",
     ),
+    WorksheetLearnerHintAttestationRequired: (
+        409,
+        "review_decision_not_allowed",
+        "Review decision not allowed",
+        "Learner-hint attestation is required before approval",
+    ),
     ReviewCommentRejected: (
         422,
         "review_comment_rejected",
@@ -560,6 +568,12 @@ _APPLICATION_PROBLEMS: dict[type[ContentApplicationError], tuple[int, str, str, 
         "publication_not_allowed",
         "Publication not allowed",
         "Publish is not allowed in the current stewardship state",
+    ),
+    WorksheetLearnerHintPublicationBlocked: (
+        409,
+        "publication_not_allowed",
+        "Publication not allowed",
+        "Publish is not allowed for this learner-hint worksheet version",
     ),
 }
 

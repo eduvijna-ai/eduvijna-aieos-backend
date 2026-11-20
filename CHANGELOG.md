@@ -14,6 +14,10 @@ and this repository follows [Semantic Versioning](https://semver.org/spec/v2.0.0
   version-create and invalid attestation, and OpenAPI required mutation headers / 201 ETag
   metadata (digest `0061BCF6…`).
 
+- PK-V1-HINT-T0-B-I01R2 — Exact-type RFC9457 mappings for
+  `WorksheetLearnerHintAttestationRequired` and `WorksheetLearnerHintPublicationBlocked`
+  (409 review/publish problem codes); discriminating T0-B HTTP approve/publish scenarios.
+
 - PK-V1-HINT-T0-B-I01 (ADR-063 §7) — Teacher HTTP for guarded worksheet@2 learner-hint
   ContentVersion append and version-scoped structured hint attestation record;
   production `KernelAIGenerationAuthorization` composition; OpenAPI additive operations
