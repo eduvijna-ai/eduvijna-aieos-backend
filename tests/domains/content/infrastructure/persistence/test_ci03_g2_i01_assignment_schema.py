@@ -301,7 +301,44 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
     ci03_g2_runtime_engine: Engine,
 ) -> None:
     """Five-column assignment FK must match issuance reviewer, not only assignment id."""
+    from aieos.development.coherent_school_context import (
+        development_coherent_school_context_provider,
+    )
+    from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
+    from aieos.domains.content.application.review_assignment_issue import (
+        IssueReviewAssignmentService,
+    )
+    from aieos.domains.content.application.school_context_reviewer_eligibility import (
+        SchoolContextReviewerEligibilityService,
+    )
+    from aieos.domains.content.infrastructure.persistence.uow import (
+        SqlAlchemyContentUnitOfWorkFactory,
+    )
+    from aieos.domains.education.worksheet_hint_qa import WORKSHEET_HINT_QA_POLICY_VERSION
+    from aieos.domains.teaching.application.school_context import (
+        SchoolContextClassAuthorityService,
+    )
+    from aieos.platform.events.models import MutationEventContext
+    from aieos.platform.security.authorization import (
+        AuthorizationKernel,
+        CurrentPrincipalClassificationAuthority,
+        KernelReviewAssignmentAuthorization,
+        KernelReviewAuthorization,
+    )
+    from aieos.platform.security.authorization.content_adapters import (
+        AIEOS_CONTENT_CAPABILITIES,
+    )
+    from aieos.platform.security.audit.persistence.authorization_denial_records import (
+        SqlAlchemyAuthorizationDenialRecords,
+    )
+    from aieos.domains.content.application.audit import api_mutation_audit_provenance
+    from datetime import timedelta
     from sqlalchemy.exc import IntegrityError
+
+    from tests.domains.education.test_aieos_v1_hint_t2 import (
+        _hinted_ids_from_version,
+        _positive_outcomes,
+    )
 
     provision_runtime_grants(ci03_g2_bootstrap_engine)
     tenant_id = uuid.uuid7()
@@ -315,6 +352,16 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
         principal_kind=PrincipalKind.HUMAN,
         capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
     )
+    seed_active_authority(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=reviewer_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_DECIDE,),
+    )
+    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    provider.set_teacher_class_authority(owner_id, (_CLASS_REF,))
+    provider.set_reviewer_class_eligibility(reviewer_id, (_CLASS_REF,))
     content_id, version_id = seed_worksheet_in_review_governed(
         ci03_g2_bootstrap_engine,
         ci03_g2_runtime_engine,
@@ -323,74 +370,91 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
         class_ref=_CLASS_REF,
         now=_NOW,
     )
-    assignment_id = uuid.uuid7()
-    with ci03_g2_runtime_engine.begin() as conn:
-        conn.execute(
-            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-            {"tid": str(tenant_id)},
+    kernel = AuthorizationKernel(
+        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
+    )
+    issue = IssueReviewAssignmentService(
+        SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine),
+        KernelReviewAssignmentAuthorization(kernel),
+        KernelReviewAuthorization(kernel),
+        CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
+        SchoolContextClassAuthorityService(provider),
+        SchoolContextReviewerEligibilityService(
+            development_reviewer_eligibility_reader(provider)
+        ),
+        SqlAlchemyAuthorizationDenialRecords(ci03_g2_runtime_engine),
+        idempotency_retention=timedelta(hours=24),
+        clock=lambda: _NOW,
+    )
+    ctx = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=owner_id,
+        effective_actor_id=owner_id,
+    )
+    assignment_id = issue.issue(
+        tenant_id,
+        owner_id,
+        content_id=content_id,
+        version_id=version_id,
+        reviewer_principal_id=reviewer_id,
+        idempotency_key="fk-proof-issue",
+        event_context=ctx,
+        audit_provenance=api_mutation_audit_provenance(owner_id),
+    )
+    question_ids = _hinted_ids_from_version(
+        ci03_g2_runtime_engine, tenant_id, version_id
+    )
+    outcomes_json = json.dumps(_positive_outcomes(question_ids))
+    att_row = {
+        "att_id": uuid.uuid7(),
+        "tid": tenant_id,
+        "cid": content_id.value,
+        "vid": version_id.value,
+        "digest": "a" * 64,
+        "qa": WORKSHEET_HINT_QA_POLICY_VERSION,
+        "owner": owner_id,
+        "reviewer": reviewer_id,
+        "now": _NOW,
+        "corr": uuid.uuid7(),
+        "aid": assignment_id.value,
+        "outcomes": outcomes_json,
+    }
+    fk_sql = text(
+        """
+        INSERT INTO content.worksheet_learner_hint_version_attestations (
+            attestation_id, tenant_id, content_id, version_id,
+            payload_digest, qa_policy_version, author_principal_id,
+            reviewer_principal_id, per_question_outcomes, attested_at,
+            correlation_id, review_assignment_id
+        ) VALUES (
+            :att_id, :tid, :cid, :vid,
+            :digest, :qa, :owner, :reviewer,
+            CAST(:outcomes AS jsonb), :now, :corr, :aid
         )
-        conn.execute(
-            text(
-                """
-                INSERT INTO content.review_assignment_issuances (
-                    assignment_id, tenant_id, content_id, version_id,
-                    reviewer_principal_id, issuer_principal_id, class_ref,
-                    issued_at, valid_until, correlation_id
-                ) VALUES (
-                    :aid, :tid, :cid, :vid, :reviewer, :owner, :cref,
-                    :now, :now + interval '1 day', :corr
-                )
-                """
-            ),
-            {
-                "aid": assignment_id,
-                "tid": tenant_id,
-                "cid": content_id.value,
-                "vid": version_id.value,
-                "reviewer": reviewer_id,
-                "owner": owner_id,
-                "cref": _CLASS_REF,
-                "now": _NOW,
-                "corr": uuid.uuid7(),
-            },
-        )
-        with pytest.raises(IntegrityError) as exc_info:
+        """
+    )
+    with ci03_g2_runtime_engine.connect() as conn:
+        with conn.begin():
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
             with conn.begin_nested():
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO content.worksheet_learner_hint_version_attestations (
-                            attestation_id, tenant_id, content_id, version_id,
-                            payload_digest, qa_policy_version, author_principal_id,
-                            reviewer_principal_id, per_question_outcomes, attested_at,
-                            correlation_id, review_assignment_id
-                        ) VALUES (
-                            :att_id, :tid, :cid, :vid,
-                            :digest, 'worksheet_hint_qa_v1', :owner, :wrong_rev,
-                            CAST(:outcomes AS jsonb), :now, :corr, :aid
-                        )
-                        """
-                    ),
-                    {
-                        "att_id": uuid.uuid7(),
-                        "tid": tenant_id,
-                        "cid": content_id.value,
-                        "vid": version_id.value,
-                        "digest": "a" * 64,
-                        "owner": owner_id,
-                        "wrong_rev": wrong_reviewer,
-                        "now": _NOW,
-                        "corr": uuid.uuid7(),
-                        "aid": assignment_id,
-                        "outcomes": json.dumps(
-                            [
-                                {
-                                    "question_id": "q-1",
-                                    "hard_block_clear": "false",
-                                    "human_review_pass": True,
-                                }
-                            ]
-                        ),
-                    },
-                )
-        assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+                conn.execute(fk_sql, att_row)
+            with pytest.raises(IntegrityError) as exc_info:
+                with conn.begin_nested():
+                    conn.execute(
+                        fk_sql,
+                        {
+                            **att_row,
+                            "att_id": uuid.uuid7(),
+                            "reviewer": wrong_reviewer,
+                        },
+                    )
+            conn.rollback()
+    assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+    assert (
+        exc_info.value.orig.diag.constraint_name  # type: ignore[union-attr]
+        == "fk_worksheet_hint_attestations_assignment"
+    )

@@ -8,7 +8,10 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.engine import Engine
 
-from aieos.development.coherent_school_context import development_coherent_school_context_provider
+from aieos.development.coherent_school_context import (
+    DevelopmentCoherentSchoolContextProvider,
+    development_coherent_school_context_provider,
+)
 from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
 from aieos.domains.content.application.publish import PublishContentService
 from aieos.domains.content.application.review import ReviewCommandService
@@ -104,8 +107,11 @@ def assignment_bound_deps(
     tenant_id: uuid.UUID,
     *,
     clock: Callable[[], datetime] | None = None,
+    school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
 ) -> AssignmentBoundMutationDependencies:
-    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    provider = school_context_provider or development_coherent_school_context_provider(
+        tenant_id=tenant_id
+    )
     kernel = AuthorizationKernel(runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES)
     effective_clock = clock or (lambda: datetime.now(UTC))
     return AssignmentBoundMutationDependencies(
@@ -126,13 +132,19 @@ def integrated_attest_service(
     tenant_id: uuid.UUID,
     *,
     clock: Callable[[], datetime] | None = None,
+    school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
 ) -> RecordWorksheetLearnerHintAttestationService:
     return RecordWorksheetLearnerHintAttestationService(
         SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
         AllowReviewAuthorization(),
         CurrentPrincipalClassificationAuthority(runtime_engine),
         idempotency_retention=IDEMPOTENCY_RETENTION,
-        assignment_bound=assignment_bound_deps(runtime_engine, tenant_id, clock=clock),
+        assignment_bound=assignment_bound_deps(
+            runtime_engine,
+            tenant_id,
+            clock=clock,
+            school_context_provider=school_context_provider,
+        ),
     )
 
 
@@ -141,6 +153,7 @@ def integrated_review_service(
     tenant_id: uuid.UUID,
     *,
     clock: Callable[[], datetime] | None = None,
+    school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
 ) -> ReviewCommandService:
     return ReviewCommandService(
         SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
@@ -148,7 +161,12 @@ def integrated_review_service(
         AllowReviewCommentPolicy(),
         idempotency_retention=IDEMPOTENCY_RETENTION,
         principal_classification=CurrentPrincipalClassificationAuthority(runtime_engine),
-        assignment_bound=assignment_bound_deps(runtime_engine, tenant_id, clock=clock),
+        assignment_bound=assignment_bound_deps(
+            runtime_engine,
+            tenant_id,
+            clock=clock,
+            school_context_provider=school_context_provider,
+        ),
     )
 
 

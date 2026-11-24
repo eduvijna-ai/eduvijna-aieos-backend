@@ -976,7 +976,10 @@ class TestCi03G2I01AcceptanceMatrix:
                 {"cid": content_id.value},
             ).scalar_one()
         attest = integrated_attest_service(
-            ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
         )
         attest.record(
             tenant_id,

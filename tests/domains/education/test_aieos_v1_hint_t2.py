@@ -102,7 +102,7 @@ def _issue_review_assignment(
     content_id,
     version_id,
     class_ref: str = "class-5a",
-) -> None:
+):
     from aieos.domains.content.application.ports import (
         CONTENT_REVIEW_ASSIGN,
         CONTENT_REVIEW_DECIDE,
@@ -141,18 +141,39 @@ def _issue_review_assignment(
         event_context=_event_context(owner_id),
         audit_provenance=api_mutation_audit_provenance(owner_id),
     )
+    return provider
 
 
-def _bound_attest_service(runtime_engine, tenant_id: uuid.UUID):
+def _bound_attest_service(
+    runtime_engine,
+    tenant_id: uuid.UUID,
+    *,
+    school_context_provider,
+):
     from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_attest_service
 
-    return integrated_attest_service(runtime_engine, tenant_id, clock=lambda: FIXED_NOW)
+    return integrated_attest_service(
+        runtime_engine,
+        tenant_id,
+        clock=lambda: FIXED_NOW,
+        school_context_provider=school_context_provider,
+    )
 
 
-def _bound_review_service(runtime_engine, tenant_id: uuid.UUID) -> ReviewCommandService:
+def _bound_review_service(
+    runtime_engine,
+    tenant_id: uuid.UUID,
+    *,
+    school_context_provider,
+) -> ReviewCommandService:
     from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_review_service
 
-    return integrated_review_service(runtime_engine, tenant_id, clock=lambda: FIXED_NOW)
+    return integrated_review_service(
+        runtime_engine,
+        tenant_id,
+        clock=lambda: FIXED_NOW,
+        school_context_provider=school_context_provider,
+    )
 
 
 def _hinted_ids_from_version(runtime_engine, tenant_id: uuid.UUID, version_id) -> list[str]:
@@ -234,10 +255,24 @@ class TestDigestAndQa:
 
 
 class TestAttestationPostgres:
-    def test_three_human_publish_path(
-        self, runtime_engine, bootstrap_engine, postgres18
+    def test_bound_workflow_uses_disposable_pg18(
+        self, ci03_g2_postgres18: dict, postgres18: dict
     ) -> None:
-        assert postgres18["server_version"].startswith("18.")
+        assert ci03_g2_postgres18["bootstrap_url"] != postgres18["bootstrap_url"]
+        assert ci03_g2_postgres18["container_name"]
+
+    def test_three_human_publish_path(
+        self,
+        ci03_g2_runtime_engine,
+        ci03_g2_bootstrap_engine,
+        ci03_g2_postgres18,
+    ) -> None:
+        from tests.conftest import provision_runtime_grants
+
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        runtime_engine = ci03_g2_runtime_engine
+        bootstrap_engine = ci03_g2_bootstrap_engine
+        assert ci03_g2_postgres18["server_version"].startswith("18.")
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
@@ -276,7 +311,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        _issue_review_assignment(
+        provider = _issue_review_assignment(
             bootstrap_engine,
             runtime_engine,
             tenant_id=tenant_id,
@@ -288,8 +323,12 @@ class TestAttestationPostgres:
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        review = _bound_review_service(runtime_engine, tenant_id)
-        attest = _bound_attest_service(runtime_engine, tenant_id)
+        review = _bound_review_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        )
+        attest = _bound_attest_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        )
         attest.record(
             tenant_id,
             reviewer_id,
@@ -339,8 +378,13 @@ class TestAttestationPostgres:
         assert published.version_id == version_read.version_id
 
     def test_record_attestation_then_approve_succeeds(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
     ) -> None:
+        from tests.conftest import provision_runtime_grants
+
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        runtime_engine = ci03_g2_runtime_engine
+        bootstrap_engine = ci03_g2_bootstrap_engine
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
@@ -376,7 +420,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        _issue_review_assignment(
+        provider = _issue_review_assignment(
             bootstrap_engine,
             runtime_engine,
             tenant_id=tenant_id,
@@ -388,8 +432,12 @@ class TestAttestationPostgres:
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        review = _bound_review_service(runtime_engine, tenant_id)
-        _bound_attest_service(runtime_engine, tenant_id).record(
+        review = _bound_review_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        )
+        _bound_attest_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        ).record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -417,8 +465,13 @@ class TestAttestationPostgres:
         assert approved.decision == "APPROVE"
 
     def test_attestation_idempotency_replay_validates_stored_record(
-        self, runtime_engine, bootstrap_engine
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
     ) -> None:
+        from tests.conftest import provision_runtime_grants
+
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        runtime_engine = ci03_g2_runtime_engine
+        bootstrap_engine = ci03_g2_bootstrap_engine
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
@@ -454,7 +507,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        _issue_review_assignment(
+        provider = _issue_review_assignment(
             bootstrap_engine,
             runtime_engine,
             tenant_id=tenant_id,
@@ -467,7 +520,9 @@ class TestAttestationPostgres:
             runtime_engine, tenant_id, version_read.version_id
         )
         idem_key = f"attest-replay-{uuid.uuid7()}"
-        service = _bound_attest_service(runtime_engine, tenant_id)
+        service = _bound_attest_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        )
         first = service.record(
             tenant_id,
             reviewer_id,
@@ -518,7 +573,14 @@ class TestAttestationPostgres:
         with pytest.raises(InvalidPayloadError):
             worksheet_hint_attestation_from_row(row)
 
-    def test_attestation_rows_are_immutable(self, runtime_engine, bootstrap_engine) -> None:
+    def test_attestation_rows_are_immutable(
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
+    ) -> None:
+        from tests.conftest import provision_runtime_grants
+
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        runtime_engine = ci03_g2_runtime_engine
+        bootstrap_engine = ci03_g2_bootstrap_engine
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
@@ -554,7 +616,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        _issue_review_assignment(
+        provider = _issue_review_assignment(
             bootstrap_engine,
             runtime_engine,
             tenant_id=tenant_id,
@@ -566,7 +628,9 @@ class TestAttestationPostgres:
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        _bound_attest_service(runtime_engine, tenant_id).record(
+        _bound_attest_service(
+            runtime_engine, tenant_id, school_context_provider=provider
+        ).record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -603,8 +667,13 @@ class TestAttestationPostgres:
                 )
 
     def test_approve_without_attestation_still_denied(
-        self, runtime_engine, bootstrap_engine
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
     ) -> None:
+        from tests.conftest import provision_runtime_grants
+
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        runtime_engine = ci03_g2_runtime_engine
+        bootstrap_engine = ci03_g2_bootstrap_engine
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
@@ -640,7 +709,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        _issue_review_assignment(
+        provider = _issue_review_assignment(
             bootstrap_engine,
             runtime_engine,
             tenant_id=tenant_id,
@@ -650,7 +719,9 @@ class TestAttestationPostgres:
             version_id=version_read.version_id,
         )
         with pytest.raises(WorksheetLearnerHintAttestationRequired):
-            _bound_review_service(runtime_engine, tenant_id).approve(
+            _bound_review_service(
+                runtime_engine, tenant_id, school_context_provider=provider
+            ).approve(
                 tenant_id,
                 reviewer_id,
                 content_id=content_id,

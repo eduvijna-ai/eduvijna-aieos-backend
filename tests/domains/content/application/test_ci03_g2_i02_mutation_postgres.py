@@ -160,7 +160,12 @@ class TestCi03G2I02AssignmentBoundMutations:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         attest.record(
             tenant_id,
             reviewer_id,
@@ -175,7 +180,12 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        review = integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         review.approve(
             tenant_id,
             reviewer_id,
@@ -308,7 +318,12 @@ class TestCi03G2I02AssignmentBoundMutations:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         idem = f"idem-replay-{uuid.uuid7()}"
         outcomes = _positive_outcomes(
             _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
@@ -337,7 +352,12 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        wrong = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        wrong = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         with pytest.raises(WorksheetLearnerHintAttestationInvalid, match="reviewer mismatch"):
             wrong.record(
                 tenant_id,
@@ -403,7 +423,12 @@ class TestCi03G2I02AssignmentBoundMutations:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        review = integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         with pytest.raises(ReviewAssignmentForbidden):
             review.reject(
                 tenant_id,
@@ -464,7 +489,12 @@ class TestCi03G2I02AssignmentBoundMutations:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         outcomes = _positive_outcomes(
             _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
         )
@@ -480,7 +510,12 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        review = integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         if decision == "reject":
             review.reject(
                 tenant_id,
@@ -567,7 +602,12 @@ class TestCi03G2I02AssignmentBoundMutations:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         outcomes = _positive_outcomes(
             _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
         )
@@ -584,7 +624,12 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        review = integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         approve_idem = f"term-approve-{uuid.uuid7()}"
         review.approve(
             tenant_id,
