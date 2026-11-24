@@ -82,6 +82,7 @@ def test_no_audit_or_inbox_tables_and_migration_chain() -> None:
         "a360s010003_learner_assessment_evaluation.py",
         "a360s010004_learner_evaluation_audit_vocab.py",
         "a360s010005_worksheet_learner_hint_attestations.py",
+        "ci03g020001_reviewer_assignment_authority.py",
     "adra045001_dispatcher_candidate_authority.py",
         "gcii020001_content_schema.py",
         "gcii050001_api_idempotency.py",

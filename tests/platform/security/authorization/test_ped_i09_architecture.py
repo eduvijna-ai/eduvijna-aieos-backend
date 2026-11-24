@@ -217,6 +217,7 @@ def test_content_capability_vocabulary_owned_by_ports_not_decisions() -> None:
         {
             content_ports.CONTENT_REVIEW_SUBMIT,
             content_ports.CONTENT_REVIEW_DECIDE,
+            content_ports.CONTENT_REVIEW_ASSIGN,
             content_ports.CONTENT_PUBLISH,
             content_ports.CONTENT_VERSION_CREATE,
             content_ports.CONTENT_MIGRATE_IMPORT,

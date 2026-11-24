@@ -468,3 +468,66 @@ migration_import_records_table = Table(
     Index("ix_migration_import_records_tenant_id", "tenant_id"),
     schema="content",
 )
+
+review_assignment_events_table = Table(
+    "review_assignment_events",
+    content_metadata,
+    Column("event_id", UUID(as_uuid=True), nullable=False),
+    Column("event_kind", Text, nullable=False),
+    Column("assignment_id", UUID(as_uuid=True), nullable=False),
+    Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    Column("content_id", UUID(as_uuid=True), nullable=False),
+    Column("version_id", UUID(as_uuid=True), nullable=False),
+    Column("reviewer_principal_id", UUID(as_uuid=True), nullable=True),
+    Column("issuer_principal_id", UUID(as_uuid=True), nullable=True),
+    Column("class_ref", Text, nullable=True),
+    Column("issued_at", DateTime(timezone=True), nullable=True),
+    Column("valid_until", DateTime(timezone=True), nullable=True),
+    Column("revoked_at", DateTime(timezone=True), nullable=True),
+    Column("revoked_by_principal_id", UUID(as_uuid=True), nullable=True),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    PrimaryKeyConstraint("event_id", name="pk_review_assignment_events"),
+    CheckConstraint(
+        "event_kind IN ('ASSIGNED', 'REVOKED')",
+        name="ck_review_assignment_events_kind",
+    ),
+    ForeignKeyConstraint(
+        ["tenant_id", "content_id", "version_id"],
+        [
+            "content.content_versions.tenant_id",
+            "content.content_versions.content_id",
+            "content.content_versions.version_id",
+        ],
+        name="fk_review_assignment_events_version",
+        ondelete="RESTRICT",
+    ),
+    Index("ix_review_assignment_events_tenant_id", "tenant_id"),
+    schema="content",
+)
+
+review_current_assignments_table = Table(
+    "review_current_assignments",
+    content_metadata,
+    Column("tenant_id", UUID(as_uuid=True), nullable=False),
+    Column("content_id", UUID(as_uuid=True), nullable=False),
+    Column("version_id", UUID(as_uuid=True), nullable=False),
+    Column("active_assignment_id", UUID(as_uuid=True), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint(
+        "tenant_id",
+        "content_id",
+        "version_id",
+        name="pk_review_current_assignments",
+    ),
+    ForeignKeyConstraint(
+        ["tenant_id", "content_id", "version_id"],
+        [
+            "content.content_versions.tenant_id",
+            "content.content_versions.content_id",
+            "content.content_versions.version_id",
+        ],
+        name="fk_review_current_assignments_version",
+        ondelete="RESTRICT",
+    ),
+    schema="content",
+)

@@ -10,6 +10,7 @@ from sqlalchemy import text
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WORKSHEET_HINT_ATTESTATION_REVISION = "a360s010005"
+REVIEWER_ASSIGNMENT_AUTHORITY_REVISION = "ci03g020001"
 WORKSHEET_HINT_ATTESTATION_TABLE = "worksheet_learner_hint_version_attestations"
 
 CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION = frozenset(
