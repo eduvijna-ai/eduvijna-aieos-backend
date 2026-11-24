@@ -216,6 +216,17 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE content.review_decisions DROP COLUMN IF EXISTS review_assignment_id"
     )
+    receipt_result_count = bind.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM api.idempotency_records
+            WHERE result_worksheet_hint_attestation_id IS NOT NULL
+            """
+        )
+    ).scalar_one()
+    if int(receipt_result_count) > 0:
+        raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(
         """
         ALTER TABLE api.idempotency_records

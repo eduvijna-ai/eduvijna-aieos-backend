@@ -44,6 +44,11 @@ def test_head_and_tables(ci03_g2_bootstrap_engine: Engine) -> None:
     assert "review_current_assignments" in names
     security_names = set(insp.get_table_names(schema="security"))
     assert "authorization_denial_records" in security_names
+    api_cols = {
+        c["name"]
+        for c in insp.get_columns("idempotency_records", schema="api")
+    }
+    assert "result_worksheet_hint_attestation_id" in api_cols
 
 
 def test_runtime_rejects_cross_version_slot_binding(
