@@ -253,15 +253,19 @@ def run_two_party_contention(
             waiter_errors.append(exc)
 
     holder_thread = threading.Thread(target=holder_wrapper, name="ci03-slot-holder")
-    waiter_thread = threading.Thread(target=waiter_wrapper, name="ci03-head-waiter")
+    waiter_thread: threading.Thread | None = None
+    waiter_started = False
+    primary_error: BaseException | None = None
 
     try:
         holder_thread.start()
-        assert slot_held.wait(timeout=_DEFAULT_HOLD_TIMEOUT), "holder did not acquire slot lock"
+        if not slot_held.wait(timeout=_DEFAULT_HOLD_TIMEOUT):
+            raise AssertionError("holder did not acquire slot lock")
+        waiter_thread = threading.Thread(target=waiter_wrapper, name="ci03-head-waiter")
         waiter_thread.start()
-        assert contending.wait(timeout=_DEFAULT_HOLD_TIMEOUT), (
-            "waiter did not contend on head lock"
-        )
+        waiter_started = True
+        if not contending.wait(timeout=_DEFAULT_HOLD_TIMEOUT):
+            raise AssertionError("waiter did not contend on head lock")
         assert_genuine_lock_contention(
             observer_engine,
             waiter_thread=waiter_thread,
@@ -270,17 +274,23 @@ def run_two_party_contention(
             locks_held=held_event,
             release=release,
         )
+    except BaseException as exc:  # noqa: BLE001
+        primary_error = exc
     finally:
         release.set()
         holder_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
-        waiter_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
+        if waiter_thread is not None and waiter_started:
+            waiter_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
         assert not holder_thread.is_alive()
-        assert not waiter_thread.is_alive()
+        if waiter_thread is not None and waiter_started:
+            assert not waiter_thread.is_alive()
 
     if holder_errors:
         raise holder_errors[0]
     if waiter_errors:
         raise waiter_errors[0]
+    if primary_error is not None:
+        raise primary_error
     return holder_errors, waiter_errors
 
 

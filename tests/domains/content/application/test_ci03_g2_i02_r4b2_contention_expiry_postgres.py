@@ -13,10 +13,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
-from aieos.domains.content.application.errors import (
-    ReviewAssignmentConflict,
-    ReviewAssignmentNotAllowed,
-)
+from aieos.domains.content.application.errors import ReviewAssignmentConflict
+from aieos.platform.events.models import MutationEventContext
 from aieos.domains.content.domain.identities import AggregateRevision, ContentId, ContentVersionId
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthorityService
 from tests.conftest import provision_runtime_grants
@@ -34,7 +32,9 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     DurableEffectSnapshot,
+    assert_latest_denial_matches,
     assert_protected_effect_denied_after_revoke,
+    assert_review_assignment_expiry_exception,
     assert_snapshot_unchanged_except_denial,
     assignment_valid_until,
     capture_durable_snapshot,
@@ -57,7 +57,14 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
 
 pytestmark = pytest.mark.ci03_g2_i02
 
-_EXPECTED_WAITER_DENIED = (ReviewAssignmentConflict, ReviewAssignmentNotAllowed)
+def _correlated_event(principal_id: uuid.UUID) -> MutationEventContext:
+    correlation_id = uuid.uuid7()
+    return MutationEventContext(
+        correlation_id=correlation_id,
+        causation_id=uuid.uuid7(),
+        actor_principal_id=principal_id,
+        effective_actor_id=principal_id,
+    )
 
 
 @dataclass
@@ -131,6 +138,7 @@ def _invoke_attest(
     uow_factory: Any,
     idem_key: str,
     now: datetime | None = None,
+    event_context: MutationEventContext | None = None,
 ) -> None:
     service = integrated_attest_service(
         runtime,
@@ -149,7 +157,7 @@ def _invoke_attest(
             _hinted_ids_from_version(runtime, scenario.tenant_id, scenario.version_id)
         ),
         idempotency_key=idem_key,
-        event_context=_event(scenario.reviewer_id),
+        event_context=event_context or _event(scenario.reviewer_id),
         audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
         now=now or clock(),
     )
@@ -164,6 +172,7 @@ def _invoke_decision(
     uow_factory: Any,
     idem_key: str,
     now: datetime | None = None,
+    event_context: MutationEventContext | None = None,
 ) -> None:
     review = integrated_review_service(
         runtime,
@@ -179,7 +188,7 @@ def _invoke_decision(
         version_id=scenario.version_id,
         expected_aggregate_revision=scenario.revision,
         idempotency_key=idem_key,
-        event_context=_event(scenario.reviewer_id),
+        event_context=event_context or _event(scenario.reviewer_id),
         audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
         now=now or clock(),
     )
@@ -320,6 +329,8 @@ class TestCi03G2I02R4B2Concurrency:
             except BaseException as exc:  # noqa: BLE001
                 holder_result["error"] = exc
 
+        waiter_event = _correlated_event(scenario.reviewer_id)
+
         def waiter() -> None:
             try:
                 if effect == "attest":
@@ -329,6 +340,7 @@ class TestCi03G2I02R4B2Concurrency:
                         clock=clock,
                         uow_factory=contend_factory,
                         idem_key=f"b2-wait-attest-{uuid.uuid7()}",
+                        event_context=waiter_event,
                     )
                 else:
                     _invoke_decision(
@@ -338,6 +350,7 @@ class TestCi03G2I02R4B2Concurrency:
                         clock=clock,
                         uow_factory=contend_factory,
                         idem_key=f"b2-wait-{effect}-{uuid.uuid7()}",
+                        event_context=waiter_event,
                     )
                 waiter_result["ok"] = True
             except BaseException as exc:  # noqa: BLE001
@@ -355,12 +368,20 @@ class TestCi03G2I02R4B2Concurrency:
         )
 
         assert holder_result.get("ok") is True, holder_result.get("error")
-        assert isinstance(waiter_result.get("error"), _EXPECTED_WAITER_DENIED)
+        assert_review_assignment_expiry_exception(waiter_result["error"])
 
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_protected_effect_denied_after_revoke(snap_before, snap_after)
+        assert_latest_denial_matches(
+            ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.reviewer_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            correlation_id=waiter_event.correlation_id,
+        )
 
     @pytest.mark.parametrize(
         ("effect",),
@@ -469,19 +490,26 @@ class TestCi03G2I02R4B2Concurrency:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert snap_after.revocation_rows == snap_before.revocation_rows + 1
+        assert snap_after.review_revoke_audits == snap_before.review_revoke_audits + 1
         assert snap_after.mutation_denials == snap_before.mutation_denials
         if effect == "attest":
             assert snap_after.attestations == snap_before.attestations + 1
+            assert snap_after.worksheet_hint_attest_audits == (
+                snap_before.worksheet_hint_attest_audits + 1
+            )
+            assert snap_after.outbox_messages >= snap_before.outbox_messages
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
         elif effect == "approve":
             assert snap_after.decisions == snap_before.decisions + 1
+            assert snap_after.review_decision_audits == snap_before.review_decision_audits + 1
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
         elif effect in ("reject", "request_changes"):
             assert snap_after.decisions == snap_before.decisions + 1
+            assert snap_after.review_decision_audits == snap_before.review_decision_audits + 1
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
@@ -535,6 +563,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         )
 
         worker_errors: list[BaseException] = []
+        worker_event = _correlated_event(scenario.reviewer_id)
 
         def worker() -> None:
             try:
@@ -545,6 +574,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         clock=clock,
                         uow_factory=hold_factory,
                         idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
+                        event_context=worker_event,
                     )
                 else:
                     _invoke_decision(
@@ -554,24 +584,35 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         clock=clock,
                         uow_factory=hold_factory,
                         idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
+                        event_context=worker_event,
                     )
             except BaseException as exc:  # noqa: BLE001
                 worker_errors.append(exc)
 
         thread = threading.Thread(target=worker, name=f"expiry-intra-{effect}")
-        thread.start()
-        assert slot_held.wait(timeout=30), "effect did not reach slot lock"
-        assert clock_advanced.wait(timeout=5), "clock did not advance under hold callback"
-        assert clock_holder["t"] >= valid_until
-        release.set()
-        join_bounded(thread)
+        try:
+            thread.start()
+            assert slot_held.wait(timeout=30), "effect did not reach slot lock"
+            assert clock_advanced.wait(timeout=5), "clock did not advance under hold callback"
+            assert clock_holder["t"] >= valid_until
+        finally:
+            release.set()
+            join_bounded(thread)
 
         assert len(worker_errors) == 1
-        assert isinstance(worker_errors[0], _EXPECTED_WAITER_DENIED)
+        assert_review_assignment_expiry_exception(worker_errors[0])
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
+        assert_latest_denial_matches(
+            ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.reviewer_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            correlation_id=worker_event.correlation_id,
+        )
 
     @pytest.mark.parametrize("boundary", ("at_valid_until", "after_valid_until"))
     @pytest.mark.parametrize(
@@ -610,6 +651,8 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         blocker_pid: list[int | None] = [None]
         waiter_pid: list[int | None] = [None]
         worker_errors: list[BaseException] = []
+        blocker_errors: list[BaseException] = []
+        worker_event = _correlated_event(scenario.reviewer_id)
 
         contend_factory = ContendingContentUowFactory(
             ci03_g2_runtime_engine,
@@ -618,15 +661,19 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         )
 
         def blocker() -> None:
-            passive_head_slot_blocker(
-                ci03_g2_runtime_engine,
-                scenario.tenant_id,
-                content_id=scenario.content_id,
-                version_id=scenario.version_id,
-                locks_acquired=blocker_ready,
-                release=release,
-                blocker_pid=blocker_pid,
-            )
+            try:
+                passive_head_slot_blocker(
+                    ci03_g2_runtime_engine,
+                    scenario.tenant_id,
+                    content_id=scenario.content_id,
+                    version_id=scenario.version_id,
+                    locks_acquired=blocker_ready,
+                    release=release,
+                    blocker_pid=blocker_pid,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                blocker_errors.append(exc)
+                raise
 
         def worker() -> None:
             try:
@@ -637,6 +684,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         clock=clock,
                         uow_factory=contend_factory,
                         idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                        event_context=worker_event,
                     )
                 else:
                     _invoke_decision(
@@ -646,6 +694,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         clock=clock,
                         uow_factory=contend_factory,
                         idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                        event_context=worker_event,
                     )
             except BaseException as exc:  # noqa: BLE001
                 worker_errors.append(exc)
@@ -680,12 +729,21 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             assert not blocker_thread.is_alive()
 
         assert len(worker_errors) == 1
-        assert isinstance(worker_errors[0], _EXPECTED_WAITER_DENIED)
+        assert_review_assignment_expiry_exception(worker_errors[0])
+        assert not blocker_errors
         assert clock_holder["t"] >= valid_until
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
+        assert_latest_denial_matches(
+            ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.reviewer_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            correlation_id=worker_event.correlation_id,
+        )
 
     @pytest.mark.parametrize(
         ("effect",),
@@ -718,6 +776,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
 
+        worker_event = _correlated_event(scenario.reviewer_id)
         if effect == "attest":
             service = integrated_attest_service(
                 ci03_g2_runtime_engine,
@@ -726,7 +785,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                 school_context_provider=scenario.provider,
                 issuer_class_authority=slow,
             )
-            with pytest.raises(ReviewAssignmentConflict, match="expired"):
+            with pytest.raises(ReviewAssignmentConflict, match="revoked or expired"):
                 service.record(
                     scenario.tenant_id,
                     scenario.reviewer_id,
@@ -739,7 +798,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         )
                     ),
                     idempotency_key=f"b2-slow-{effect}-{uuid.uuid7()}",
-                    event_context=_event(scenario.reviewer_id),
+                    event_context=worker_event,
                     audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
                     now=clock(),
                 )
@@ -758,11 +817,11 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                 version_id=scenario.version_id,
                 expected_aggregate_revision=scenario.revision,
                 idempotency_key=f"b2-slow-{effect}-{uuid.uuid7()}",
-                event_context=_event(scenario.reviewer_id),
+                event_context=worker_event,
                 audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
                 now=clock(),
             )
-            with pytest.raises(ReviewAssignmentConflict, match="expired"):
+            with pytest.raises(ReviewAssignmentConflict, match="revoked or expired"):
                 if effect == "approve":
                     review.approve(**kwargs, reason_code=None, comment=None)
                 elif effect == "reject":
@@ -775,3 +834,11 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
+        assert_latest_denial_matches(
+            ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.reviewer_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            correlation_id=worker_event.correlation_id,
+        )
