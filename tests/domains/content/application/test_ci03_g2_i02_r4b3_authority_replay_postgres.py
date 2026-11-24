@@ -11,7 +11,7 @@ from aieos.domains.content.application.audit import api_mutation_audit_provenanc
 from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
     ReviewForbidden,
-    WorksheetLearnerHintAttestationInvalid,
+    WorksheetLearnerHintAttestationRequired,
 )
 from aieos.domains.content.application.ports import CONTENT_REVIEW_DECIDE
 from aieos.domains.content.application.review_assignment_bound_mutations import (
@@ -362,8 +362,8 @@ class TestCi03G2I02R4B3AuthorityReplay:
         )
         event = _correlated_event(reviewer_id)
         with pytest.raises(
-            WorksheetLearnerHintAttestationInvalid,
-            match="approve requires assignment-bound attestation",
+            WorksheetLearnerHintAttestationRequired,
+            match="learner-hint attestation before APPROVE",
         ):
             review.approve(
                 tenant_id,
