@@ -1,13 +1,48 @@
-"""Governed worksheet@2 IN_REVIEW fixtures for CI03-G2-I01 PG18 tests."""
+"""Governed worksheet@2 IN_REVIEW fixtures and I02 mutation wiring for CI03-G2 PG18 tests."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.engine import Engine
 
+from aieos.development.coherent_school_context import development_coherent_school_context_provider
+from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
+from aieos.domains.content.application.publish import PublishContentService
+from aieos.domains.content.application.review import ReviewCommandService
+from aieos.domains.content.application.review_assignment_bound_mutations import (
+    AssignmentBoundMutationDependencies,
+)
+from aieos.domains.content.application.school_context_reviewer_eligibility import (
+    SchoolContextReviewerEligibilityService,
+)
+from aieos.domains.content.application.worksheet_hint_attestation_record import (
+    RecordWorksheetLearnerHintAttestationService,
+)
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId
+from aieos.domains.content.infrastructure.persistence.uow import SqlAlchemyContentUnitOfWorkFactory
+from aieos.domains.teaching.application.school_context import SchoolContextClassAuthorityService
+from aieos.platform.security.audit.persistence.authorization_denial_records import (
+    SqlAlchemyAuthorizationDenialRecords,
+)
+from aieos.platform.security.authorization import (
+    CurrentPrincipalClassificationAuthority,
+    KernelReviewAssignmentAuthorization,
+    KernelReviewAuthorization,
+)
+from aieos.platform.security.authorization.content_adapters import AIEOS_CONTENT_CAPABILITIES
+from aieos.platform.security.authorization import AuthorizationKernel
+from tests.domains.education.test_aieos_v1_hint_t1 import build_preparation_content_schema_registry
+from tests.fakes import (
+    AllowPublicationAuthorization,
+    AllowPublicationGovernance,
+    AllowReviewAuthorization,
+    AllowReviewCommentPolicy,
+    AllowAssetCurrentGovernance,
+    IDEMPOTENCY_RETENTION,
+)
 from tests.domains.education.test_aieos_v1_hint_t1 import _worksheet_v2_payload
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _append_v1,
@@ -62,3 +97,68 @@ def seed_worksheet_in_review_governed(
         now=now,
     )
     return content_id, version_read.version_id
+
+
+def assignment_bound_deps(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> AssignmentBoundMutationDependencies:
+    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    kernel = AuthorizationKernel(runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES)
+    effective_clock = clock or (lambda: datetime.now(UTC))
+    return AssignmentBoundMutationDependencies(
+        assign_authorization=KernelReviewAssignmentAuthorization(kernel),
+        review_authorization=KernelReviewAuthorization(kernel),
+        principal_classification=CurrentPrincipalClassificationAuthority(runtime_engine),
+        reviewer_eligibility=SchoolContextReviewerEligibilityService(
+            development_reviewer_eligibility_reader(provider)
+        ),
+        issuer_class_authority=SchoolContextClassAuthorityService(provider),
+        denial_audit=SqlAlchemyAuthorizationDenialRecords(runtime_engine),
+        clock=effective_clock,
+    )
+
+
+def integrated_attest_service(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> RecordWorksheetLearnerHintAttestationService:
+    return RecordWorksheetLearnerHintAttestationService(
+        SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        AllowReviewAuthorization(),
+        CurrentPrincipalClassificationAuthority(runtime_engine),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+        assignment_bound=assignment_bound_deps(runtime_engine, tenant_id, clock=clock),
+    )
+
+
+def integrated_review_service(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> ReviewCommandService:
+    return ReviewCommandService(
+        SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        AllowReviewAuthorization(),
+        AllowReviewCommentPolicy(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+        principal_classification=CurrentPrincipalClassificationAuthority(runtime_engine),
+        assignment_bound=assignment_bound_deps(runtime_engine, tenant_id, clock=clock),
+    )
+
+
+def integrated_publish_service(runtime_engine: Engine) -> PublishContentService:
+    return PublishContentService(
+        SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        AllowPublicationAuthorization(),
+        AllowPublicationGovernance(),
+        AllowAssetCurrentGovernance(),
+        build_preparation_content_schema_registry(),
+        idempotency_retention=timedelta(hours=24),
+        principal_classification=CurrentPrincipalClassificationAuthority(runtime_engine),
+    )

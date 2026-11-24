@@ -237,7 +237,7 @@ class TestMigrationAndShape:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "ci03g020001"
+                == "ci03g020002"
             )
         text_sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010003"' in text_sql

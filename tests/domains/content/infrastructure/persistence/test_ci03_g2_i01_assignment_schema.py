@@ -35,7 +35,7 @@ def test_head_and_tables(ci03_g2_bootstrap_engine: Engine) -> None:
     with ci03_g2_bootstrap_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "ci03g020001"
+            == "ci03g020002"
         )
     insp = inspect(ci03_g2_bootstrap_engine)
     names = set(insp.get_table_names(schema="content"))
@@ -285,7 +285,7 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert head == "ci03g020001"
+        assert head == "ci03g020002"
         rows = conn.execute(
             text(
                 "SELECT count(*) FROM content.review_assignment_issuances "

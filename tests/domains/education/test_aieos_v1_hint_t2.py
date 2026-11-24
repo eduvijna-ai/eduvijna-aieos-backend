@@ -92,6 +92,69 @@ def _attest_service(runtime_engine) -> RecordWorksheetLearnerHintAttestationServ
     )
 
 
+def _issue_review_assignment(
+    bootstrap_engine,
+    runtime_engine,
+    *,
+    tenant_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    content_id,
+    version_id,
+    class_ref: str = "class-5a",
+) -> None:
+    from aieos.domains.content.application.ports import (
+        CONTENT_REVIEW_ASSIGN,
+        CONTENT_REVIEW_DECIDE,
+        CONTENT_REVIEW_SUBMIT,
+    )
+    from aieos.platform.security.authorization.decisions import PrincipalKind
+    from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
+        _services,
+    )
+    from tests.platform.security.authorization.helpers import seed_active_authority
+
+    seed_active_authority(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=owner_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+    )
+    seed_active_authority(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=reviewer_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_DECIDE,),
+    )
+    issue, _, provider, *_ = _services(runtime_engine, tenant_id, clock=lambda: FIXED_NOW)
+    provider.set_teacher_class_authority(owner_id, (class_ref,))
+    provider.set_reviewer_class_eligibility(reviewer_id, (class_ref,))
+    issue.issue(
+        tenant_id,
+        owner_id,
+        content_id=content_id,
+        version_id=version_id,
+        reviewer_principal_id=reviewer_id,
+        idempotency_key=f"t2-assign-{uuid.uuid7()}",
+        event_context=_event_context(owner_id),
+        audit_provenance=api_mutation_audit_provenance(owner_id),
+    )
+
+
+def _bound_attest_service(runtime_engine, tenant_id: uuid.UUID):
+    from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_attest_service
+
+    return integrated_attest_service(runtime_engine, tenant_id, clock=lambda: FIXED_NOW)
+
+
+def _bound_review_service(runtime_engine, tenant_id: uuid.UUID) -> ReviewCommandService:
+    from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_review_service
+
+    return integrated_review_service(runtime_engine, tenant_id, clock=lambda: FIXED_NOW)
+
+
 def _hinted_ids_from_version(runtime_engine, tenant_id: uuid.UUID, version_id) -> list[str]:
     with SqlAlchemyContentUnitOfWorkFactory(runtime_engine)(tenant_id) as uow:
         version = uow.versions.get(version_id)
@@ -213,10 +276,20 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        _issue_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+        )
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        attest = _attest_service(runtime_engine)
+        review = _bound_review_service(runtime_engine, tenant_id)
+        attest = _bound_attest_service(runtime_engine, tenant_id)
         attest.record(
             tenant_id,
             reviewer_id,
@@ -292,8 +365,7 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        review = _review_service(runtime_engine)
-        submitted = review.submit(
+        submitted = _review_service(runtime_engine).submit(
             tenant_id,
             author_id,
             content_id=content_id,
@@ -304,10 +376,20 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        _issue_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+        )
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        _attest_service(runtime_engine).record(
+        review = _bound_review_service(runtime_engine, tenant_id)
+        _bound_attest_service(runtime_engine, tenant_id).record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -372,11 +454,20 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        _issue_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+        )
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
         idem_key = f"attest-replay-{uuid.uuid7()}"
-        service = _attest_service(runtime_engine)
+        service = _bound_attest_service(runtime_engine, tenant_id)
         first = service.record(
             tenant_id,
             reviewer_id,
@@ -422,6 +513,7 @@ class TestAttestationPostgres:
             ],
             "attested_at": FIXED_NOW,
             "correlation_id": uuid.uuid7(),
+            "review_assignment_id": None,
         }
         with pytest.raises(InvalidPayloadError):
             worksheet_hint_attestation_from_row(row)
@@ -462,10 +554,19 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        _issue_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+        )
         hinted_ids = _hinted_ids_from_version(
             runtime_engine, tenant_id, version_read.version_id
         )
-        _attest_service(runtime_engine).record(
+        _bound_attest_service(runtime_engine, tenant_id).record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -539,8 +640,17 @@ class TestAttestationPostgres:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        _issue_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+        )
         with pytest.raises(WorksheetLearnerHintAttestationRequired):
-            _review_service(runtime_engine).approve(
+            _bound_review_service(runtime_engine, tenant_id).approve(
                 tenant_id,
                 reviewer_id,
                 content_id=content_id,

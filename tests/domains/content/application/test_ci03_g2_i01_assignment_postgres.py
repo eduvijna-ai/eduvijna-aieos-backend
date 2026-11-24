@@ -132,7 +132,7 @@ def test_ci03_g2_substrate_isolated_from_shared_gci_session(
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-    assert head == "ci03g020001"
+    assert head == "ci03g020002"
     with bootstrap_engine.connect() as conn:
         issuances = conn.execute(
             text("SELECT count(*) FROM content.review_assignment_issuances")
@@ -917,8 +917,10 @@ class TestCi03G2I01AcceptanceMatrix:
 
     def test_attestation_blocks_reassignment(
         self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        from tests.domains.content.application.helpers_ci03_g2_i01 import (
+            integrated_attest_service,
+        )
         from tests.domains.education.test_aieos_v1_hint_t2 import (
-            _attest_service,
             _hinted_ids_from_version,
             _positive_outcomes,
         )
@@ -973,7 +975,9 @@ class TestCi03G2I01AcceptanceMatrix:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = _attest_service(ci03_g2_runtime_engine)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW
+        )
         attest.record(
             tenant_id,
             reviewer_id,

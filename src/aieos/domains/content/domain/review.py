@@ -20,6 +20,7 @@ from aieos.domains.content.domain.errors import (
 from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
+    ReviewAssignmentId,
     ReviewDecisionId,
     require_foreign_uuid,
 )
@@ -92,6 +93,7 @@ class ReviewDecision:
     delegation_id: UUID | None
     decided_at: datetime
     correlation_id: UUID
+    review_assignment_id: ReviewAssignmentId | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "decision", parse_review_decision_code(self.decision))
