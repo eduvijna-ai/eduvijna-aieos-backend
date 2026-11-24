@@ -28,11 +28,11 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
     _MUTATION_DENIED_EXCEPTIONS,
     assignment_bound_deps_configured,
     fingerprint_assignment_id,
+    hint_mutation_replay_is_terminal,
     raise_assignment_unavailable,
     record_mutation_denial,
     require_assignment_authority_for_new_effect,
     requires_hint_assignment,
-    stewardship_allows_protected_replay,
     validate_bound_assignment_replay,
 )
 from aieos.domains.content.application.worksheet_hint_attestation_gate import (
@@ -126,16 +126,17 @@ class RecordWorksheetLearnerHintAttestationService:
                 capability=CONTENT_REVIEW_DECIDE,
             )
             with self._uow_factory(execution_tenant_id) as uow:
-                version_precheck = uow.versions.get(version_id)
-                hint_bound = (
-                    version_precheck is not None
-                    and requires_hint_assignment(version_precheck)
-                )
-                if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
-                    raise_assignment_unavailable()
                 uow.idempotency.acquire_scope(scope)
                 uow.contents.get_head_for_update(content_id)
                 existing = uow.idempotency.get(scope)
+                version_row = uow.versions.get(version_id)
+                if version_row is None or version_row.content_id != content_id:
+                    raise ContentVersionNotFound(
+                        "ContentVersion is not visible for the requested Content"
+                    )
+                hint_bound = requires_hint_assignment(version_row)
+                if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
+                    raise_assignment_unavailable()
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
                 if existing is not None and hint_bound:
@@ -193,9 +194,8 @@ class RecordWorksheetLearnerHintAttestationService:
                             raise WorksheetLearnerHintAttestationInvalid(
                                 "idempotency replay requires assignment binding"
                             )
-                        head = uow.contents.get_head_for_update(content_id)
-                        terminal = head is not None and not stewardship_allows_protected_replay(
-                            head.stewardship_state
+                        terminal = hint_mutation_replay_is_terminal(
+                            uow, content_id=content_id, version_id=version_id
                         )
                         validate_bound_assignment_replay(
                             uow,
@@ -257,7 +257,7 @@ class RecordWorksheetLearnerHintAttestationService:
                 effect_assignment_id = assignment_id_for_fp
                 if hint_bound:
                     assert self._assignment_bound is not None
-                    active = require_assignment_authority_for_new_effect(
+                    active, effect_at = require_assignment_authority_for_new_effect(
                         uow,
                         self._assignment_bound,
                         execution_tenant_id=execution_tenant_id,
@@ -268,8 +268,8 @@ class RecordWorksheetLearnerHintAttestationService:
                     )
                     effect_assignment_id = active.assignment_id
                 attested_at = (
-                    self._assignment_bound.clock()
-                    if hint_bound and self._assignment_bound is not None
+                    effect_at
+                    if hint_bound
                     else (now if now is not None else datetime.now(UTC))
                 )
                 assignment_fp = fingerprint_assignment_id(
@@ -290,6 +290,7 @@ class RecordWorksheetLearnerHintAttestationService:
                         ),
                     }
                 )
+                effect_at = now if now is not None else datetime.now(UTC)
                 digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
                 attestation_id = WorksheetLearnerHintAttestationId.generate()
                 stored = WorksheetLearnerHintVersionAttestationV1(

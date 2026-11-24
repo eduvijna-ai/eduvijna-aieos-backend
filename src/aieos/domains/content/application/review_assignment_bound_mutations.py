@@ -132,6 +132,16 @@ def requires_hint_assignment(version: ContentVersion) -> bool:
     )
 
 
+def hint_mutation_replay_is_terminal(
+    uow: ContentUnitOfWork,
+    *,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+) -> bool:
+    """Terminal replay only when an immutable review decision exists for the version."""
+    return uow.reviews.get_for_version(content_id, version_id) is not None
+
+
 def require_assignment_authority_for_new_effect(
     uow: ContentUnitOfWork,
     deps: AssignmentBoundMutationDependencies,
@@ -141,7 +151,7 @@ def require_assignment_authority_for_new_effect(
     effective_actor_id: UUID,
     content_id: ContentId,
     version_id: ContentVersionId,
-) -> ActiveReviewAssignment:
+) -> tuple[ActiveReviewAssignment, datetime]:
     head = uow.contents.get_head_for_update(content_id)
     if head is None or head.tenant_id != execution_tenant_id:
         raise ReviewAssignmentNotAllowed("content head missing")
@@ -169,10 +179,12 @@ def require_assignment_authority_for_new_effect(
         version_id=version_id,
         assignment_id=active.assignment_id,
         mode=ReviewerUseMode.PROTECTED_EFFECT,
+        effect_at=effect_at,
     )
-    return enforce_reviewer_use_guard(
+    guard_active = enforce_reviewer_use_guard(
         uow, ctx=guard_ctx, deps=_guard_deps(deps)
     )
+    return guard_active, effect_at
 
 
 def validate_bound_assignment_replay(
@@ -204,6 +216,7 @@ def validate_bound_assignment_replay(
         if terminal_outcome
         else ReviewerUseMode.PROTECTED_EFFECT
     )
+    effect_at = deps.clock()
     guard_ctx = ReviewerUseGuardContext(
         execution_tenant_id=execution_tenant_id,
         principal_id=principal_id,
@@ -212,6 +225,7 @@ def validate_bound_assignment_replay(
         version_id=version_id,
         assignment_id=bound_assignment_id,
         mode=mode,
+        effect_at=effect_at,
     )
     enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))
 

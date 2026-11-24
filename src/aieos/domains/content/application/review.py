@@ -90,11 +90,11 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
     assert_approve_attestation_assignment_match,
     assignment_bound_deps_configured,
     fingerprint_assignment_id,
+    hint_mutation_replay_is_terminal,
     raise_assignment_unavailable,
     record_mutation_denial,
     require_assignment_authority_for_new_effect,
     requires_hint_assignment,
-    stewardship_allows_protected_replay,
     validate_bound_assignment_replay,
 )
 from aieos.domains.content.application.worksheet_hint_interlock import (
@@ -446,22 +446,33 @@ class ReviewCommandService:
                 capability=CONTENT_REVIEW_DECIDE,
             )
             with self._uow_factory(execution_tenant_id) as uow:
-                version_precheck = uow.versions.get(version_id)
-                hint_bound = (
-                    version_precheck is not None
-                    and requires_hint_assignment(version_precheck)
-                )
-                if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
-                    raise_assignment_unavailable()
                 uow.idempotency.acquire_scope(scope)
                 uow.contents.get_head_for_update(content_id)
                 existing = uow.idempotency.get(scope)
+                version_row = _require_visible_version(uow, content_id, version_id)
+                hint_bound = requires_hint_assignment(version_row)
+                if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
+                    raise_assignment_unavailable()
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
                 if existing is not None and hint_bound:
                     prior = uow.reviews.get_for_version(content_id, version_id)
-                    if prior is not None:
-                        replay_assignment_id = prior.review_assignment_id
+                    if prior is None:
+                        raise PersistenceInvariantViolation(
+                            "idempotent review receipt missing decision row"
+                        )
+                    if (
+                        existing.result_review_decision_id is None
+                        or prior.review_decision_id.value != existing.result_review_decision_id
+                    ):
+                        raise PersistenceInvariantViolation(
+                            "idempotent review receipt identity mismatch"
+                        )
+                    if prior.reviewer_principal_id != principal_id:
+                        raise WorksheetLearnerHintAttestationInvalid(
+                            "idempotent review reviewer mismatch"
+                        )
+                    replay_assignment_id = prior.review_assignment_id
                 assignment_fp = fingerprint_assignment_id(
                     assignment_id_for_fp=assignment_id_for_fp,
                     replay_assignment_id=replay_assignment_id,
@@ -487,9 +498,8 @@ class ReviewCommandService:
                             raise WorksheetLearnerHintAttestationInvalid(
                                 "idempotency replay requires assignment binding"
                             )
-                        head = uow.contents.get_head_for_update(content_id)
-                        terminal = head is not None and not stewardship_allows_protected_replay(
-                            head.stewardship_state
+                        terminal = hint_mutation_replay_is_terminal(
+                            uow, content_id=content_id, version_id=version_id
                         )
                         validate_bound_assignment_replay(
                             uow,
@@ -511,12 +521,18 @@ class ReviewCommandService:
                             principal_classification=self._principal_classification,
                             effective_actor_id=event_context.effective_actor_id,
                         )
-                    return self._replay_decision(uow, existing, frozen_state)
+                    return self._replay_decision(
+                        uow,
+                        existing,
+                        frozen_state,
+                        expected_principal_id=principal_id,
+                    )
                 self._comment_policy.evaluate(text)
                 effect_assignment_id = assignment_id_for_fp
+                decided_at = _now(now)
                 if hint_bound:
                     assert self._assignment_bound is not None
-                    active = require_assignment_authority_for_new_effect(
+                    active, decided_at = require_assignment_authority_for_new_effect(
                         uow,
                         self._assignment_bound,
                         execution_tenant_id=execution_tenant_id,
@@ -539,11 +555,6 @@ class ReviewCommandService:
                         include_comment=True,
                         review_assignment_id=effect_assignment_id,
                     )
-                decided_at = (
-                    self._assignment_bound.clock()
-                    if hint_bound and self._assignment_bound is not None
-                    else _now(now)
-                )
                 stored, revision = self._decide_new(
                     uow,
                     execution_tenant_id,
@@ -683,10 +694,8 @@ class ReviewCommandService:
                     attestation.review_assignment_id,
                     review_assignment_id,
                 )
-        if hint_bound := requires_hint_assignment(version_row):
-            if review_assignment_id is None and assignment_bound_deps_configured(
-                self._assignment_bound
-            ):
+        if requires_hint_assignment(version_row):
+            if review_assignment_id is None:
                 raise_assignment_unavailable()
         if head.stewardship_state != StewardshipState.IN_REVIEW.value:
             raise ReviewDecisionNotAllowed(
@@ -787,6 +796,8 @@ class ReviewCommandService:
         uow: ContentUnitOfWork,
         existing: IdempotencyOutcome,
         frozen_state: str,
+        *,
+        expected_principal_id: UUID | None = None,
     ) -> ReviewDecisionResult:
         if existing.result_review_decision_id is None:
             raise PersistenceInvariantViolation(
@@ -796,6 +807,13 @@ class ReviewCommandService:
         if stored is None:
             raise PersistenceInvariantViolation(
                 "idempotent review outcome is not visible"
+            )
+        if (
+            expected_principal_id is not None
+            and stored.reviewer_principal_id != expected_principal_id
+        ):
+            raise WorksheetLearnerHintAttestationInvalid(
+                "idempotent review reviewer mismatch"
             )
         return ReviewDecisionResult(
             review_decision_id=stored.review_decision_id,

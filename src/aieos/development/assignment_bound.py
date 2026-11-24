@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.engine import Engine
 
 from aieos.development.coherent_school_context import (
+    DevelopmentCoherentSchoolContextProvider,
     development_coherent_school_context_provider,
 )
 from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
@@ -36,10 +37,13 @@ def build_assignment_bound_mutation_dependencies(
     *,
     tenant_id: UUID,
     issuer_class_authority: SchoolContextClassAuthority,
+    school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> AssignmentBoundMutationDependencies:
     """Trusted kernel + school context composition for governed NON_PRODUCTION shells."""
-    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    provider = school_context_provider or development_coherent_school_context_provider(
+        tenant_id=tenant_id
+    )
     kernel = AuthorizationKernel(engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES)
     effective_clock = clock or (lambda: datetime.now(UTC))
     return AssignmentBoundMutationDependencies(

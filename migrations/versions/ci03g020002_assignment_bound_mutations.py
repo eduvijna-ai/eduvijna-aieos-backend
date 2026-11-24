@@ -60,8 +60,14 @@ def upgrade() -> None:
     op.execute(
         """
         ALTER TABLE content.review_assignment_issuances
-        ADD CONSTRAINT uq_review_assignment_issuances_reviewer
-            UNIQUE (assignment_id, reviewer_principal_id)
+        ADD CONSTRAINT uq_review_assignment_issuances_resource_reviewer
+            UNIQUE (
+                tenant_id,
+                content_id,
+                version_id,
+                assignment_id,
+                reviewer_principal_id
+            )
         """
     )
     op.execute(
@@ -194,7 +200,7 @@ def downgrade() -> None:
     )
     op.execute(
         "ALTER TABLE content.review_assignment_issuances "
-        "DROP CONSTRAINT IF EXISTS uq_review_assignment_issuances_reviewer"
+        "DROP CONSTRAINT IF EXISTS uq_review_assignment_issuances_resource_reviewer"
     )
     op.execute(
         "ALTER TABLE content.worksheet_learner_hint_version_attestations "

@@ -230,12 +230,19 @@ worksheet_hint_attestations_table = Table(
         ondelete="RESTRICT",
     ),
     ForeignKeyConstraint(
-        ["tenant_id", "content_id", "version_id", "review_assignment_id"],
+        [
+            "tenant_id",
+            "content_id",
+            "version_id",
+            "review_assignment_id",
+            "reviewer_principal_id",
+        ],
         [
             "content.review_assignment_issuances.tenant_id",
             "content.review_assignment_issuances.content_id",
             "content.review_assignment_issuances.version_id",
             "content.review_assignment_issuances.assignment_id",
+            "content.review_assignment_issuances.reviewer_principal_id",
         ],
         name="fk_worksheet_hint_attestations_assignment",
         ondelete="RESTRICT",
@@ -293,12 +300,19 @@ review_decisions_table = Table(
         ondelete="RESTRICT",
     ),
     ForeignKeyConstraint(
-        ["tenant_id", "content_id", "version_id", "review_assignment_id"],
+        [
+            "tenant_id",
+            "content_id",
+            "version_id",
+            "review_assignment_id",
+            "reviewer_principal_id",
+        ],
         [
             "content.review_assignment_issuances.tenant_id",
             "content.review_assignment_issuances.content_id",
             "content.review_assignment_issuances.version_id",
             "content.review_assignment_issuances.assignment_id",
+            "content.review_assignment_issuances.reviewer_principal_id",
         ],
         name="fk_review_decisions_assignment",
         ondelete="RESTRICT",

@@ -56,6 +56,7 @@ class ReviewerUseGuardContext:
     version_id: ContentVersionId
     assignment_id: ReviewAssignmentId
     mode: ReviewerUseMode = ReviewerUseMode.PROTECTED_EFFECT
+    effect_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +89,8 @@ def enforce_reviewer_use_guard(
     if not terminal_mode:
         if head.current_version_id != ctx.version_id:
             raise ReviewAssignmentNotAllowed("version is not current")
-    if uow.review_assignments.get_slot_for_update(ctx.content_id, ctx.version_id) is None:
+    slot = uow.review_assignments.get_slot_for_update(ctx.content_id, ctx.version_id)
+    if slot is None:
         raise ReviewAssignmentConflict("assignment slot missing")
     version = uow.versions.get(ctx.version_id)
     if version is None:
@@ -146,8 +148,11 @@ def enforce_reviewer_use_guard(
         principal_classification=deps.principal_classification,
         issuer_class_authority=deps.issuer_class_authority,
     )
-    effect_at = deps.clock()
+    effect_at = ctx.effect_at if ctx.effect_at is not None else deps.clock()
     if terminal_mode:
+        pointer = slot.active_assignment_id
+        if pointer is not None and pointer != ctx.assignment_id:
+            raise ReviewAssignmentConflict("assignment slot superseded")
         bound = materialize_assignment(
             uow.review_assignments,
             tenant_id=ctx.execution_tenant_id,

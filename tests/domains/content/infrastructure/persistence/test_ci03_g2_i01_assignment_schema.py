@@ -294,3 +294,94 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
             {"tid": tenant_id, "cid": content_id.value},
         ).scalar_one()
         assert int(rows) == 1
+
+
+def test_bound_attestation_fk_requires_matching_reviewer_principal(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+) -> None:
+    """Five-column assignment FK must match issuance reviewer, not only assignment id."""
+    from sqlalchemy.exc import IntegrityError
+
+    provision_runtime_grants(ci03_g2_bootstrap_engine)
+    tenant_id = uuid.uuid7()
+    owner_id = uuid.uuid7()
+    reviewer_id = uuid.uuid7()
+    wrong_reviewer = uuid.uuid7()
+    seed_active_authority(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=owner_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+    )
+    content_id, version_id = seed_worksheet_in_review_governed(
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        owner_id=owner_id,
+        class_ref=_CLASS_REF,
+        now=_NOW,
+    )
+    assignment_id = uuid.uuid7()
+    with ci03_g2_runtime_engine.begin() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO content.review_assignment_issuances (
+                    assignment_id, tenant_id, content_id, version_id,
+                    reviewer_principal_id, issuer_principal_id, class_ref,
+                    issued_at, valid_until, correlation_id
+                ) VALUES (
+                    :aid, :tid, :cid, :vid, :reviewer, :owner, :cref,
+                    :now, :now + interval '1 day', :corr
+                )
+                """
+            ),
+            {
+                "aid": assignment_id,
+                "tid": tenant_id,
+                "cid": content_id.value,
+                "vid": version_id.value,
+                "reviewer": reviewer_id,
+                "owner": owner_id,
+                "cref": _CLASS_REF,
+                "now": _NOW,
+                "corr": uuid.uuid7(),
+            },
+        )
+        with pytest.raises(IntegrityError) as exc_info:
+            with conn.begin_nested():
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO content.worksheet_learner_hint_version_attestations (
+                            attestation_id, tenant_id, content_id, version_id,
+                            payload_digest, qa_policy_version, author_principal_id,
+                            reviewer_principal_id, per_question_outcomes, attested_at,
+                            correlation_id, review_assignment_id
+                        ) VALUES (
+                            :att_id, :tid, :cid, :vid,
+                            :digest, 'worksheet_hint_qa_v1', :owner, :wrong_rev,
+                            '[]'::jsonb, :now, :corr, :aid
+                        )
+                        """
+                    ),
+                    {
+                        "att_id": uuid.uuid7(),
+                        "tid": tenant_id,
+                        "cid": content_id.value,
+                        "vid": version_id.value,
+                        "digest": "a" * 64,
+                        "owner": owner_id,
+                        "wrong_rev": wrong_reviewer,
+                        "now": _NOW,
+                        "corr": uuid.uuid7(),
+                        "aid": assignment_id,
+                    },
+                )
+        assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]

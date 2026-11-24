@@ -21,6 +21,7 @@ from aieos.development.auth_adapters import (
     DevelopmentTenantSecurityResolver,
 )
 from aieos.development.assignment_bound import build_assignment_bound_mutation_dependencies
+from aieos.development.coherent_school_context import development_coherent_school_context_provider
 from aieos.development.schemas import (
     build_development_schema_registry,
     development_content_type_names,
@@ -87,15 +88,17 @@ def build_development_teacher_os_app(
         model_id=ai_model_id if model_gateway is not None else None,
     )
 
+    coherent_provider = development_coherent_school_context_provider(tenant_id=tenant_id)
     school_reader = DevelopmentSchoolContextClassReader(
         tenant_id=tenant_id,
         teacher_principal_id=principal_id,
     )
-    class_authority = SchoolContextClassAuthorityService(school_reader)
+    class_authority = SchoolContextClassAuthorityService(coherent_provider)
     assignment_bound = build_assignment_bound_mutation_dependencies(
         runtime_engine,
         tenant_id=tenant_id,
         issuer_class_authority=class_authority,
+        school_context_provider=coherent_provider,
     )
     return create_app(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),

@@ -212,8 +212,8 @@ class _ExpiryAdvancingClassAuthority:
 class _MalformedReviewerReader:
     def list_reviewer_eligible_class_refs(
         self, tenant_id: UUID, reviewer_principal_id: UUID
-    ) -> tuple[object, ...]:
-        return ({"class_ref": CLASS_REF},)
+    ) -> list[str]:
+        return [CLASS_REF]
 
 
 class _UnavailableClassAuthority:
