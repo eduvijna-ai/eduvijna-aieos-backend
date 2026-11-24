@@ -5,12 +5,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
-    PersistenceInvariantViolation,
+    ReviewAssignmentConflict,
     ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
 )
@@ -291,7 +290,12 @@ class TestCi03G2I02R4B3AuthorityReplay:
             event_context=_event(owner_id),
             audit_provenance=api_mutation_audit_provenance(owner_id),
         )
-        issue, _, *_ = _services(ci03_g2_runtime_engine, tenant_id)
+        issue, _, _, *_ = _services(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            provider=provider,
+        )
         new_assignment_id = issue.issue(
             tenant_id,
             owner_id,
@@ -409,7 +413,7 @@ class TestCi03G2I02R4B3AuthorityReplay:
             assignment_id=assignment_id,
             reviewer_principal_id=reviewer_id,
         )
-        with pytest.raises(PersistenceInvariantViolation, match="revoked or expired"):
+        with pytest.raises(ReviewAssignmentConflict, match="no active assignment binding"):
             attest.record(
                 tenant_id,
                 reviewer_id,

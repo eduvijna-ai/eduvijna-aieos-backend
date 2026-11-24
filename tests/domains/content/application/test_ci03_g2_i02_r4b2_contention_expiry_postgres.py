@@ -34,6 +34,7 @@ from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     DurableEffectSnapshot,
     assert_latest_denial_matches,
     assert_protected_effect_denied_after_revoke,
+    assert_review_assignment_conflict_denied,
     assert_review_assignment_expiry_exception,
     assert_snapshot_unchanged_except_denial,
     assignment_valid_until,
@@ -368,7 +369,7 @@ class TestCi03G2I02R4B2Concurrency:
         )
 
         assert holder_result.get("ok") is True, holder_result.get("error")
-        assert_review_assignment_expiry_exception(waiter_result["error"])
+        assert_review_assignment_conflict_denied(waiter_result["error"])
 
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario

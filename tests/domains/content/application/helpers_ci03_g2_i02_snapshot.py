@@ -313,6 +313,19 @@ def assert_review_assignment_expiry_exception(exc: BaseException) -> None:
     assert "revoked" in message or "expired" in message
 
 
+def assert_review_assignment_conflict_denied(exc: BaseException) -> None:
+    assert isinstance(exc, ReviewAssignmentConflict)
+    message = str(exc).lower()
+    assert any(
+        token in message
+        for token in (
+            "revoked",
+            "expired",
+            "no active assignment",
+        )
+    )
+
+
 def assert_latest_denial_matches(
     runtime_engine: Engine,
     *,
