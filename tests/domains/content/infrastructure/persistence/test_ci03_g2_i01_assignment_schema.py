@@ -25,6 +25,8 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
 )
 from tests.platform.security.authorization.helpers import seed_active_authority
 
+pytest_plugins = ("tests.conftest_ci03_g2_i01",)
+
 pytestmark = pytest.mark.ci03_g2_i01
 
 _CLASS_REF = CLASS_REF_5A
@@ -145,8 +147,8 @@ def test_runtime_rejects_cross_version_slot_binding(
                 "corr": uuid.uuid7(),
             },
         )
-        with conn.begin_nested():
-            with pytest.raises(IntegrityError) as exc_info:
+        with pytest.raises(IntegrityError) as exc_info:
+            with conn.begin_nested():
                 conn.execute(
                     text(
                         """
@@ -164,7 +166,20 @@ def test_runtime_rejects_cross_version_slot_binding(
                         "aid": assignment_a,
                     },
                 )
-        assert exc_info.value.orig.pgcode == "23503"  # type: ignore[union-attr]
+        assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+        assert "fk_review_current_assignments_active" in str(
+            exc_info.value.orig
+        ).lower()
+        slot_count = conn.execute(
+            text(
+                """
+                SELECT count(*) FROM content.review_current_assignments
+                WHERE tenant_id = :tid AND content_id = :cid
+                """
+            ),
+            {"tid": tenant_id, "cid": content_id},
+        ).scalar_one()
+        assert int(slot_count) == 0
 
 
 def test_downgrade_refuses_nonempty_assignment_evidence(

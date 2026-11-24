@@ -55,7 +55,11 @@ from aieos.domains.content.application.review_assignment_revoke import (
 from aieos.domains.content.application.school_context_reviewer_eligibility import (
     SchoolContextReviewerEligibilityService,
 )
-from aieos.domains.content.domain.identities import ContentId, ContentVersionId
+from aieos.domains.content.domain.identities import (
+    ContentId,
+    ContentVersionId,
+    ReviewAssignmentId,
+)
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
@@ -73,6 +77,8 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
     seed_worksheet_in_review_governed,
 )
 from tests.platform.security.authorization.helpers import seed_active_authority
+
+pytest_plugins = ("tests.conftest_ci03_g2_i01",)
 
 pytestmark = pytest.mark.ci03_g2_i01
 
@@ -102,11 +108,13 @@ def _services(
     tenant_id: uuid.UUID,
     *,
     clock=None,
+    provider=None,
 ):
     kernel = AuthorizationKernel(
         runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
     )
-    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    if provider is None:
+        provider = development_coherent_school_context_provider(tenant_id=tenant_id)
     uow_factory = SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
     assign_auth = KernelReviewAssignmentAuthorization(kernel)
     review_auth = KernelReviewAuthorization(kernel)
@@ -312,7 +320,10 @@ class TestCi03G2I01AssignmentPostgres:
             audit_provenance=audit,
         )
         issue_expired, revoke, *_ = _services(
-            runtime_engine, tenant_id, clock=lambda: expiry
+            runtime_engine,
+            tenant_id,
+            clock=lambda: expiry,
+            provider=provider,
         )
         reassigned = issue_expired.issue(
             tenant_id,
@@ -389,16 +400,15 @@ class TestCi03G2I01AssignmentPostgres:
             event_context=ctx,
             audit_provenance=audit,
         )
-        with runtime_engine.connect() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_id)},
-            )
+        with bootstrap_engine.connect() as conn:
             before = conn.execute(
                 text(
-                    "SELECT count(*) FROM security.audit_records "
-                    "WHERE action = 'content.review.revoke'"
-                )
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND action = 'content.review.revoke'
+                    """
+                ),
+                {"tid": tenant_id},
             ).scalar_one()
         revoke.revoke(
             tenant_id,
@@ -410,21 +420,27 @@ class TestCi03G2I01AssignmentPostgres:
             event_context=ctx,
             audit_provenance=audit,
         )
+        with bootstrap_engine.connect() as conn:
+            after = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND action = 'content.review.revoke'
+                    """
+                ),
+                {"tid": tenant_id},
+            ).scalar_one()
         with runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
             )
-            after = conn.execute(
-                text(
-                    "SELECT count(*) FROM security.audit_records "
-                    "WHERE action = 'content.review.revoke'"
-                )
-            ).scalar_one()
             idem = conn.execute(
                 text(
-                    "SELECT count(*) FROM api.idempotency_records "
-                    "WHERE operation = 'content_review_revoke.v1'"
+                    """
+                    SELECT count(*) FROM api.idempotency_records
+                    WHERE operation = 'content_review_revoke.v1'
+                    """
                 )
             ).scalar_one()
         assert after == before
@@ -931,7 +947,7 @@ class TestCi03G2I01AcceptanceMatrix:
             version_id=version_id,
             expected_aggregate_revision=AggregateRevision(int(revision)),
             per_question_outcomes=_positive_outcomes(
-                _hinted_ids_from_version(runtime_engine, tenant_id, version_id.value)
+                _hinted_ids_from_version(runtime_engine, tenant_id, version_id)
             ),
             idempotency_key=f"attest-{uuid.uuid7()}",
             event_context=_event(reviewer_id),
@@ -1286,3 +1302,65 @@ class TestCi03G2I01Fv01Matrix:
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
         assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) >= 1
+
+    def test_guard_wrong_assignment_id_conflict(
+        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
+    ) -> None:
+        _ = postgres18
+        provision_runtime_grants(bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=owner_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+        )
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        issue, _, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = (
+            _services(runtime_engine, tenant_id)
+        )
+        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
+        provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
+        content_id, version_id = _seed_worksheet_in_review(
+            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+        )
+        assignment_id = issue.issue(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            version_id=version_id,
+            reviewer_principal_id=reviewer_id,
+            idempotency_key="fv01-wrong-aid",
+            event_context=_event(owner_id),
+            audit_provenance=api_mutation_audit_provenance(owner_id),
+        )
+        deps = ReviewerUseGuardDependencies(
+            assign_authorization=assign_auth,
+            authorization=review_auth,
+            principal_classification=classification,
+            reviewer_eligibility=reviewer_eligibility,
+            issuer_class_authority=class_authority,
+            clock=lambda: _NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=ReviewAssignmentId(uuid.uuid7()),
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(ReviewAssignmentConflict, match="current slot"):
+                enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
+        assert assignment_id is not None

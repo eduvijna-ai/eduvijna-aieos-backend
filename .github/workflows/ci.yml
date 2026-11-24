@@ -106,13 +106,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
+          collect_line="$(uv run pytest -m ci03_g2_i01 --collect-only -q 2>&1 | tail -1)"
           set +e
-          uv run pytest -v -m ci03_g2_i01 --tb=short 2>&1 | tee ci03_g2_i01_pytest.log
+          uv run pytest -m ci03_g2_i01 --tb=short -q 2>&1 | tee ci03_g2_i01_pytest.log
           rc=$?
           set -e
-          collected="$(grep -E '^=+ [0-9]+ (tests collected|test session)' ci03_g2_i01_pytest.log | tail -1 || true)"
-          passed="$(grep -E 'passed' ci03_g2_i01_pytest.log | tail -1 || true)"
-          echo "CI03_G2_I01_SUMMARY collected=${collected:-unknown} outcome=${passed:-unknown} exit=${rc}"
+          result_line="$(tail -1 ci03_g2_i01_pytest.log)"
+          echo "CI03_G2_I01_SUMMARY collect=${collect_line} result=${result_line} exit=${rc}"
           exit "${rc}"
 
       - name: Upload CI03-G2-I01 pytest summary
