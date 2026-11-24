@@ -116,6 +116,7 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "GetTeacherLibraryItemService": "R",
     "GetTeacherLibraryVersionService": "R",
     "ValidateVersionAssetGovernanceService": "R",
+    "SchoolContextReviewerEligibilityService": "R",
 }
 
 _WIRED_AUDIT_FILES = {

@@ -291,13 +291,7 @@ class TestAlembicAndCatalog:
         assert "integration" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="integration")) == {"outbox_messages"}
         assert "security" in insp.get_schema_names()
-        assert set(insp.get_table_names(schema="security")) == {
-            "audit_records",
-            "principals",
-            "tenants",
-            "tenant_memberships",
-            "capability_grants",
-        }
+        assert set(insp.get_table_names(schema="security")) == SECURITY_TABLES_AT_FORWARD_HEAD
 
     def test_required_columns_and_sqlalchemy_mappings(self, bootstrap_engine) -> None:
         with bootstrap_engine.connect() as conn:
