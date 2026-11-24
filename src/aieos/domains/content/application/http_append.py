@@ -35,8 +35,13 @@ from aieos.domains.content.application.models import (
 from aieos.domains.content.application.ports import (
     AssetReferenceValidationPort,
     ContentUnitOfWorkFactory,
+    HumanPrincipalClassificationGate,
 )
 from aieos.domains.content.application.services import append_version_in_uow
+from aieos.platform.security.context import (
+    AuthorizationUnavailableError,
+    UnauthorizedError,
+)
 from aieos.domains.content.domain.errors import InvalidPayloadError, SchemaNotFoundError
 from aieos.domains.content.domain.identities import (
     AggregateRevision,
@@ -47,6 +52,11 @@ from aieos.domains.content.domain.identities import (
 from aieos.domains.content.domain.origin import ContentOrigin
 from aieos.domains.content.domain.schema import ContentSchemaRegistry, SchemaId, SchemaVersion
 from aieos.domains.content.domain.version import ContentPayload, ContentVersion
+from aieos.domains.education.schema import (
+    WORKSHEET_SCHEMA_ID,
+    WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
+)
 from aieos.domains.education.worksheet_hint_safety import (
     LearnerHintValidationError,
     assert_generic_worksheet_v2_hint_append_forbidden,
@@ -245,20 +255,89 @@ class HttpAppendContentVersionService:
             return content_version_read_model(version), result.aggregate_revision
 
 
+_REGISTERED_WORKSHEET_SCHEMA_VERSIONS = frozenset(
+    {WORKSHEET_SCHEMA_VERSION, WORKSHEET_SCHEMA_VERSION_V2}
+)
+
+
+def _worksheet_requires_private_read_gate(version: ContentVersion) -> bool:
+    return (
+        str(version.schema_id) == WORKSHEET_SCHEMA_ID
+        and int(version.schema_version) in _REGISTERED_WORKSHEET_SCHEMA_VERSIONS
+    )
+
+
+def registered_worksheet_private_read_response(
+    *,
+    schema_id: str,
+    schema_version: int,
+) -> bool:
+    return (
+        schema_id == WORKSHEET_SCHEMA_ID
+        and schema_version in _REGISTERED_WORKSHEET_SCHEMA_VERSIONS
+    )
+
+
 class GetContentVersionService:
-    def __init__(self, uow_factory: ContentUnitOfWorkFactory) -> None:
+    def __init__(
+        self,
+        uow_factory: ContentUnitOfWorkFactory,
+        *,
+        principal_classification: HumanPrincipalClassificationGate | None = None,
+    ) -> None:
         self._uow_factory = uow_factory
+        self._principal_classification = principal_classification
+
+    @staticmethod
+    def _deny_version_not_visible() -> ContentVersionNotFound:
+        return ContentVersionNotFound(
+            "ContentVersion is not visible for the requested Content"
+        )
+
+    def _enforce_worksheet_private_read(
+        self,
+        *,
+        principal_id: UUID,
+        content_owner_principal_id: UUID,
+    ) -> None:
+        if self._principal_classification is None:
+            raise AuthorizationUnavailableError(
+                "current human principal classification authority is required"
+            )
+        try:
+            self._principal_classification.require_current_human_principal(principal_id)
+        except UnauthorizedError as exc:
+            raise self._deny_version_not_visible() from exc
+        if content_owner_principal_id != principal_id:
+            raise self._deny_version_not_visible()
 
     def get(
         self,
         execution_tenant_id: UUID,
+        principal_id: UUID,
         content_id: ContentId,
         version_id: ContentVersionId,
     ) -> ContentVersionReadModel:
         with self._uow_factory(execution_tenant_id) as uow:
             found = uow.versions.get(version_id)
-        if found is None or found.content_id != content_id:
-            raise ContentVersionNotFound(
-                "ContentVersion is not visible for the requested Content"
-            )
-        return content_version_read_model(found)
+            if found is None:
+                raise self._deny_version_not_visible()
+            if found.version_id != version_id:
+                raise self._deny_version_not_visible()
+            if found.content_id != content_id:
+                raise self._deny_version_not_visible()
+            if found.tenant_id != execution_tenant_id:
+                raise self._deny_version_not_visible()
+            if _worksheet_requires_private_read_gate(found):
+                content = uow.contents.get(content_id)
+                if content is None:
+                    raise self._deny_version_not_visible()
+                if content.content_id != content_id:
+                    raise self._deny_version_not_visible()
+                if content.tenant_id != execution_tenant_id:
+                    raise self._deny_version_not_visible()
+                self._enforce_worksheet_private_read(
+                    principal_id=principal_id,
+                    content_owner_principal_id=content.owner_principal_id,
+                )
+            return content_version_read_model(found)

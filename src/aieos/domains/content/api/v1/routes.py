@@ -54,6 +54,7 @@ from aieos.domains.content.application.errors import InvalidContentRequest
 from aieos.domains.content.application.http_append import (
     GetContentVersionService,
     HttpAppendContentVersionService,
+    registered_worksheet_private_read_response,
 )
 from aieos.domains.content.application.models import (
     ContentReadModel,
@@ -432,14 +433,21 @@ def content_worksheet_hint_attestation_record(
 def content_version_get(
     content_id: UUID,
     version_id: UUID,
+    response: Response,
     context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
     service: Annotated[GetContentVersionService, Depends(get_content_version_service)],
 ) -> ContentVersionResponse:
     model = service.get(
         context.tenant_id,
+        context.principal_id,
         _content_id(content_id),
         _version_id(version_id),
     )
+    if registered_worksheet_private_read_response(
+        schema_id=model.schema_id,
+        schema_version=model.schema_version,
+    ):
+        response.headers["Cache-Control"] = "private, no-store"
     return _to_version_response(model)
 
 

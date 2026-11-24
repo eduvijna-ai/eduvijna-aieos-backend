@@ -38,6 +38,46 @@ jobs:
       - name: Full pytest suite
         run: uv run pytest -v -m "not postgres_candidate_authority"
 
+  ci03-g1-pg18-evidence:
+    name: ci03-g1-pg18-evidence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.4"
+          python-version: "3.14.7"
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev
+
+      - name: CI03-G1 PG18 candidate matrix and baseline characterization
+        env:
+          GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
+          chmod +x tools/ci/run_ci03_g1_pg18_evidence.sh
+          export CI03_G1_BASE_SHA=5bbc09bc895407b71a61f9ba86a7209ff9c10ffa
+          bash tools/ci/run_ci03_g1_pg18_evidence.sh
+
+      - name: Upload CI03-G1 evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci03-g1-pg18-evidence
+          path: ci03-g1-evidence/
+          if-no-files-found: error
+
   postgresql-candidate-authority:
     name: postgresql-candidate-authority
     needs:
