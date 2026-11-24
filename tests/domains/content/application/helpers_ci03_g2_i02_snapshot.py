@@ -367,7 +367,16 @@ def _assert_durable_unchanged_core(
 def assert_protected_effect_denied_after_revoke(
     before: DurableEffectSnapshot, after: DurableEffectSnapshot
 ) -> None:
-    _assert_durable_unchanged_core(before, after)
+    assert after.attestations == before.attestations
+    assert after.decisions == before.decisions
+    assert after.reviewer_idempotency_success == before.reviewer_idempotency_success
+    assert after.head_revision == before.head_revision
+    assert after.stewardship_state == before.stewardship_state
+    assert after.assignment_issuance_rows == before.assignment_issuance_rows
+    assert after.worksheet_hint_attest_audits == before.worksheet_hint_attest_audits
+    assert after.review_decision_audits == before.review_decision_audits
+    assert after.outbox_messages == before.outbox_messages
+    assert after.review_revoke_audits == before.review_revoke_audits + 1
     assert after.slot_active_assignment is None
     assert after.revocation_rows == before.revocation_rows + 1
     assert after.mutation_denials == before.mutation_denials + 1

@@ -40,7 +40,6 @@ from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres impo
     _event,
     _services,
 )
-from aieos.domains.content.domain.identities import ReviewAssignmentId
 from tests.domains.content.application.test_ci03_g2_i02_r4b1_acceptance_postgres import (
     _bound_hint_scenario,
 )
@@ -233,7 +232,7 @@ class TestCi03G2I02R4B3AuthorityReplay:
             reason_code=REASON_REVIEW_CAPABILITY,
         )
 
-    def test_approve_rejects_attestation_from_superseded_assignment(
+    def test_reissue_blocked_when_attestation_immutable(
         self,
         ci03_g2_bootstrap_engine: Engine,
         ci03_g2_runtime_engine: Engine,
@@ -296,15 +295,55 @@ class TestCi03G2I02R4B3AuthorityReplay:
             clock=lambda: _NOW,
             provider=provider,
         )
-        new_assignment_id = issue.issue(
-            tenant_id,
-            owner_id,
+        before = capture_durable_snapshot(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
             content_id=content_id,
             version_id=version_id,
-            reviewer_principal_id=reviewer2,
-            idempotency_key=f"b3-bind-reissue-{uuid.uuid7()}",
-            event_context=_event(owner_id),
-            audit_provenance=api_mutation_audit_provenance(owner_id),
+            assignment_id=assignment_id,
+            reviewer_principal_id=reviewer_id,
+        )
+        with pytest.raises(ReviewAssignmentConflict, match="attestation already exists"):
+            issue.issue(
+                tenant_id,
+                owner_id,
+                content_id=content_id,
+                version_id=version_id,
+                reviewer_principal_id=reviewer2,
+                idempotency_key=f"b3-bind-reissue-{uuid.uuid7()}",
+                event_context=_event(owner_id),
+                audit_provenance=api_mutation_audit_provenance(owner_id),
+            )
+        after = capture_durable_snapshot(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+            reviewer_principal_id=reviewer_id,
+        )
+        assert after.slot_active_assignment is None
+        assert after.attestations == before.attestations
+
+    def test_approve_rejects_without_bound_attestation(
+        self,
+        ci03_g2_bootstrap_engine: Engine,
+        ci03_g2_runtime_engine: Engine,
+    ) -> None:
+        (
+            tenant_id,
+            _owner,
+            reviewer_id,
+            provider,
+            _revoke,
+            assignment_id,
+            content_id,
+            version_id,
+            revision,
+        ) = _bound_hint_scenario(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
         )
         review = integrated_review_service(
             ci03_g2_runtime_engine,
@@ -312,32 +351,31 @@ class TestCi03G2I02R4B3AuthorityReplay:
             clock=lambda: _NOW,
             school_context_provider=provider,
         )
-        assert isinstance(new_assignment_id, ReviewAssignmentId)
         before = capture_durable_snapshot(
             bootstrap_engine=ci03_g2_bootstrap_engine,
             runtime_engine=ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             content_id=content_id,
             version_id=version_id,
-            assignment_id=new_assignment_id,
-            reviewer_principal_id=reviewer2,
+            assignment_id=assignment_id,
+            reviewer_principal_id=reviewer_id,
         )
-        event = _correlated_event(reviewer2)
+        event = _correlated_event(reviewer_id)
         with pytest.raises(
             WorksheetLearnerHintAttestationInvalid,
-            match="does not match active slot binding",
+            match="approve requires assignment-bound attestation",
         ):
             review.approve(
                 tenant_id,
-                reviewer2,
+                reviewer_id,
                 content_id=content_id,
                 version_id=version_id,
                 expected_aggregate_revision=revision,
                 reason_code=None,
                 comment=None,
-                idempotency_key=f"b3-wrong-binding-{uuid.uuid7()}",
+                idempotency_key=f"b3-no-attest-{uuid.uuid7()}",
                 event_context=event,
-                audit_provenance=api_mutation_audit_provenance(reviewer2),
+                audit_provenance=api_mutation_audit_provenance(reviewer_id),
                 now=_NOW,
             )
         after = capture_durable_snapshot(
@@ -346,14 +384,11 @@ class TestCi03G2I02R4B3AuthorityReplay:
             tenant_id=tenant_id,
             content_id=content_id,
             version_id=version_id,
-            assignment_id=new_assignment_id,
-            reviewer_principal_id=reviewer2,
+            assignment_id=assignment_id,
+            reviewer_principal_id=reviewer_id,
         )
         assert after.decisions == before.decisions
-        assert (
-            _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_MUTATION_DENIED)
-            >= before.mutation_denials + 1
-        )
+        assert after.mutation_denials == before.mutation_denials + 1
 
     def test_attest_replay_denied_after_assignment_revoked(
         self,

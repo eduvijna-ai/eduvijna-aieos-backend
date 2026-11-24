@@ -170,13 +170,14 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     },
     {
         "id": "stale_revoke_reissue_supersession",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_approve_rejects_attestation_from_superseded_assignment",
+        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_reissue_blocked_when_attestation_immutable",
         "status": "EXECUTED",
     },
     {
         "id": "wrong_attestation_binding_approve",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_approve_rejects_attestation_from_superseded_assignment",
-        "status": "EXECUTED",
+        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_approve_rejects_without_bound_attestation",
+        "status": "PARTIAL",
+        "notes": "missing attestation; digest/slot mismatch still open",
     },
     {
         "id": "b2r1_durable_snapshot_evidence",
