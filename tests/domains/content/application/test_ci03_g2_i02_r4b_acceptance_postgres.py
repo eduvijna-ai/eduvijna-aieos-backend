@@ -93,26 +93,34 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
         "status": "EXECUTED",
     },
     {
-        "id": "O64-03-C_expiry_crossing_under_lock",
+        "id": "O64-03-C_expiry_crossing_under_lock_integrated",
+        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::TestCi03G2I02R4B2IntegratedExpiry",
+        "status": "EXECUTED",
+        "notes": "slot-lock + slow-authority integrated paths per effect",
+    },
+    {
+        "id": "O64-03-C_expiry_crossing_guard_only",
         "test": "test_ci03_g2_i01_fa01_foundation_proof::test_guard_expiry_crossing_during_slow_authority",
-        "status": "PARTIAL",
-        "notes": "guard-only; not integrated mutation service lock-wait",
+        "status": "EXECUTED",
+        "notes": "guard baseline; supplemented by r4b2 integrated",
     },
     {
         "id": "revoke_then_attest_ordering",
         "test": "test_ci03_g2_i02_r4b1_acceptance_postgres::test_revoke_before_attest_denies_attest",
         "status": "EXECUTED",
+        "notes": "sequential; r4b2 adds lock-barrier variant for all effects",
     },
     {
         "id": "attest_then_revoke_ordering",
-        "test": "test_ci03_g2_i02_r4b1_acceptance_postgres::test_attest_before_revoke_succeeds_then_revoke_idempotent",
+        "test": "test_ci03_g2_i02_r4b1_acceptance_postgres::test_attest_before_revoke_succeeds_leaves_immutable_attestation",
         "status": "EXECUTED",
+        "notes": "sequential",
     },
     {
-        "id": "concurrent_pg_lock_races",
-        "test": "(none)",
-        "status": "GAP",
-        "notes": "requires dual-connection lock barriers; revoke vs all decisions both orderings",
+        "id": "concurrent_pg_lock_races_eight_orderings",
+        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::TestCi03G2I02R4B2Concurrency",
+        "status": "EXECUTED",
+        "notes": "pg_blocking_pids; revoke-first + effect-first × four mutations",
     },
     {
         "id": "publisher_after_reviewer_expiry_kernel_auth",
@@ -122,13 +130,44 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     {
         "id": "migration_receipt_column_downgrade_guard",
         "test": "ci03g020002 downgrade() receipt count refusal",
-        "status": "EXECUTED",
-        "notes": "source-level; schema evidence via test_downgrade_refuses_nonempty_assignment_evidence",
+        "status": "PARTIAL",
+        "notes": "SOURCE_ONLY until owned disposable upgrade/downgrade roundtrip proof (B6)",
     },
     {
         "id": "outbox_exact_counts",
         "test": "(none)",
         "status": "GAP",
+    },
+    {
+        "id": "replay_deny_full_grid",
+        "test": "(none)",
+        "status": "GAP",
+    },
+    {
+        "id": "issuer_reviewer_authority_losses",
+        "test": "(none)",
+        "status": "GAP",
+    },
+    {
+        "id": "sink_unavailable",
+        "test": "(none)",
+        "status": "GAP",
+    },
+    {
+        "id": "stale_revoke_reissue_supersession",
+        "test": "(none)",
+        "status": "GAP",
+    },
+    {
+        "id": "wrong_attestation_binding_approve",
+        "test": "(none)",
+        "status": "GAP",
+    },
+    {
+        "id": "publisher_negatives_legacy",
+        "test": "(partial)",
+        "status": "PARTIAL",
+        "notes": "r4b1 kernel publish positive + no-grant negative only",
     },
 )
 

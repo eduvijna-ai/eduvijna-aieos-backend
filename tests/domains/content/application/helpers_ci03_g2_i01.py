@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.engine import Engine
 
@@ -15,6 +16,7 @@ from aieos.development.coherent_school_context import (
 from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
 from aieos.domains.content.application.publish import PublishContentService
 from aieos.domains.content.application.review import ReviewCommandService
+from aieos.domains.content.application.ports import ContentUnitOfWorkFactory
 from aieos.domains.content.application.review_assignment_bound_mutations import (
     AssignmentBoundMutationDependencies,
 )
@@ -108,6 +110,7 @@ def assignment_bound_deps(
     *,
     clock: Callable[[], datetime] | None = None,
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
+    issuer_class_authority: Any | None = None,
 ) -> AssignmentBoundMutationDependencies:
     provider = school_context_provider or development_coherent_school_context_provider(
         tenant_id=tenant_id
@@ -121,7 +124,8 @@ def assignment_bound_deps(
         reviewer_eligibility=SchoolContextReviewerEligibilityService(
             development_reviewer_eligibility_reader(provider)
         ),
-        issuer_class_authority=SchoolContextClassAuthorityService(provider),
+        issuer_class_authority=issuer_class_authority
+        or SchoolContextClassAuthorityService(provider),
         denial_audit=SqlAlchemyAuthorizationDenialRecords(runtime_engine),
         clock=effective_clock,
     )
@@ -133,9 +137,12 @@ def integrated_attest_service(
     *,
     clock: Callable[[], datetime] | None = None,
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
+    uow_factory: ContentUnitOfWorkFactory | None = None,
+    issuer_class_authority: Any | None = None,
 ) -> RecordWorksheetLearnerHintAttestationService:
+    factory = uow_factory or SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
     return RecordWorksheetLearnerHintAttestationService(
-        SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        factory,
         AllowReviewAuthorization(),
         CurrentPrincipalClassificationAuthority(runtime_engine),
         idempotency_retention=IDEMPOTENCY_RETENTION,
@@ -144,6 +151,7 @@ def integrated_attest_service(
             tenant_id,
             clock=clock,
             school_context_provider=school_context_provider,
+            issuer_class_authority=issuer_class_authority,
         ),
     )
 
@@ -154,9 +162,12 @@ def integrated_review_service(
     *,
     clock: Callable[[], datetime] | None = None,
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
+    uow_factory: ContentUnitOfWorkFactory | None = None,
+    issuer_class_authority: Any | None = None,
 ) -> ReviewCommandService:
+    factory = uow_factory or SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
     return ReviewCommandService(
-        SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
+        factory,
         AllowReviewAuthorization(),
         AllowReviewCommentPolicy(),
         idempotency_retention=IDEMPOTENCY_RETENTION,
@@ -166,6 +177,7 @@ def integrated_review_service(
             tenant_id,
             clock=clock,
             school_context_provider=school_context_provider,
+            issuer_class_authority=issuer_class_authority,
         ),
     )
 

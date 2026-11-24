@@ -781,7 +781,7 @@ class TestCi03G2I02R4B1Ordering:
                 now=_NOW,
             )
 
-    def test_attest_before_revoke_succeeds_then_revoke_idempotent(
+    def test_attest_before_revoke_succeeds_leaves_immutable_attestation(
         self,
         ci03_g2_bootstrap_engine: Engine,
         ci03_g2_runtime_engine: Engine,
