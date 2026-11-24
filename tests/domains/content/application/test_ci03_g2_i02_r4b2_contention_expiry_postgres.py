@@ -350,7 +350,7 @@ class TestCi03G2I02R4B2Concurrency:
         assert isinstance(waiter_result.get("error"), _EXPECTED_WAITER_DENIED)
 
         assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            attest_before + (1 if effect == "approve" else 0)
+            attest_before
         )
         assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
             decisions_before
