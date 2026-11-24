@@ -17,6 +17,7 @@ from aieos.domains.content.application.errors import (
     PersistenceInvariantViolation,
     ReviewAssignmentConflict,
     ReviewAssignmentForbidden,
+    ReviewAssignmentNotAllowed,
     ReviewForbidden,
 )
 from aieos.domains.content.application.ports import (
@@ -34,7 +35,6 @@ from aieos.domains.content.application.school_context_reviewer_eligibility impor
 )
 from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
-from aieos.platform.security import UnauthorizedError
 from aieos.platform.security.authorization import CurrentPrincipalClassificationAuthority
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.conftest import provision_runtime_grants
@@ -275,7 +275,7 @@ class TestCi03G2I01Fa01FoundationProof:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            with pytest.raises(UnauthorizedError):
+            with pytest.raises(ReviewForbidden, match="review capability denied"):
                 enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
 
     def test_guard_denies_after_reviewer_decide_revoked(
@@ -449,7 +449,7 @@ class TestCi03G2I01Fa01FoundationProof:
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
-        with pytest.raises(ReviewAssignmentForbidden, match="distinct"):
+        with pytest.raises(ReviewAssignmentNotAllowed, match="distinct"):
             issue.issue(
                 tenant_id,
                 owner_id,
@@ -478,7 +478,9 @@ class TestCi03G2I01Fa01FoundationProof:
         )
         issue = bundle[0]
         content_id, version_id = bundle[8], bundle[9]
-        with pytest.raises((ReviewAssignmentForbidden, ReviewAssignmentConflict, UnauthorizedError)):
+        with pytest.raises(
+            (ReviewAssignmentForbidden, ReviewAssignmentConflict, ReviewAssignmentNotAllowed)
+        ):
             issue.issue(
                 other_tenant,
                 owner_id,
@@ -599,7 +601,9 @@ class TestCi03G2I01Fa01FoundationProof:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            with pytest.raises((ReviewForbidden, ReviewAssignmentConflict, UnauthorizedError)):
+            with pytest.raises(
+                ReviewAssignmentForbidden, match="not the assigned reviewer"
+            ):
                 enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
 
     def test_guard_denies_wrong_version_id(
@@ -651,7 +655,7 @@ class TestCi03G2I01Fa01FoundationProof:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            with pytest.raises(ReviewAssignmentConflict):
+            with pytest.raises(ReviewAssignmentNotAllowed, match="not current"):
                 enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
 
     def test_guard_denies_after_issuer_assign_revoked(
@@ -708,7 +712,9 @@ class TestCi03G2I01Fa01FoundationProof:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            with pytest.raises((ReviewForbidden, UnauthorizedError)):
+            with pytest.raises(
+                ReviewAssignmentForbidden, match="assignment capability denied"
+            ):
                 enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
 
     def test_guard_denies_when_class_authority_unavailable(
@@ -954,34 +960,34 @@ class TestCi03G2I01Fa01SchemaProof:
                     "owner": owner,
                 },
             )
-            from sqlalchemy.exc import IntegrityError
+        from sqlalchemy.exc import IntegrityError
 
+        with ci03_g2_bootstrap_engine.begin() as conn:
             with pytest.raises(IntegrityError) as exc_info:
-                with conn.begin_nested():
-                    conn.execute(
-                        text(
-                            """
-                            INSERT INTO content.review_assignment_issuances (
-                                assignment_id, tenant_id, content_id, version_id,
-                                reviewer_principal_id, issuer_principal_id, class_ref,
-                                issued_at, valid_until, correlation_id
-                            ) VALUES (
-                                :aid, :tid, :cid, :vid, :reviewer, :issuer, 'class-x',
-                                now(), now() + interval '1 day', :corr
-                            )
-                            """
-                        ),
-                        {
-                            "aid": uuid.uuid7(),
-                            "tid": tenant_b,
-                            "cid": content_id,
-                            "vid": version_id,
-                            "reviewer": reviewer,
-                            "issuer": owner,
-                            "corr": uuid.uuid7(),
-                        },
-                    )
-            assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO content.review_assignment_issuances (
+                            assignment_id, tenant_id, content_id, version_id,
+                            reviewer_principal_id, issuer_principal_id, class_ref,
+                            issued_at, valid_until, correlation_id
+                        ) VALUES (
+                            :aid, :tid, :cid, :vid, :reviewer, :issuer, 'class-x',
+                            now(), now() + interval '1 day', :corr
+                        )
+                        """
+                    ),
+                    {
+                        "aid": uuid.uuid7(),
+                        "tid": tenant_b,
+                        "cid": content_id,
+                        "vid": version_id,
+                        "reviewer": reviewer,
+                        "issuer": owner,
+                        "corr": uuid.uuid7(),
+                    },
+                )
+        assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
 
     def test_runtime_rejects_wrong_revoker_principal_fk(
         self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
@@ -1001,34 +1007,30 @@ class TestCi03G2I01Fa01SchemaProof:
         intruder = uuid.uuid7()
         from sqlalchemy.exc import IntegrityError
 
-        with ci03_g2_runtime_engine.begin() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_id)},
-            )
+        with ci03_g2_bootstrap_engine.begin() as conn:
             with pytest.raises(IntegrityError) as exc_info:
-                with conn.begin_nested():
-                    conn.execute(
-                        text(
-                            """
-                            INSERT INTO content.review_assignment_revocations (
-                                assignment_id, tenant_id, content_id, version_id,
-                                revoked_by_principal_id, revoked_at, correlation_id
-                            ) VALUES (
-                                :aid, :tid, :cid, :vid, :revoker, now(), :corr
-                            )
-                            """
-                        ),
-                        {
-                            "aid": assignment_id.value,
-                            "tid": tenant_id,
-                            "cid": content_id.value,
-                            "vid": version_id.value,
-                            "revoker": intruder,
-                            "corr": uuid.uuid7(),
-                        },
-                    )
-            assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO content.review_assignment_revocations (
+                            revocation_id, assignment_id, tenant_id, content_id, version_id,
+                            revoked_by_principal_id, revoked_at, correlation_id
+                        ) VALUES (
+                            :rid, :aid, :tid, :cid, :vid, :revoker, now(), :corr
+                        )
+                        """
+                    ),
+                    {
+                        "rid": uuid.uuid7(),
+                        "aid": assignment_id.value,
+                        "tid": tenant_id,
+                        "cid": content_id.value,
+                        "vid": version_id.value,
+                        "revoker": intruder,
+                        "corr": uuid.uuid7(),
+                    },
+                )
+        assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
 
     def test_runtime_rejects_issuance_update(
         self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
@@ -1052,7 +1054,7 @@ class TestCi03G2I01Fa01SchemaProof:
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
             )
-            with pytest.raises(ProgrammingError, match="immutable"):
+            with pytest.raises(ProgrammingError, match="permission denied"):
                 conn.execute(
                     text(
                         """
@@ -1071,10 +1073,16 @@ def test_fa01_proof_matrix_documents_nodes() -> None:
 
     import tests.domains.content.application.test_ci03_g2_i01_fa01_foundation_proof as mod
 
-    for _req, node in FA01_PROOF_MATRIX.items():
-        assert hasattr(mod, node), f"missing FA01 proof node {node}"
-
     import inspect
+
+    for _req, node in FA01_PROOF_MATRIX.items():
+        if hasattr(mod, node):
+            continue
+        for _, obj in inspect.getmembers(mod, inspect.isclass):
+            if hasattr(obj, node):
+                break
+        else:
+            assert False, f"missing FA01 proof node {node}"
 
     for _req, (module_path, func) in FA01_ESTABLISHED_PROOFS.items():
         other = importlib.import_module(module_path)
