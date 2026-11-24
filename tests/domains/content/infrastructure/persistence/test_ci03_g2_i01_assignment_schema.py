@@ -25,21 +25,19 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
 )
 from tests.platform.security.authorization.helpers import seed_active_authority
 
-pytest_plugins = ("tests.conftest_ci03_g2_i01",)
-
 pytestmark = pytest.mark.ci03_g2_i01
 
 _CLASS_REF = CLASS_REF_5A
 _NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
 
-def test_head_and_tables(bootstrap_engine: Engine) -> None:
-    with bootstrap_engine.connect() as conn:
+def test_head_and_tables(ci03_g2_bootstrap_engine: Engine) -> None:
+    with ci03_g2_bootstrap_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             == "ci03g020001"
         )
-    insp = inspect(bootstrap_engine)
+    insp = inspect(ci03_g2_bootstrap_engine)
     names = set(insp.get_table_names(schema="content"))
     assert "review_assignment_issuances" in names
     assert "review_assignment_revocations" in names
@@ -49,12 +47,11 @@ def test_head_and_tables(bootstrap_engine: Engine) -> None:
 
 
 def test_runtime_rejects_cross_version_slot_binding(
-    bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
+    ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine,
 ) -> None:
-    _ = postgres18
     from tests.conftest import provision_runtime_grants
 
-    provision_runtime_grants(bootstrap_engine)
+    provision_runtime_grants(ci03_g2_bootstrap_engine)
     tenant_id = uuid.uuid7()
     content_id = uuid.uuid7()
     version_a = uuid.uuid7()
@@ -70,7 +67,7 @@ def test_runtime_rejects_cross_version_slot_binding(
             "authoring_principal_id": str(owner),
         }
     )
-    with runtime_engine.begin() as conn:
+    with ci03_g2_runtime_engine.begin() as conn:
         conn.execute(
             text("SELECT set_config('aieos.tenant_id', :tid, true)"),
             {"tid": str(tenant_id)},
@@ -183,9 +180,9 @@ def test_runtime_rejects_cross_version_slot_binding(
 
 
 def test_downgrade_refuses_nonempty_assignment_evidence(
-    bootstrap_engine: Engine,
-    runtime_engine: Engine,
-    postgres18: dict,
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+    ci03_g2_postgres18: dict,
 ) -> None:
     from aieos.development.coherent_school_context import (
         development_coherent_school_context_provider,
@@ -219,19 +216,19 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
     from aieos.domains.content.application.audit import api_mutation_audit_provenance
     from datetime import timedelta
 
-    provision_runtime_grants(bootstrap_engine)
+    provision_runtime_grants(ci03_g2_bootstrap_engine)
     tenant_id = uuid.uuid7()
     owner_id = uuid.uuid7()
     reviewer_id = uuid.uuid7()
     seed_active_authority(
-        bootstrap_engine,
+        ci03_g2_bootstrap_engine,
         tenant_id=tenant_id,
         principal_id=owner_id,
         principal_kind=PrincipalKind.HUMAN,
         capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
     )
     seed_active_authority(
-        bootstrap_engine,
+        ci03_g2_bootstrap_engine,
         tenant_id=tenant_id,
         principal_id=reviewer_id,
         principal_kind=PrincipalKind.HUMAN,
@@ -241,27 +238,27 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
     provider.set_teacher_class_authority(owner_id, (_CLASS_REF,))
     provider.set_reviewer_class_eligibility(reviewer_id, (_CLASS_REF,))
     content_id, version_id = seed_worksheet_in_review_governed(
-        bootstrap_engine,
-        runtime_engine,
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
         tenant_id=tenant_id,
         owner_id=owner_id,
         class_ref=_CLASS_REF,
         now=_NOW,
     )
     kernel = AuthorizationKernel(
-        runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
+        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
     )
-    uow_factory = SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
+    uow_factory = SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine)
     issue = IssueReviewAssignmentService(
         uow_factory,
         KernelReviewAssignmentAuthorization(kernel),
         KernelReviewAuthorization(kernel),
-        CurrentPrincipalClassificationAuthority(runtime_engine),
+        CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
         SchoolContextClassAuthorityService(provider),
         SchoolContextReviewerEligibilityService(
             development_reviewer_eligibility_reader(provider)
         ),
-        SqlAlchemyAuthorizationDenialRecords(runtime_engine),
+        SqlAlchemyAuthorizationDenialRecords(ci03_g2_runtime_engine),
         idempotency_retention=timedelta(hours=24),
         clock=lambda: _NOW,
     )
@@ -281,10 +278,10 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
         event_context=ctx,
         audit_provenance=api_mutation_audit_provenance(owner_id),
     )
-    cfg = alembic_config(postgres18["migrator_url"])
+    cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
     with pytest.raises(Exception, match="refused"):
         command.downgrade(cfg, "a360s010005")
-    with bootstrap_engine.connect() as conn:
+    with ci03_g2_bootstrap_engine.connect() as conn:
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()

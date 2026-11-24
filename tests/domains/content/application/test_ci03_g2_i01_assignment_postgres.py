@@ -72,30 +72,64 @@ from aieos.platform.security.authorization import (
 )
 from aieos.platform.security.authorization.content_adapters import AIEOS_CONTENT_CAPABILITIES
 from aieos.platform.security.authorization.decisions import PrincipalKind
-from tests.conftest import provision_runtime_grants
+from tests.conftest import HOST_PORT, RUNTIME_USER, provision_runtime_grants
 from tests.domains.content.application.helpers_ci03_g2_i01 import (
     seed_worksheet_in_review_governed,
 )
 from tests.platform.security.authorization.helpers import seed_active_authority
-
-pytest_plugins = ("tests.conftest_ci03_g2_i01",)
 
 pytestmark = pytest.mark.ci03_g2_i01
 
 CLASS_REF = CLASS_REF_5A
 _NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
+def test_ci03_g2_substrate_isolated_from_shared_gci_session(
+    ci03_g2_postgres18: dict[str, str],
+    ci03_g2_runtime_engine: Engine,
+    ci03_g2_bootstrap_engine: Engine,
+    postgres18: dict[str, str],
+    bootstrap_engine: Engine,
+) -> None:
+    """G2 evidence uses disposable PG18; shared GCI session DB stays clean for migration tests."""
+    assert ci03_g2_postgres18["port"] != postgres18["port"]
+    assert ci03_g2_postgres18["bootstrap_url"] != postgres18["bootstrap_url"]
+    assert ci03_g2_postgres18["runtime_user"] == RUNTIME_USER
+    if ci03_g2_postgres18.get("container_name"):
+        assert ci03_g2_postgres18["port"] != HOST_PORT
+    with ci03_g2_runtime_engine.connect() as conn:
+        current_user = conn.execute(text("SELECT current_user")).scalar_one()
+        bypass = conn.execute(
+            text(
+                "SELECT rolbypassrls FROM pg_roles "
+                "WHERE rolname = current_user"
+            )
+        ).scalar_one()
+        server_version = conn.execute(text("SHOW server_version")).scalar_one()
+    assert current_user == RUNTIME_USER
+    assert bypass is False
+    assert str(server_version).startswith("18.")
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        head = conn.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+    assert head == "ci03g020001"
+    with bootstrap_engine.connect() as conn:
+        issuances = conn.execute(
+            text("SELECT count(*) FROM content.review_assignment_issuances")
+        ).scalar_one()
+    assert int(issuances) == 0
+
 
 def _seed_worksheet_in_review(
-    bootstrap_engine: Engine,
-    runtime_engine: Engine,
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
     *,
     tenant_id: uuid.UUID,
     owner_id: uuid.UUID,
 ) -> tuple[ContentId, ContentVersionId]:
     return seed_worksheet_in_review_governed(
-        bootstrap_engine,
-        runtime_engine,
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
         tenant_id=tenant_id,
         owner_id=owner_id,
         class_ref=CLASS_REF,
@@ -104,26 +138,26 @@ def _seed_worksheet_in_review(
 
 
 def _services(
-    runtime_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
     tenant_id: uuid.UUID,
     *,
     clock=None,
     provider=None,
 ):
     kernel = AuthorizationKernel(
-        runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
+        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
     )
     if provider is None:
         provider = development_coherent_school_context_provider(tenant_id=tenant_id)
-    uow_factory = SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
+    uow_factory = SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine)
     assign_auth = KernelReviewAssignmentAuthorization(kernel)
     review_auth = KernelReviewAuthorization(kernel)
-    classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+    classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
     class_authority = SchoolContextClassAuthorityService(provider)
     reviewer_eligibility = SchoolContextReviewerEligibilityService(
         development_reviewer_eligibility_reader(provider)
     )
-    denial = SqlAlchemyAuthorizationDenialRecords(runtime_engine)
+    denial = SqlAlchemyAuthorizationDenialRecords(ci03_g2_runtime_engine)
     retention = timedelta(hours=24)
     effective_clock = clock or (lambda: _NOW)  # noqa: E731
     issue = IssueReviewAssignmentService(
@@ -180,33 +214,31 @@ def _denial_count(engine: Engine, tenant_id: uuid.UUID, action: str) -> int:
 
 class TestCi03G2I01AssignmentPostgres:
     def test_issue_revoke_idempotent_and_slot_rules(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine,
-            runtime_engine,
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
@@ -235,7 +267,7 @@ class TestCi03G2I01AssignmentPostgres:
         assert again == assignment_id
         reviewer2 = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer2,
             principal_kind=PrincipalKind.HUMAN,
@@ -276,34 +308,32 @@ class TestCi03G2I01AssignmentPostgres:
         assert reassigned != assignment_id
 
     def test_revoke_after_expiry_allows_reissue(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         expiry = _NOW + timedelta(days=8)
-        issue, _revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine,
-            runtime_engine,
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
@@ -320,7 +350,7 @@ class TestCi03G2I01AssignmentPostgres:
             audit_provenance=audit,
         )
         issue_expired, revoke, *_ = _services(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             tenant_id,
             clock=lambda: expiry,
             provider=provider,
@@ -348,33 +378,31 @@ class TestCi03G2I01AssignmentPostgres:
         )
 
     def test_already_revoked_records_idempotency_without_duplicate_audit(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine,
-            runtime_engine,
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
@@ -400,7 +428,7 @@ class TestCi03G2I01AssignmentPostgres:
             event_context=ctx,
             audit_provenance=audit,
         )
-        with bootstrap_engine.connect() as conn:
+        with ci03_g2_bootstrap_engine.connect() as conn:
             before = conn.execute(
                 text(
                     """
@@ -420,7 +448,7 @@ class TestCi03G2I01AssignmentPostgres:
             event_context=ctx,
             audit_provenance=audit,
         )
-        with bootstrap_engine.connect() as conn:
+        with ci03_g2_bootstrap_engine.connect() as conn:
             after = conn.execute(
                 text(
                     """
@@ -430,7 +458,7 @@ class TestCi03G2I01AssignmentPostgres:
                 ),
                 {"tid": tenant_id},
             ).scalar_one()
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -447,33 +475,31 @@ class TestCi03G2I01AssignmentPostgres:
         assert int(idem) == 2
 
     def test_fail_closed_without_assign_grant_and_denial_audit(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_SUBMIT,),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, _revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine,
-            runtime_engine,
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
@@ -489,8 +515,8 @@ class TestCi03G2I01AssignmentPostgres:
                 event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
-        assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) == 1
-        with runtime_engine.connect() as conn:
+        assert _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) == 1
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -505,36 +531,34 @@ class TestCi03G2I01AssignmentPostgres:
         assert reason == "assign.capability.denied"
 
     def test_guard_fail_closed_terminal_and_protected(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         issue, revoke, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = _services(
-            runtime_engine, tenant_id
+            ci03_g2_runtime_engine, tenant_id
         )
-        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine,
-            runtime_engine,
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
             tenant_id=tenant_id,
             owner_id=owner_id,
         )
@@ -613,35 +637,33 @@ class _FailingDenialAudit(ReviewAssignmentDenialAuditPort):
 
 class TestCi03G2I01AcceptanceMatrix:
     def test_guard_missing_slot_fail_closed(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT, CONTENT_REVIEW_DECIDE),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         _, _, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = (
-            _services(runtime_engine, tenant_id)
+            _services(ci03_g2_runtime_engine, tenant_id)
         )
-        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         deps = ReviewerUseGuardDependencies(
             assign_authorization=assign_auth,
@@ -664,10 +686,8 @@ class TestCi03G2I01AcceptanceMatrix:
                 enforce_reviewer_use_guard(uow, ctx=ctx, deps=deps)
 
     def test_concurrent_issue_two_reviewers_one_winner(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_a = uuid.uuid7()
@@ -678,18 +698,18 @@ class TestCi03G2I01AcceptanceMatrix:
             (reviewer_b, (CONTENT_REVIEW_DECIDE,)),
         ):
             seed_active_authority(
-                bootstrap_engine,
+                ci03_g2_bootstrap_engine,
                 tenant_id=tenant_id,
                 principal_id=principal_id,
                 principal_kind=PrincipalKind.HUMAN,
                 capabilities=caps,
             )
-        issue, _, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_a, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_b, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         audit = api_mutation_audit_provenance(owner_id)
@@ -724,32 +744,30 @@ class TestCi03G2I01AcceptanceMatrix:
         assert len(conflicts) == 1
 
     def test_stale_revoke_leaves_current_slot(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         audit = api_mutation_audit_provenance(owner_id)
@@ -793,7 +811,7 @@ class TestCi03G2I01AcceptanceMatrix:
             event_context=ctx,
             audit_provenance=audit,
         )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -810,37 +828,35 @@ class TestCi03G2I01AcceptanceMatrix:
         assert active == second.value
 
     def test_denial_sink_failure_forbids_without_mutation(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_SUBMIT,),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         kernel = AuthorizationKernel(
-            runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
+            ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
         )
         provider = development_coherent_school_context_provider(tenant_id=tenant_id)
-        uow_factory = SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
+        uow_factory = SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine)
         issue = IssueReviewAssignmentService(
             uow_factory,
             KernelReviewAssignmentAuthorization(kernel),
             KernelReviewAuthorization(kernel),
-            CurrentPrincipalClassificationAuthority(runtime_engine),
+            CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
             SchoolContextClassAuthorityService(provider),
             SchoolContextReviewerEligibilityService(
                 development_reviewer_eligibility_reader(provider)
@@ -852,7 +868,7 @@ class TestCi03G2I01AcceptanceMatrix:
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         with pytest.raises(DenialAuditUnavailable):
             issue.issue(
@@ -865,7 +881,7 @@ class TestCi03G2I01AcceptanceMatrix:
                 event_context=_event(owner_id),
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -880,8 +896,7 @@ class TestCi03G2I01AcceptanceMatrix:
         assert int(count) == 0
 
     def test_attestation_blocks_reassignment(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
         from tests.domains.education.test_aieos_v1_hint_t2 import (
             _attest_service,
             _hinted_ids_from_version,
@@ -890,30 +905,29 @@ class TestCi03G2I01AcceptanceMatrix:
 
         from aieos.domains.content.domain.identities import AggregateRevision
 
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, revoke, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, revoke, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         audit = api_mutation_audit_provenance(owner_id)
@@ -927,7 +941,7 @@ class TestCi03G2I01AcceptanceMatrix:
             event_context=ctx,
             audit_provenance=audit,
         )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -939,7 +953,7 @@ class TestCi03G2I01AcceptanceMatrix:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = _attest_service(runtime_engine)
+        attest = _attest_service(ci03_g2_runtime_engine)
         attest.record(
             tenant_id,
             reviewer_id,
@@ -947,7 +961,7 @@ class TestCi03G2I01AcceptanceMatrix:
             version_id=version_id,
             expected_aggregate_revision=AggregateRevision(int(revision)),
             per_question_outcomes=_positive_outcomes(
-                _hinted_ids_from_version(runtime_engine, tenant_id, version_id)
+                _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
             ),
             idempotency_key=f"attest-{uuid.uuid7()}",
             event_context=_event(reviewer_id),
@@ -975,41 +989,39 @@ class TestCi03G2I01AcceptanceMatrix:
                 event_context=ctx,
                 audit_provenance=audit,
             )
-        assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) >= 1
+        assert _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) >= 1
 
 
 class TestCi03G2I01Fv01Matrix:
     """Compact authority-loss and timing acceptance (#78 FV01)."""
 
     def test_guard_denies_expired_binding_at_effect_clock(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         issue, _, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = (
-            _services(runtime_engine, tenant_id)
+            _services(ci03_g2_runtime_engine, tenant_id)
         )
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         assignment_id = issue.issue(
@@ -1022,7 +1034,7 @@ class TestCi03G2I01Fv01Matrix:
             event_context=ctx,
             audit_provenance=api_mutation_audit_provenance(owner_id),
         )
-        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
         deps = ReviewerUseGuardDependencies(
             assign_authorization=assign_auth,
             authorization=review_auth,
@@ -1062,21 +1074,19 @@ class TestCi03G2I01Fv01Matrix:
     )
     def test_issue_authority_loss_records_denial(
         self,
-        bootstrap_engine: Engine,
-        runtime_engine: Engine,
-        postgres18: str,
+        ci03_g2_bootstrap_engine: Engine,
+        ci03_g2_runtime_engine: Engine,
         owner_caps: tuple[str, ...],
         reviewer_caps: tuple[str, ...],
         expected_exc: Type[BaseException],
         reason: str,
     ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
@@ -1084,18 +1094,18 @@ class TestCi03G2I01Fv01Matrix:
         )
         if reviewer_caps:
             seed_active_authority(
-                bootstrap_engine,
+                ci03_g2_bootstrap_engine,
                 tenant_id=tenant_id,
                 principal_id=reviewer_id,
                 principal_kind=PrincipalKind.HUMAN,
                 capabilities=reviewer_caps,
             )
-        issue, _, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         if reviewer_caps:
             provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         with pytest.raises(expected_exc):
@@ -1109,7 +1119,7 @@ class TestCi03G2I01Fv01Matrix:
                 event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -1125,42 +1135,40 @@ class TestCi03G2I01Fv01Matrix:
         assert stored == reason
 
     def test_revoke_denied_sink_failure_no_mutation(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         intruder = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=intruder,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         issue, _, provider, uow_factory, assign_auth, review_auth, class_authority, _ = (
-            _services(runtime_engine, tenant_id)
+            _services(ci03_g2_runtime_engine, tenant_id)
         )
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         assignment_id = issue.issue(
@@ -1177,7 +1185,7 @@ class TestCi03G2I01Fv01Matrix:
             uow_factory,
             assign_auth,
             review_auth,
-            CurrentPrincipalClassificationAuthority(runtime_engine),
+            CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
             class_authority,
             _FailingDenialAudit(),
             idempotency_retention=timedelta(hours=24),
@@ -1194,7 +1202,7 @@ class TestCi03G2I01Fv01Matrix:
                 event_context=_event(intruder),
                 audit_provenance=api_mutation_audit_provenance(intruder),
             )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -1209,32 +1217,30 @@ class TestCi03G2I01Fv01Matrix:
         assert int(revocations) == 0
 
     def test_issue_denied_reviewer_missing_decide(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN,),
         )
-        issue, _, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         with pytest.raises(ReviewForbidden):
@@ -1248,7 +1254,7 @@ class TestCi03G2I01Fv01Matrix:
                 event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
-        with runtime_engine.connect() as conn:
+        with ci03_g2_runtime_engine.connect() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
@@ -1263,31 +1269,29 @@ class TestCi03G2I01Fv01Matrix:
         assert stored == "review.capability.denied"
 
     def test_issue_denied_reviewer_class_ineligible(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, _, provider, *_ = _services(runtime_engine, tenant_id)
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         ctx = _event(owner_id)
         with pytest.raises(ReviewAssignmentForbidden):
@@ -1301,38 +1305,36 @@ class TestCi03G2I01Fv01Matrix:
                 event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
             )
-        assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) >= 1
+        assert _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) >= 1
 
     def test_guard_wrong_assignment_id_conflict(
-        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
-    ) -> None:
-        _ = postgres18
-        provision_runtime_grants(bootstrap_engine)
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         issue, _, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = (
-            _services(runtime_engine, tenant_id)
+            _services(ci03_g2_runtime_engine, tenant_id)
         )
-        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
-            bootstrap_engine, runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
         assignment_id = issue.issue(
             tenant_id,
