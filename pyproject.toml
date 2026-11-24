@@ -79,6 +79,7 @@ markers = [
     "ped_i12: Production WORKFLOW dispatcher runtime source (ADR-AIEOS-045/047)",
     "aieos_v1_hint_t1: ADR-063 worksheet@2 schema, generic bypass, guarded append (PK-HINT-A)",
     "ci03_g1_i01: CI03-G1 generic worksheet private content_version_get hardening (ADR-AIEOS-064 O64-06)",
+    "ci03_g1_i01_fault: CI03-G1 classification fault-injection only (excluded from integrated matrix)",
     "aieos_v1_hint_t2: ADR-063 §5.3 semantic QA + immutable human attestation (PK-HINT-T2)",
     "aieos_v1_hint_t1b: ADR-063 §3.1 Learning Worksheet@2 learner-safe projection (PK-HINT-T1b)",
     "aieos_v1_hint_t1c: ADR-063 §3.1 Assessment Worksheet@2 exact-version evaluation (PK-HINT-T1c)",

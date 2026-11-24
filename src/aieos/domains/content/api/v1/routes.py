@@ -54,6 +54,7 @@ from aieos.domains.content.application.errors import InvalidContentRequest
 from aieos.domains.content.application.http_append import (
     GetContentVersionService,
     HttpAppendContentVersionService,
+    registered_worksheet_private_read_response,
 )
 from aieos.domains.content.application.models import (
     ContentReadModel,
@@ -94,11 +95,6 @@ from aieos.domains.content.application.review_queue_models import (
     TeacherReviewQueueItem,
 )
 from aieos.domains.content.domain.errors import InvalidContentIdentityError
-from aieos.domains.education.schema import (
-    WORKSHEET_SCHEMA_ID,
-    WORKSHEET_SCHEMA_VERSION,
-    WORKSHEET_SCHEMA_VERSION_V2,
-)
 from aieos.domains.content.domain.identities import (
     AggregateRevision,
     ContentId,
@@ -447,9 +443,9 @@ def content_version_get(
         _content_id(content_id),
         _version_id(version_id),
     )
-    if (
-        model.schema_id == WORKSHEET_SCHEMA_ID
-        and model.schema_version in (WORKSHEET_SCHEMA_VERSION, WORKSHEET_SCHEMA_VERSION_V2)
+    if registered_worksheet_private_read_response(
+        schema_id=model.schema_id,
+        schema_version=model.schema_version,
     ):
         response.headers["Cache-Control"] = "private, no-store"
     return _to_version_response(model)

@@ -42,6 +42,12 @@ from aieos.platform.resources import ResourceRef
 from aieos.platform.security.audit.ports import SecurityMutationAuditRepository
 from aieos.platform.workflows.ports import WorkflowIntentRepository
 
+class HumanPrincipalClassificationGate(Protocol):
+    """Fail-closed current SoR ACTIVE HUMAN check (Content-facing port)."""
+
+    def require_current_human_principal(self, principal_id: UUID) -> object: ...
+
+
 CONTENT_REVIEW_SUBMIT = "content.review.submit"
 CONTENT_REVIEW_DECIDE = "content.review.decide"
 CONTENT_PUBLISH = "content.publish"
