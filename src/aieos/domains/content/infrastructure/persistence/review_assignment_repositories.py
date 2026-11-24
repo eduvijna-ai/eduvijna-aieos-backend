@@ -83,6 +83,31 @@ class SqlAlchemyReviewAssignmentRepository:
         ).one_or_none()
         return row is not None
 
+    def has_live_issuance_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> bool:
+        row = self._connection.execute(
+            select(review_assignment_issuances_table.c.assignment_id)
+            .select_from(review_assignment_issuances_table)
+            .outerjoin(
+                review_assignment_revocations_table,
+                review_assignment_revocations_table.c.assignment_id
+                == review_assignment_issuances_table.c.assignment_id,
+            )
+            .where(
+                review_assignment_issuances_table.c.content_id == content_id.value,
+                review_assignment_issuances_table.c.version_id == version_id.value,
+                review_assignment_issuances_table.c.valid_until > now,
+                review_assignment_revocations_table.c.revocation_id.is_(None),
+            )
+            .limit(1)
+        ).one_or_none()
+        return row is not None
+
     def get_slot_for_update(
         self,
         content_id: ContentId,

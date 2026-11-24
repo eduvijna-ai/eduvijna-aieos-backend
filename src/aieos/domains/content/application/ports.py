@@ -146,6 +146,14 @@ class ReviewAssignmentRepository(Protocol):
 
     def has_revoked(self, assignment_id: ReviewAssignmentId) -> bool: ...
 
+    def has_live_issuance_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> bool: ...
+
     def get_slot_for_update(
         self,
         content_id: ContentId,

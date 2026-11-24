@@ -38,6 +38,7 @@ from aieos.domains.content.application.review_assignment_denial_audit import (
     reason_for_assignment_error,
 )
 from aieos.domains.content.application.review_assignment_state import (
+    assert_replay_entitlement_active,
     resolve_slot_active_assignment,
 )
 from aieos.domains.content.application.school_context_reviewer_eligibility import (
@@ -51,6 +52,7 @@ from aieos.domains.content.domain.identities import (
 from aieos.domains.content.domain.review_assignment import (
     ReviewAssignmentAssignedEvent,
 )
+from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.idempotency.hashing import fingerprint_material, hash_idempotency_key
@@ -59,12 +61,43 @@ from aieos.platform.idempotency.models import (
     IdempotencyOutcome,
     IdempotencyScope,
 )
+from aieos.platform.security import UnauthorizedError
 from aieos.platform.security.audit import SecurityAuditAction
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
 )
 
 _ASSIGNMENT_TTL = timedelta(days=7)
+_DENIED_EXCEPTIONS = (
+    ReviewAssignmentForbidden,
+    ReviewAssignmentNotAllowed,
+    UnauthorizedError,
+    SchoolContextUnavailable,
+)
+
+
+def _record_assign_denial(
+    denial_audit: ReviewAssignmentDenialAuditPort,
+    *,
+    tenant_id: UUID,
+    principal_id: UUID,
+    correlation_id: UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    exc: BaseException,
+) -> None:
+    record_assignment_denial(
+        denial_audit,
+        AssignmentDenialRecord(
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+            action=CONTENT_REVIEW_ASSIGN_DENIED,
+            correlation_id=correlation_id,
+            reason_code=reason_for_assignment_error(exc),
+            content_id=content_id.value,
+            version_id=version_id.value,
+        ),
+    )
 
 
 class IssueReviewAssignmentService:
@@ -105,8 +138,7 @@ class IssueReviewAssignmentService:
         event_context: MutationEventContext,
         audit_provenance: MutationAuditProvenance,
     ) -> ReviewAssignmentId:
-        effective = event_context.effective_actor_id
-        if effective != issuer_principal_id:
+        if event_context.effective_actor_id != issuer_principal_id:
             record_assignment_denial(
                 self._denial_audit,
                 AssignmentDenialRecord(
@@ -138,29 +170,30 @@ class IssueReviewAssignmentService:
                 uow.idempotency.acquire_scope(scope)
                 stored = uow.idempotency.get(scope)
                 uow.contents.get_head_for_update(content_id)
-                effective_now = self._clock()
+                class_ref = validate_issue_issuer_locked(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    issuer_principal_id=issuer_principal_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    assign_authorization=self._assign_authorization,
+                    review_authorization=self._review_authorization,
+                    principal_classification=self._principal_classification,
+                    issuer_class_authority=self._issuer_class_authority,
+                )
+                slot_now = self._clock()
                 uow.review_assignments.ensure_slot(
                     tenant_id=execution_tenant_id,
                     content_id=content_id,
                     version_id=version_id,
-                    now=effective_now,
+                    now=slot_now,
                 )
+                effective_now = self._clock()
                 if stored is not None:
                     if stored.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused(
                             "idempotency key reused with different body"
                         )
-                    class_ref = validate_issue_issuer_locked(
-                        uow,
-                        execution_tenant_id=execution_tenant_id,
-                        issuer_principal_id=issuer_principal_id,
-                        content_id=content_id,
-                        version_id=version_id,
-                        assign_authorization=self._assign_authorization,
-                        review_authorization=self._review_authorization,
-                        principal_classification=self._principal_classification,
-                        issuer_class_authority=self._issuer_class_authority,
-                    )
                     validate_issue_targets_locked(
                         uow,
                         execution_tenant_id=execution_tenant_id,
@@ -180,13 +213,55 @@ class IssueReviewAssignmentService:
                         or assigned.tenant_id != execution_tenant_id
                         or assigned.content_id != content_id
                         or assigned.version_id != version_id
-                        or assigned.reviewer_principal_id != reviewer_principal_id
                     ):
                         raise PersistenceInvariantViolation(
                             "idempotent assign outcome does not match stored issuance"
                         )
+                    if (
+                        assigned.issuer_principal_id != issuer_principal_id
+                        or assigned.class_ref != class_ref
+                        or assigned.reviewer_principal_id != reviewer_principal_id
+                    ):
+                        raise PersistenceInvariantViolation(
+                            "idempotent assign outcome identity mismatch"
+                        )
+                    active = resolve_slot_active_assignment(
+                        uow.review_assignments,
+                        tenant_id=execution_tenant_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                        now=effective_now,
+                    )
+                    assert_replay_entitlement_active(
+                        active,
+                        assignment_id=assignment_id,
+                        issuer_principal_id=issuer_principal_id,
+                        reviewer_principal_id=reviewer_principal_id,
+                        class_ref=class_ref,
+                    )
                     return assignment_id
-                class_ref = validate_issue_issuer_locked(
+                validate_issue_targets_locked(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    issuer_principal_id=issuer_principal_id,
+                    reviewer_principal_id=reviewer_principal_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    class_ref=class_ref,
+                    review_authorization=self._review_authorization,
+                    principal_classification=self._principal_classification,
+                    reviewer_eligibility=self._reviewer_eligibility,
+                )
+                active = resolve_slot_active_assignment(
+                    uow.review_assignments,
+                    tenant_id=execution_tenant_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    now=effective_now,
+                )
+                if active is not None and not active.revoked:
+                    raise ReviewAssignmentConflict("active assignment already bound")
+                validate_issue_issuer_locked(
                     uow,
                     execution_tenant_id=execution_tenant_id,
                     issuer_principal_id=issuer_principal_id,
@@ -209,20 +284,13 @@ class IssueReviewAssignmentService:
                     principal_classification=self._principal_classification,
                     reviewer_eligibility=self._reviewer_eligibility,
                 )
-                active = resolve_slot_active_assignment(
-                    uow.review_assignments,
-                    tenant_id=execution_tenant_id,
-                    content_id=content_id,
-                    version_id=version_id,
-                    now=effective_now,
-                )
-                if active is not None and not active.revoked:
-                    raise ReviewAssignmentConflict("active assignment already bound")
                 head = uow.contents.get_head_for_update(content_id)
                 if head is None:
                     raise ReviewAssignmentNotAllowed("content head missing")
-                assignment_id = ReviewAssignmentId(uuid7())
+                if effective_now < slot_now:
+                    raise ReviewAssignmentNotAllowed("invalid assignment effect time")
                 valid_until = effective_now + _ASSIGNMENT_TTL
+                assignment_id = ReviewAssignmentId(uuid7())
                 event = ReviewAssignmentAssignedEvent(
                     assignment_id=assignment_id,
                     tenant_id=execution_tenant_id,
@@ -276,18 +344,15 @@ class IssueReviewAssignmentService:
                 )
                 uow.commit()
                 return assignment_id
-        except (ReviewAssignmentForbidden, ReviewAssignmentNotAllowed) as exc:
-            record_assignment_denial(
+        except _DENIED_EXCEPTIONS as exc:
+            _record_assign_denial(
                 self._denial_audit,
-                AssignmentDenialRecord(
-                    tenant_id=execution_tenant_id,
-                    principal_id=issuer_principal_id,
-                    action=CONTENT_REVIEW_ASSIGN_DENIED,
-                    correlation_id=event_context.correlation_id,
-                    reason_code=reason_for_assignment_error(exc),
-                    content_id=content_id.value,
-                    version_id=version_id.value,
-                ),
+                tenant_id=execution_tenant_id,
+                principal_id=issuer_principal_id,
+                correlation_id=event_context.correlation_id,
+                content_id=content_id,
+                version_id=version_id,
+                exc=exc,
             )
             raise
         except ContentApplicationError:

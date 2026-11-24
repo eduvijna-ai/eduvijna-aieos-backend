@@ -28,6 +28,10 @@ def resolve_slot_active_assignment(
     if slot.tenant_id != tenant_id:
         raise PersistenceInvariantViolation("assignment slot tenant mismatch")
     if slot.active_assignment_id is None:
+        if repo.has_live_issuance_for_version(content_id, version_id, now=now):
+            raise PersistenceInvariantViolation(
+                "live issuance exists without current slot binding"
+            )
         return None
     active = materialize_assignment(
         repo,
@@ -78,3 +82,23 @@ def materialize_assignment(
         valid_until=assigned.valid_until,
         revoked=revoked or expired,
     )
+
+
+def assert_replay_entitlement_active(
+    active: ActiveReviewAssignment | None,
+    *,
+    assignment_id: ReviewAssignmentId,
+    issuer_principal_id: UUID,
+    reviewer_principal_id: UUID,
+    class_ref: str,
+) -> None:
+    if active is None or active.assignment_id != assignment_id:
+        raise PersistenceInvariantViolation("replay entitlement is not current slot binding")
+    if active.revoked:
+        raise PersistenceInvariantViolation("replay entitlement is revoked or expired")
+    if active.issuer_principal_id != issuer_principal_id:
+        raise PersistenceInvariantViolation("replay issuer mismatch")
+    if active.reviewer_principal_id != reviewer_principal_id:
+        raise PersistenceInvariantViolation("replay reviewer mismatch")
+    if active.class_ref != class_ref:
+        raise PersistenceInvariantViolation("replay class mismatch")

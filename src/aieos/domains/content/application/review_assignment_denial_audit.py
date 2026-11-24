@@ -59,7 +59,10 @@ def reason_for_assignment_error(exc: BaseException) -> str:
         ReviewAssignmentNotAllowed,
     )
     from aieos.domains.teaching.application.errors import SchoolContextUnavailable
+    from aieos.platform.security import UnauthorizedError
 
+    if isinstance(exc, UnauthorizedError):
+        return REASON_PRINCIPAL_KIND
     message = str(exc).lower()
     if isinstance(exc, SchoolContextUnavailable):
         return REASON_SCHOOL_CONTEXT

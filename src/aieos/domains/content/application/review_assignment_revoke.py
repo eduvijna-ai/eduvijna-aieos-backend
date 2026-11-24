@@ -39,6 +39,7 @@ from aieos.domains.content.application.review_assignment_denial_audit import (
 )
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId, ReviewAssignmentId
 from aieos.domains.content.domain.review_assignment import ReviewAssignmentRevokedEvent
+from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.idempotency.hashing import fingerprint_material, hash_idempotency_key
@@ -47,9 +48,17 @@ from aieos.platform.idempotency.models import (
     IdempotencyOutcome,
     IdempotencyScope,
 )
+from aieos.platform.security import UnauthorizedError
 from aieos.platform.security.audit import SecurityAuditAction
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
+)
+
+_DENIED_EXCEPTIONS = (
+    ReviewAssignmentForbidden,
+    ReviewAssignmentNotAllowed,
+    UnauthorizedError,
+    SchoolContextUnavailable,
 )
 
 
@@ -144,13 +153,14 @@ class RevokeReviewAssignmentService:
                     raise ReviewAssignmentForbidden(
                         "only the original issuer may revoke"
                     )
-                effective_now = self._clock()
+                slot_now = self._clock()
                 uow.review_assignments.ensure_slot(
                     tenant_id=execution_tenant_id,
                     content_id=content_id,
                     version_id=version_id,
-                    now=effective_now,
+                    now=slot_now,
                 )
+                effective_now = self._clock()
                 if stored is not None:
                     if stored.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused(
@@ -160,8 +170,39 @@ class RevokeReviewAssignmentService:
                         raise IdempotencyKeyReused(
                             "idempotency key bound to different assignment"
                         )
+                    validate_revoke_issuer_locked(
+                        uow,
+                        execution_tenant_id=execution_tenant_id,
+                        issuer_principal_id=issuer_principal_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                        assign_authorization=self._assign_authorization,
+                        review_authorization=self._review_authorization,
+                        principal_classification=self._principal_classification,
+                        issuer_class_authority=self._issuer_class_authority,
+                    )
                     return assignment_id
                 if uow.review_assignments.has_revoked(assignment_id):
+                    head = uow.contents.get_head_for_update(content_id)
+                    if head is None:
+                        raise ReviewAssignmentNotAllowed("content head missing")
+                    uow.idempotency.insert(
+                        IdempotencyOutcome(
+                            tenant_id=execution_tenant_id,
+                            principal_id=issuer_principal_id,
+                            operation=CONTENT_REVIEW_REVOKE_V1,
+                            key_sha256=scope.key_sha256,
+                            request_fingerprint_sha256=fingerprint,
+                            result_content_id=assignment_id.value,
+                            result_version_id=version_id.value,
+                            result_review_decision_id=None,
+                            result_publication_id=None,
+                            result_aggregate_revision=int(head.aggregate_revision),
+                            created_at=effective_now,
+                            expires_at=effective_now + self._idempotency_retention,
+                        )
+                    )
+                    uow.commit()
                     return assignment_id
                 slot = uow.review_assignments.get_slot_for_update(content_id, version_id)
                 event = ReviewAssignmentRevokedEvent(
@@ -223,7 +264,7 @@ class RevokeReviewAssignmentService:
                 )
                 uow.commit()
                 return assignment_id
-        except (ReviewAssignmentForbidden, ReviewAssignmentNotAllowed) as exc:
+        except _DENIED_EXCEPTIONS as exc:
             reason = reason_for_assignment_error(exc)
             if isinstance(exc, ReviewAssignmentForbidden) and reason == REASON_ASSIGN_CAPABILITY:
                 reason = REASON_REVOKE_CAPABILITY
