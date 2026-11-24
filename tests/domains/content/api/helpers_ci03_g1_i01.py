@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import base64
+import json
+import os
 import time
 import uuid
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy import text
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -24,6 +28,9 @@ from aieos.domains.content.application.ports import (
     CONTENT_REVIEW_DECIDE,
     CONTENT_VERSION_CREATE,
 )
+from aieos.domains.content.domain.identities import ContentId, ContentVersionId
+from aieos.domains.parent_intelligence.application.ports import PARENT_INTELLIGENCE_READ
+from aieos.domains.school_intelligence.application.ports import SCHOOL_INTELLIGENCE_READ
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
@@ -337,4 +344,115 @@ def seed_owner_bundle(bootstrap_engine: Engine, tenant_id: UUID, owner_id: UUID)
         tenant_id=tenant_id,
         principal_id=owner_id,
         capabilities=(CONTENT_VERSION_CREATE,),
+    )
+
+
+def baseline_mode() -> bool:
+    return os.environ.get("CI03_G1_BASELINE_MODE", "0").strip() == "1"
+
+
+def source_git_sha() -> str:
+    return os.environ.get("CI03_G1_SOURCE_SHA", "unknown")
+
+
+def emit_receipt(case: str, **fields: object) -> None:
+    path = os.environ.get("CI03_G1_RECEIPTS_PATH")
+    if not path:
+        return
+    record: dict[str, object] = {
+        "case": case,
+        "source_sha": source_git_sha(),
+        "baseline_mode": baseline_mode(),
+        **fields,
+    }
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def private_fields_recursive(value: object) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in PRIVATE_FIELD_NAMES:
+                found.add(key)
+            found |= private_fields_recursive(nested)
+    elif isinstance(value, list):
+        for item in value:
+            found |= private_fields_recursive(item)
+    return found
+
+
+def assert_no_private_fields_recursive(body: object) -> None:
+    assert not private_fields_recursive(body)
+
+
+def set_content_owner(
+    bootstrap_engine: Engine, content_id: str, owner_principal_id: UUID
+) -> None:
+    with bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE content.contents SET owner_principal_id = :pid "
+                "WHERE content_id = :cid"
+            ),
+            {"pid": owner_principal_id, "cid": content_id},
+        )
+
+
+def seed_worksheet_http_ids(
+    runtime_engine: Engine,
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: UUID,
+    owner_id: UUID,
+    public_jwk: dict[str, Any],
+    private_key: Any,
+    hint_bearing_v2: bool = False,
+) -> tuple[ContentId, ContentVersionId, ContentVersionId | None, str]:
+    seed_owner_bundle(bootstrap_engine, tenant_id, owner_id)
+    app, _ = build_real_auth_app(
+        runtime_engine,
+        tenant_id=tenant_id,
+        owner_principal_id=owner_id,
+        public_jwk=public_jwk,
+        private_key=private_key,
+    )
+    client = client_for(app, private_key, tenant_id=tenant_id, principal_id=owner_id)
+    content_id, v1_id, v2_id = owner_worksheet_fixtures(
+        client, hint_bearing_v2=hint_bearing_v2
+    )
+    v2 = ContentVersionId(UUID(v2_id)) if v2_id else None
+    return (
+        ContentId(UUID(content_id)),
+        ContentVersionId(UUID(v1_id)),
+        v2,
+        content_id,
+    )
+
+
+def seed_principal_fixture(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: UUID,
+    principal_id: UUID,
+    fixture_label: str,
+) -> None:
+    caps: tuple[str, ...]
+    if fixture_label == "principal":
+        caps = (SCHOOL_INTELLIGENCE_READ,)
+    elif fixture_label == "parent":
+        caps = (PARENT_INTELLIGENCE_READ,)
+    elif fixture_label == "student":
+        caps = ()
+    elif fixture_label == "reviewer_decide":
+        caps = (CONTENT_REVIEW_DECIDE,)
+    elif fixture_label == "publisher_only":
+        caps = (CONTENT_PUBLISH,)
+    else:
+        caps = ()
+    seed_human_member(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        capabilities=caps,
     )

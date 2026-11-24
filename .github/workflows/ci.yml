@@ -63,8 +63,11 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: CI03-G1 PG18 candidate matrix and baseline characterization
+        env:
+          GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
           chmod +x tools/ci/run_ci03_g1_pg18_evidence.sh
           export CI03_G1_BASE_SHA=5bbc09bc895407b71a61f9ba86a7209ff9c10ffa
           bash tools/ci/run_ci03_g1_pg18_evidence.sh
