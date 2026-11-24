@@ -94,6 +94,11 @@ from aieos.domains.content.application.review_queue_models import (
     TeacherReviewQueueItem,
 )
 from aieos.domains.content.domain.errors import InvalidContentIdentityError
+from aieos.domains.education.schema import (
+    WORKSHEET_SCHEMA_ID,
+    WORKSHEET_SCHEMA_VERSION,
+    WORKSHEET_SCHEMA_VERSION_V2,
+)
 from aieos.domains.content.domain.identities import (
     AggregateRevision,
     ContentId,
@@ -432,14 +437,21 @@ def content_worksheet_hint_attestation_record(
 def content_version_get(
     content_id: UUID,
     version_id: UUID,
+    response: Response,
     context: Annotated[TrustedSecurityContext, Depends(resolve_trusted_context)],
     service: Annotated[GetContentVersionService, Depends(get_content_version_service)],
 ) -> ContentVersionResponse:
     model = service.get(
         context.tenant_id,
+        context.principal_id,
         _content_id(content_id),
         _version_id(version_id),
     )
+    if (
+        model.schema_id == WORKSHEET_SCHEMA_ID
+        and model.schema_version in (WORKSHEET_SCHEMA_VERSION, WORKSHEET_SCHEMA_VERSION_V2)
+    ):
+        response.headers["Cache-Control"] = "private, no-store"
     return _to_version_response(model)
 
 

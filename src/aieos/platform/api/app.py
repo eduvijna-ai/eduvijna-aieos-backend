@@ -401,7 +401,10 @@ def create_app(
         asset_reference_validation,
         idempotency_retention=idempotency_retention,
     )
-    app.state.get_content_version_service = GetContentVersionService(uow_factory)
+    app.state.get_content_version_service = GetContentVersionService(
+        uow_factory,
+        principal_classification=classification,
+    )
     app.state.review_command_service = ReviewCommandService(
         uow_factory,
         review_authorization,
