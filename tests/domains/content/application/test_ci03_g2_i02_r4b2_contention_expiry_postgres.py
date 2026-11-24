@@ -31,9 +31,17 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
     ContendingContentUowFactory,
     SlotHoldingContentUowFactory,
     join_bounded,
+    passive_head_slot_blocker,
     revoke_service_with_factory,
     run_two_party_contention,
 )
+from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+    DurableEffectSnapshot,
+    assert_snapshot_unchanged_except_denial,
+    assignment_valid_until,
+    capture_durable_snapshot,
+)
+from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import assert_genuine_lock_contention
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
     _NOW,
     _denial_count,
@@ -226,6 +234,49 @@ def _invoke_decision(
         raise ValueError(effect)
 
 
+def _capture_snapshot(
+    bootstrap: Engine,
+    runtime: Engine,
+    scenario: _Scenario,
+) -> DurableEffectSnapshot:
+    return capture_durable_snapshot(
+        bootstrap_engine=bootstrap,
+        runtime_engine=runtime,
+        tenant_id=scenario.tenant_id,
+        content_id=scenario.content_id,
+        version_id=scenario.version_id,
+        assignment_id=scenario.assignment_id,
+        reviewer_principal_id=scenario.reviewer_id,
+    )
+
+
+def _pre_attest_for_approve(
+    runtime: Engine,
+    scenario: _Scenario,
+    clock,
+) -> None:
+    attest = integrated_attest_service(
+        runtime,
+        scenario.tenant_id,
+        clock=clock,
+        school_context_provider=scenario.provider,
+    )
+    attest.record(
+        scenario.tenant_id,
+        scenario.reviewer_id,
+        content_id=scenario.content_id,
+        version_id=scenario.version_id,
+        expected_aggregate_revision=scenario.revision,
+        per_question_outcomes=_positive_outcomes(
+            _hinted_ids_from_version(runtime, scenario.tenant_id, scenario.version_id)
+        ),
+        idempotency_key=f"b2-pre-{uuid.uuid7()}",
+        event_context=_event(scenario.reviewer_id),
+        audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
+        now=clock(),
+    )
+
+
 def _invoke_revoke(
     runtime: Engine,
     scenario: _Scenario,
@@ -272,11 +323,9 @@ class TestCi03G2I02R4B2Concurrency:
             clock=clock,
             attest_for_approve=effect == "approve",
         )
-        denials_before = _denial_count(
-            ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
+        snap_before = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
-        attest_before = _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
-        decisions_before = _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
 
         slot_held = threading.Event()
         contending = threading.Event()
@@ -349,18 +398,11 @@ class TestCi03G2I02R4B2Concurrency:
         assert holder_result.get("ok") is True, holder_result.get("error")
         assert isinstance(waiter_result.get("error"), _EXPECTED_WAITER_DENIED)
 
-        assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            attest_before
+        snap_after = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
-        assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            decisions_before
-        )
-        assert (
-            _denial_count(
-                ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
-            )
-            >= denials_before + 1
-        )
+        assert_snapshot_unchanged_except_denial(snap_before, snap_after)
+        assert snap_after.revocation_rows == snap_before.revocation_rows + 1
 
     @pytest.mark.parametrize(
         ("effect",),
@@ -380,8 +422,11 @@ class TestCi03G2I02R4B2Concurrency:
             clock=clock,
             attest_for_approve=False,
         )
-        attest_before = _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
-        decisions_before = _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
+        if effect == "approve":
+            _pre_attest_for_approve(ci03_g2_runtime_engine, scenario, clock)
+        snap_before = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
+        )
 
         slot_held = threading.Event()
         contending = threading.Event()
@@ -414,30 +459,6 @@ class TestCi03G2I02R4B2Concurrency:
                         idem_key=f"b2-eff-first-attest-{uuid.uuid7()}",
                     )
                 elif effect == "approve":
-                    pre = integrated_attest_service(
-                        ci03_g2_runtime_engine,
-                        scenario.tenant_id,
-                        clock=clock,
-                        school_context_provider=scenario.provider,
-                    )
-                    pre.record(
-                        scenario.tenant_id,
-                        scenario.reviewer_id,
-                        content_id=scenario.content_id,
-                        version_id=scenario.version_id,
-                        expected_aggregate_revision=scenario.revision,
-                        per_question_outcomes=_positive_outcomes(
-                            _hinted_ids_from_version(
-                                ci03_g2_runtime_engine,
-                                scenario.tenant_id,
-                                scenario.version_id,
-                            )
-                        ),
-                        idempotency_key=f"b2-eff-pre-{uuid.uuid7()}",
-                        event_context=_event(scenario.reviewer_id),
-                        audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
-                        now=clock(),
-                    )
                     _invoke_decision(
                         ci03_g2_runtime_engine,
                         scenario,
@@ -486,20 +507,25 @@ class TestCi03G2I02R4B2Concurrency:
         assert holder_result.get("ok") is True, holder_result.get("error")
         assert waiter_result.get("ok") is True, waiter_result.get("error")
 
+        snap_after = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
+        )
+        assert snap_after.revocation_rows == snap_before.revocation_rows + 1
+        assert snap_after.mutation_denials == snap_before.mutation_denials
         if effect == "attest":
-            assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-                attest_before + 1
+            assert snap_after.attestations == snap_before.attestations + 1
+            assert snap_after.reviewer_idempotency_success == (
+                snap_before.reviewer_idempotency_success + 1
             )
         elif effect == "approve":
-            assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-                attest_before + 1
-            )
-            assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-                decisions_before + 1
+            assert snap_after.decisions == snap_before.decisions + 1
+            assert snap_after.reviewer_idempotency_success == (
+                snap_before.reviewer_idempotency_success + 1
             )
         elif effect in ("reject", "request_changes"):
-            assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-                decisions_before + 1
+            assert snap_after.decisions == snap_before.decisions + 1
+            assert snap_after.reviewer_idempotency_success == (
+                snap_before.reviewer_idempotency_success + 1
             )
 
 
@@ -508,7 +534,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         ("effect",),
         (("attest",), ("approve",), ("reject",), ("request_changes",)),
     )
-    def test_expiry_crosses_valid_until_while_slot_lock_held(
+    def test_expiry_advances_clock_while_same_txn_holds_slot_without_lock_wait(
         self,
         ci03_g2_bootstrap_engine: Engine,
         ci03_g2_runtime_engine: Engine,
@@ -526,18 +552,21 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             clock=clock,
             attest_for_approve=effect == "approve",
         )
-        denials_before = _denial_count(
-            ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
+        valid_until = assignment_valid_until(
+            ci03_g2_runtime_engine, scenario.tenant_id, scenario.assignment_id
         )
-        attest_before = _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
-        decisions_before = _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
+        snap_before = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
+        )
 
         slot_held = threading.Event()
         release = threading.Event()
         holder_pid: list[int | None] = [None]
+        clock_advanced = threading.Event()
 
         def advance_clock() -> None:
-            clock_holder["t"] = _NOW + timedelta(days=8)
+            clock_holder["t"] = valid_until + timedelta(seconds=1)
+            clock_advanced.set()
 
         hold_factory = SlotHoldingContentUowFactory(
             ci03_g2_runtime_engine,
@@ -557,7 +586,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         scenario,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-lock-expire-{effect}-{uuid.uuid7()}",
+                        idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
                     )
                 else:
                     _invoke_decision(
@@ -566,32 +595,139 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         effect=effect,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-lock-expire-{effect}-{uuid.uuid7()}",
+                        idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
                     )
             except BaseException as exc:  # noqa: BLE001
                 worker_errors.append(exc)
 
-        thread = threading.Thread(target=worker, name=f"expiry-{effect}")
+        thread = threading.Thread(target=worker, name=f"expiry-intra-{effect}")
         thread.start()
         assert slot_held.wait(timeout=30), "effect did not reach slot lock"
-        assert clock_holder["t"] >= _NOW + timedelta(days=8)
+        assert clock_advanced.wait(timeout=5), "clock did not advance under hold callback"
+        assert clock_holder["t"] >= valid_until
         release.set()
         join_bounded(thread)
 
         assert len(worker_errors) == 1
         assert isinstance(worker_errors[0], _EXPECTED_WAITER_DENIED)
-        assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            attest_before
+        snap_after = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
-        assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            decisions_before
+        assert_snapshot_unchanged_except_denial(snap_before, snap_after)
+
+    @pytest.mark.parametrize("boundary", ("at_valid_until", "after_valid_until"))
+    @pytest.mark.parametrize(
+        ("effect",),
+        (("attest",), ("approve",), ("reject",), ("request_changes",)),
+    )
+    def test_expiry_lock_wait_crosses_persisted_valid_until(
+        self,
+        ci03_g2_bootstrap_engine: Engine,
+        ci03_g2_runtime_engine: Engine,
+        effect: str,
+        boundary: str,
+    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        clock_holder = {"t": _NOW}
+
+        def clock() -> datetime:
+            return clock_holder["t"]
+
+        scenario = _load_scenario(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            clock=clock,
+            attest_for_approve=effect == "approve",
         )
-        assert (
-            _denial_count(
-                ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
+        valid_until = assignment_valid_until(
+            ci03_g2_runtime_engine, scenario.tenant_id, scenario.assignment_id
+        )
+        snap_before = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
+        )
+
+        blocker_ready = threading.Event()
+        contending = threading.Event()
+        release = threading.Event()
+        blocker_pid: list[int | None] = [None]
+        waiter_pid: list[int | None] = [None]
+        worker_errors: list[BaseException] = []
+
+        contend_factory = ContendingContentUowFactory(
+            ci03_g2_runtime_engine,
+            contending=contending,
+            waiter_pid=waiter_pid,
+        )
+
+        def blocker() -> None:
+            passive_head_slot_blocker(
+                ci03_g2_runtime_engine,
+                scenario.tenant_id,
+                content_id=scenario.content_id,
+                version_id=scenario.version_id,
+                locks_acquired=blocker_ready,
+                release=release,
+                blocker_pid=blocker_pid,
             )
-            >= denials_before + 1
+
+        def worker() -> None:
+            try:
+                if effect == "attest":
+                    _invoke_attest(
+                        ci03_g2_runtime_engine,
+                        scenario,
+                        clock=clock,
+                        uow_factory=contend_factory,
+                        idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                    )
+                else:
+                    _invoke_decision(
+                        ci03_g2_runtime_engine,
+                        scenario,
+                        effect=effect,
+                        clock=clock,
+                        uow_factory=contend_factory,
+                        idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                    )
+            except BaseException as exc:  # noqa: BLE001
+                worker_errors.append(exc)
+
+        blocker_thread = threading.Thread(target=blocker, name="passive-blocker")
+        worker_thread: threading.Thread | None = None
+        try:
+            blocker_thread.start()
+            assert blocker_ready.wait(timeout=30), "blocker did not acquire head/slot locks"
+            worker_thread = threading.Thread(target=worker, name="expiry-waiter")
+            worker_thread.start()
+            assert contending.wait(timeout=30), "effect did not reach head lock wait"
+            assert clock_holder["t"] < valid_until
+            assert_genuine_lock_contention(
+                ci03_g2_bootstrap_engine,
+                waiter_thread=worker_thread,
+                waiter_pid=waiter_pid[0],
+                holder_pid=blocker_pid[0],
+                locks_held=blocker_ready,
+                release=release,
+            )
+            if boundary == "at_valid_until":
+                clock_holder["t"] = valid_until
+            else:
+                clock_holder["t"] = valid_until + timedelta(seconds=1)
+        finally:
+            release.set()
+            blocker_thread.join(timeout=30)
+            if worker_thread is not None:
+                worker_thread.join(timeout=30)
+                assert not worker_thread.is_alive()
+            assert not blocker_thread.is_alive()
+
+        assert len(worker_errors) == 1
+        assert isinstance(worker_errors[0], _EXPECTED_WAITER_DENIED)
+        assert clock_holder["t"] >= valid_until
+        snap_after = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
+        assert_snapshot_unchanged_except_denial(snap_before, snap_after)
 
     @pytest.mark.parametrize(
         ("effect",),
@@ -617,12 +753,12 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         )
         inner = SchoolContextClassAuthorityService(scenario.provider)
         slow = _ExpiryAdvancingClassAuthority(inner, clock_holder)
-
-        denials_before = _denial_count(
-            ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
+        valid_until = assignment_valid_until(
+            ci03_g2_runtime_engine, scenario.tenant_id, scenario.assignment_id
         )
-        attest_before = _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
-        decisions_before = _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario)
+        snap_before = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
+        )
 
         if effect == "attest":
             service = integrated_attest_service(
@@ -676,16 +812,8 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                 else:
                     review.request_changes(**kwargs, reason_code="governed", comment="changes")
 
-        assert clock_holder["t"] >= _NOW + timedelta(days=8)
-        assert _attestation_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            attest_before
+        assert clock_holder["t"] >= valid_until
+        snap_after = _capture_snapshot(
+            ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
-        assert _decision_count(ci03_g2_runtime_engine, scenario.tenant_id, scenario) == (
-            decisions_before
-        )
-        assert (
-            _denial_count(
-                ci03_g2_runtime_engine, scenario.tenant_id, CONTENT_REVIEW_MUTATION_DENIED
-            )
-            >= denials_before + 1
-        )
+        assert_snapshot_unchanged_except_denial(snap_before, snap_after)

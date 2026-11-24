@@ -78,9 +78,9 @@ class SlotHoldingContentUow(SqlAlchemyContentUnitOfWork):
             self._holder_pid[0] = connection.execute(
                 text("SELECT pg_backend_pid()")
             ).scalar_one()
-            self._slot_held.set()
             if self._while_held is not None:
                 self._while_held()
+            self._slot_held.set()
             if not self._release.wait(timeout=_DEFAULT_HOLD_TIMEOUT):
                 raise TimeoutError("slot hold release timed out")
             return row
@@ -197,6 +197,32 @@ def revoke_service_with_factory(
     )
 
 
+def passive_head_slot_blocker(
+    engine: Engine,
+    tenant_id: uuid.UUID,
+    *,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    locks_acquired: threading.Event,
+    release: threading.Event,
+    blocker_pid: list[int | None],
+) -> None:
+    """Independent transaction: content head then slot FOR UPDATE, no business mutation."""
+    uow = SqlAlchemyContentUnitOfWork(engine, tenant_id)
+    uow.__enter__()
+    try:
+        uow.contents.get_head_for_update(content_id)
+        uow.review_assignments.get_slot_for_update(content_id, version_id)
+        connection = uow._connection
+        assert connection is not None
+        blocker_pid[0] = connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
+        locks_acquired.set()
+        if not release.wait(timeout=_DEFAULT_HOLD_TIMEOUT):
+            raise TimeoutError("passive blocker release timed out")
+    finally:
+        uow.__exit__(None, None, None)
+
+
 def run_two_party_contention(
     *,
     observer_engine: Engine,
@@ -208,7 +234,7 @@ def run_two_party_contention(
     waiter_pid: list[int | None],
     release: threading.Event,
     locks_held: threading.Event | None = None,
-) -> tuple[threading.Thread, threading.Thread]:
+) -> tuple[list[BaseException], list[BaseException]]:
     """Start holder, wait for slot lock, start waiter, verify PG lock wait, release."""
     held_event = locks_held or slot_held
     holder_errors: list[BaseException] = []
@@ -229,26 +255,33 @@ def run_two_party_contention(
     holder_thread = threading.Thread(target=holder_wrapper, name="ci03-slot-holder")
     waiter_thread = threading.Thread(target=waiter_wrapper, name="ci03-head-waiter")
 
-    holder_thread.start()
-    assert slot_held.wait(timeout=_DEFAULT_HOLD_TIMEOUT), "holder did not acquire slot lock"
-    waiter_thread.start()
-    assert contending.wait(timeout=_DEFAULT_HOLD_TIMEOUT), "waiter did not contend on head lock"
-    assert_genuine_lock_contention(
-        observer_engine,
-        waiter_thread=waiter_thread,
-        waiter_pid=waiter_pid[0],
-        holder_pid=holder_pid[0],
-        locks_held=held_event,
-        release=release,
-    )
-    release.set()
-    holder_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
-    waiter_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
-    assert not holder_thread.is_alive()
-    assert not waiter_thread.is_alive()
+    try:
+        holder_thread.start()
+        assert slot_held.wait(timeout=_DEFAULT_HOLD_TIMEOUT), "holder did not acquire slot lock"
+        waiter_thread.start()
+        assert contending.wait(timeout=_DEFAULT_HOLD_TIMEOUT), (
+            "waiter did not contend on head lock"
+        )
+        assert_genuine_lock_contention(
+            observer_engine,
+            waiter_thread=waiter_thread,
+            waiter_pid=waiter_pid[0],
+            holder_pid=holder_pid[0],
+            locks_held=held_event,
+            release=release,
+        )
+    finally:
+        release.set()
+        holder_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
+        waiter_thread.join(timeout=_DEFAULT_HOLD_TIMEOUT)
+        assert not holder_thread.is_alive()
+        assert not waiter_thread.is_alive()
+
     if holder_errors:
         raise holder_errors[0]
-    return holder_thread, waiter_thread
+    if waiter_errors:
+        raise waiter_errors[0]
+    return holder_errors, waiter_errors
 
 
 def join_bounded(thread: threading.Thread, *, seconds: float = _DEFAULT_HOLD_TIMEOUT) -> None:
@@ -260,6 +293,7 @@ __all__ = [
     "ContendingContentUowFactory",
     "SlotHoldingContentUowFactory",
     "join_bounded",
+    "passive_head_slot_blocker",
     "revoke_service_with_factory",
     "run_two_party_contention",
     "wait_pid_blocked_by",

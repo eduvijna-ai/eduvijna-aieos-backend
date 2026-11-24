@@ -93,10 +93,21 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
         "status": "EXECUTED",
     },
     {
-        "id": "O64-03-C_expiry_crossing_under_lock_integrated",
-        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::TestCi03G2I02R4B2IntegratedExpiry",
+        "id": "O64-03-C_expiry_same_txn_slot_hold",
+        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::test_expiry_advances_clock_while_same_txn_holds_slot_without_lock_wait",
         "status": "EXECUTED",
-        "notes": "slot-lock + slow-authority integrated paths per effect",
+        "notes": "intra-txn hold only; not independent lock-wait proof",
+    },
+    {
+        "id": "O64-03-C_expiry_lock_wait_integrated",
+        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::test_expiry_lock_wait_crosses_persisted_valid_until",
+        "status": "EXECUTED",
+        "notes": "passive blocker + pg_blocking_pids; at/after valid_until",
+    },
+    {
+        "id": "O64-03-C_expiry_slow_authority_integrated",
+        "test": "test_ci03_g2_i02_r4b2_contention_expiry_postgres::test_expiry_crosses_during_integrated_authority_lookup",
+        "status": "EXECUTED",
     },
     {
         "id": "O64-03-C_expiry_crossing_guard_only",
