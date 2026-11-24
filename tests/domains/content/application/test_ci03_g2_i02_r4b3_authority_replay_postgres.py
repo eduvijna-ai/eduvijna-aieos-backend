@@ -388,7 +388,8 @@ class TestCi03G2I02R4B3AuthorityReplay:
             reviewer_principal_id=reviewer_id,
         )
         assert after.decisions == before.decisions
-        assert after.mutation_denials == before.mutation_denials + 1
+        assert after.mutation_denials == before.mutation_denials
+        assert after.reviewer_idempotency_success == before.reviewer_idempotency_success
 
     def test_attest_replay_denied_after_assignment_revoked(
         self,
