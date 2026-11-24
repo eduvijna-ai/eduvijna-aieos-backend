@@ -9,7 +9,6 @@ from aieos.domains.content.application.errors import (
     ReviewAssignmentNotAllowed,
 )
 from aieos.domains.content.application.ports import (
-    CONTENT_REVIEW_ASSIGN,
     CONTENT_REVIEW_DECIDE,
     CONTENT_REVIEW_SUBMIT,
     ContentUnitOfWork,
@@ -33,7 +32,7 @@ from aieos.platform.security.authorization.principal_classification import (
 )
 
 
-def validate_issuer_locked(
+def validate_revoke_issuer_locked(
     uow: ContentUnitOfWork,
     *,
     execution_tenant_id: UUID,
@@ -45,6 +44,7 @@ def validate_issuer_locked(
     principal_classification: CurrentPrincipalClassificationAuthority,
     issuer_class_authority: SchoolContextClassAuthority,
 ) -> str:
+    """Original issuer identity and current authority (stale/terminal revoke allowed)."""
     principal_classification.require_current_human_principal(issuer_principal_id)
     assign_authorization.authorize_assign(
         tenant_id=execution_tenant_id,
@@ -59,16 +59,14 @@ def validate_issuer_locked(
         version_id=version_id,
         capability=CONTENT_REVIEW_SUBMIT,
     )
+    head = uow.contents.get_head_for_update(content_id)
+    if head is None or head.tenant_id != execution_tenant_id:
+        raise ReviewAssignmentNotAllowed("content head missing")
     content_row = uow.contents.get(content_id)
     if content_row is None or content_row.tenant_id != execution_tenant_id:
         raise ReviewAssignmentNotAllowed("content not found")
     if content_row.owner_principal_id != issuer_principal_id:
         raise ReviewAssignmentForbidden("issuer must be current content owner")
-    head = uow.contents.get_head_for_update(content_id)
-    if head is None or head.tenant_id != execution_tenant_id:
-        raise ReviewAssignmentNotAllowed("content head missing")
-    if head.current_version_id != version_id:
-        raise ReviewAssignmentNotAllowed("version is not current")
     version = uow.versions.get(version_id)
     if version is None or version.content_id != content_id:
         raise ReviewAssignmentNotAllowed("version not found")
@@ -82,6 +80,35 @@ def validate_issuer_locked(
     issuer_class_authority.require_assignable_class_ref(
         execution_tenant_id, issuer_principal_id, class_ref
     )
+    return class_ref
+
+
+def validate_issue_issuer_locked(
+    uow: ContentUnitOfWork,
+    *,
+    execution_tenant_id: UUID,
+    issuer_principal_id: UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    assign_authorization: ReviewAssignmentAuthorizationPort,
+    review_authorization: ReviewAuthorizationPort,
+    principal_classification: CurrentPrincipalClassificationAuthority,
+    issuer_class_authority: SchoolContextClassAuthority,
+) -> str:
+    class_ref = validate_revoke_issuer_locked(
+        uow,
+        execution_tenant_id=execution_tenant_id,
+        issuer_principal_id=issuer_principal_id,
+        content_id=content_id,
+        version_id=version_id,
+        assign_authorization=assign_authorization,
+        review_authorization=review_authorization,
+        principal_classification=principal_classification,
+        issuer_class_authority=issuer_class_authority,
+    )
+    head = uow.contents.get_head_for_update(content_id)
+    if head is None or head.current_version_id != version_id:
+        raise ReviewAssignmentNotAllowed("version is not current")
     return class_ref
 
 
@@ -133,3 +160,28 @@ def validate_issue_targets_locked(
         from aieos.domains.content.application.errors import ReviewAssignmentConflict
 
         raise ReviewAssignmentConflict("attestation already exists")
+
+
+def revalidate_reviewer_locked(
+    uow: ContentUnitOfWork,
+    *,
+    execution_tenant_id: UUID,
+    reviewer_principal_id: UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    class_ref: str,
+    review_authorization: ReviewAuthorizationPort,
+    principal_classification: CurrentPrincipalClassificationAuthority,
+    reviewer_eligibility: SchoolContextReviewerEligibility,
+) -> None:
+    principal_classification.require_current_human_principal(reviewer_principal_id)
+    review_authorization.authorize(
+        tenant_id=execution_tenant_id,
+        principal_id=reviewer_principal_id,
+        content_id=content_id,
+        version_id=version_id,
+        capability=CONTENT_REVIEW_DECIDE,
+    )
+    reviewer_eligibility.require_reviewer_class_eligibility(
+        execution_tenant_id, reviewer_principal_id, class_ref
+    )

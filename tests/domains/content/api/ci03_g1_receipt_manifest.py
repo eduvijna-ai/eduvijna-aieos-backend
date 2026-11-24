@@ -6,7 +6,14 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from tests.domains.content.api.ci03_g1_provenance import CI03_G1_BASELINE_MIGRATION_HEAD
 from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+
+
+def _expected_migration_head_for_mode(mode: Mode) -> str:
+    if mode == "baseline":
+        return CI03_G1_BASELINE_MIGRATION_HEAD
+    return EXPECTED_MIGRATION_HEAD
 
 Mode = Literal["baseline", "candidate"]
 
@@ -272,7 +279,8 @@ def _check_record(record: dict[str, Any], *, mode: Mode, source_sha: str) -> lis
         errors.append(f"{case}: content.content_versions RLS must be enabled")
     if record.get("runtime_security_write_denied") is not True:
         errors.append(f"{case}: runtime_security_write_denied must be true")
-    if record.get("alembic_head") != EXPECTED_MIGRATION_HEAD:
+    expected_head = _expected_migration_head_for_mode(mode)
+    if record.get("alembic_head") != expected_head:
         errors.append(f"{case}: alembic_head pin mismatch")
     if record.get("openapi_sha256") != EXPECTED_OPENAPI_SHA256:
         errors.append(f"{case}: openapi_sha256 pin mismatch")

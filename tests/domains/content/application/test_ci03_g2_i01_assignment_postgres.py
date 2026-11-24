@@ -26,7 +26,9 @@ from aieos.domains.content.application.ports import (
 )
 from aieos.domains.content.application.review_assignment_denial_audit import (
     CONTENT_REVIEW_ASSIGN_DENIED,
-    SqlAlchemyReviewAssignmentDenialAudit,
+)
+from aieos.platform.security.audit.persistence.authorization_denial_records import (
+    SqlAlchemyAuthorizationDenialRecords,
 )
 from aieos.domains.content.application.review_assignment_guard import (
     ReviewerUseGuardContext,
@@ -192,8 +194,9 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
     reviewer_eligibility = SchoolContextReviewerEligibilityService(
         development_reviewer_eligibility_reader(provider)
     )
-    denial = SqlAlchemyReviewAssignmentDenialAudit(runtime_engine)
+    denial = SqlAlchemyAuthorizationDenialRecords(runtime_engine)
     retention = timedelta(hours=24)
+    clock = lambda: _NOW  # noqa: E731
     issue = IssueReviewAssignmentService(
         uow_factory,
         assign_auth,
@@ -201,8 +204,9 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
         classification,
         class_authority,
         reviewer_eligibility,
+        denial,
         idempotency_retention=retention,
-        denial_audit=denial,
+        clock=clock,
     )
     revoke = RevokeReviewAssignmentService(
         uow_factory,
@@ -210,8 +214,9 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
         review_auth,
         classification,
         class_authority,
+        denial,
         idempotency_retention=retention,
-        denial_audit=denial,
+        clock=clock,
     )
     return issue, revoke, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility
 
@@ -283,7 +288,6 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="idem-issue-1",
             event_context=ctx,
             audit_provenance=audit,
-            now=_NOW,
         )
         again = issue.issue(
             tenant_id,
@@ -294,20 +298,27 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="idem-issue-1",
             event_context=ctx,
             audit_provenance=audit,
-            now=_NOW,
         )
         assert again == assignment_id
+        reviewer2 = uuid.uuid7()
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer2,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        provider.set_reviewer_class_eligibility(reviewer2, (CLASS_REF,))
         with pytest.raises(ReviewAssignmentConflict):
             issue.issue(
                 tenant_id,
                 owner_id,
                 content_id=content_id,
                 version_id=version_id,
-                reviewer_principal_id=uuid.uuid7(),
+                reviewer_principal_id=reviewer2,
                 idempotency_key="idem-issue-2",
                 event_context=ctx,
                 audit_provenance=audit,
-                now=_NOW,
             )
         revoke.revoke(
             tenant_id,
@@ -318,7 +329,6 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="idem-revoke-1",
             event_context=ctx,
             audit_provenance=audit,
-            now=_NOW + timedelta(minutes=1),
         )
         reassigned = issue.issue(
             tenant_id,
@@ -329,7 +339,6 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="idem-issue-3",
             event_context=ctx,
             audit_provenance=audit,
-            now=_NOW + timedelta(minutes=2),
         )
         assert reassigned != assignment_id
 
@@ -372,9 +381,21 @@ class TestCi03G2I01AssignmentPostgres:
                 idempotency_key="deny",
                 event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
-                now=_NOW,
             )
         assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) == 1
+        with runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            reason = conn.execute(
+                text(
+                    "SELECT reason_code FROM security.authorization_denial_records "
+                    "WHERE tenant_id = :tid LIMIT 1"
+                ),
+                {"tid": tenant_id},
+            ).scalar_one()
+        assert reason == "assign.capability.denied"
 
     def test_guard_fail_closed_terminal_and_protected(
         self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
@@ -417,7 +438,6 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="guard-issue",
             event_context=ctx,
             audit_provenance=api_mutation_audit_provenance(owner_id),
-            now=_NOW,
         )
         guard_ctx = ReviewerUseGuardContext(
             execution_tenant_id=tenant_id,
@@ -439,7 +459,7 @@ class TestCi03G2I01AssignmentPostgres:
                     reviewer_eligibility=reviewer_eligibility,
                     issuer_class_authority=class_authority,
                     now=_NOW,
-                )
+                )  # guard evaluates expiry at supplied instant
         guard_ctx_ok = ReviewerUseGuardContext(
             execution_tenant_id=tenant_id,
             principal_id=reviewer_id,
@@ -470,7 +490,6 @@ class TestCi03G2I01AssignmentPostgres:
             idempotency_key="guard-revoke",
             event_context=ctx,
             audit_provenance=api_mutation_audit_provenance(owner_id),
-            now=_NOW + timedelta(minutes=5),
         )
         terminal_ctx = ReviewerUseGuardContext(
             execution_tenant_id=tenant_id,

@@ -54,7 +54,7 @@ _CONTENT_ASSIGN_ACTIONS_SQL = """
                     'content.review.revoke'
 """
 
-_TABLE_STATEMENTS: tuple[str, ...] = (
+_CONTENT_TABLE_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE content.review_assignment_issuances (
         assignment_id UUID NOT NULL,
@@ -80,7 +80,11 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT fk_review_assignment_issuances_version
             FOREIGN KEY (tenant_id, content_id, version_id)
             REFERENCES content.content_versions (tenant_id, content_id, version_id)
-            ON DELETE RESTRICT
+            ON DELETE RESTRICT,
+        CONSTRAINT uq_review_assignment_issuances_resource
+            UNIQUE (tenant_id, content_id, version_id, assignment_id),
+        CONSTRAINT uq_review_assignment_issuances_issuer
+            UNIQUE (assignment_id, issuer_principal_id)
     )
     """.format(class_ref_check=_CLASS_REF_CHECK),
     "CREATE INDEX ix_review_assignment_issuances_tenant_id "
@@ -99,8 +103,16 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT uq_review_assignment_revocations_assignment
             UNIQUE (assignment_id),
         CONSTRAINT fk_review_assignment_revocations_issuance
-            FOREIGN KEY (assignment_id)
-            REFERENCES content.review_assignment_issuances (assignment_id)
+            FOREIGN KEY (tenant_id, content_id, version_id, assignment_id)
+            REFERENCES content.review_assignment_issuances (
+                tenant_id, content_id, version_id, assignment_id
+            )
+            ON DELETE RESTRICT,
+        CONSTRAINT fk_review_assignment_revocations_revoker
+            FOREIGN KEY (assignment_id, revoked_by_principal_id)
+            REFERENCES content.review_assignment_issuances (
+                assignment_id, issuer_principal_id
+            )
             ON DELETE RESTRICT,
         CONSTRAINT fk_review_assignment_revocations_version
             FOREIGN KEY (tenant_id, content_id, version_id)
@@ -125,8 +137,10 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
             REFERENCES content.content_versions (tenant_id, content_id, version_id)
             ON DELETE RESTRICT,
         CONSTRAINT fk_review_current_assignments_active
-            FOREIGN KEY (active_assignment_id)
-            REFERENCES content.review_assignment_issuances (assignment_id)
+            FOREIGN KEY (tenant_id, content_id, version_id, active_assignment_id)
+            REFERENCES content.review_assignment_issuances (
+                tenant_id, content_id, version_id, assignment_id
+            )
             ON DELETE RESTRICT
     )
     """,
@@ -205,6 +219,9 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
         USING (tenant_id = content.current_tenant_id())
         WITH CHECK (tenant_id = content.current_tenant_id())
     """,
+)
+
+_SECURITY_TABLE_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE security.authorization_denial_records (
         denial_record_id UUID NOT NULL,
@@ -413,7 +430,8 @@ def upgrade() -> None:
         SECURITY_SCHEMA_OWNER_ROLE_ENV, purpose="security schema-owner role"
     )
     runtime = _require_role(RUNTIME_ROLE_ENV, purpose="runtime database role")
-    for statement in _TABLE_STATEMENTS:
+    op.execute(f"SET LOCAL ROLE {content_owner}")
+    for statement in _CONTENT_TABLE_STATEMENTS:
         op.execute(statement)
     op.execute(
         f"GRANT SELECT, INSERT, UPDATE ON content.review_current_assignments TO {runtime}"
@@ -431,13 +449,15 @@ def upgrade() -> None:
     op.execute(
         f"REVOKE UPDATE, DELETE ON content.review_assignment_revocations FROM {runtime}"
     )
+    op.execute(f"SET LOCAL ROLE {security_owner}")
+    for statement in _SECURITY_TABLE_STATEMENTS:
+        op.execute(statement)
     op.execute(
         f"GRANT SELECT, INSERT ON security.authorization_denial_records TO {runtime}"
     )
     op.execute(
         f"REVOKE UPDATE, DELETE ON security.authorization_denial_records FROM {runtime}"
     )
-    op.execute(f"SET LOCAL ROLE {security_owner}")
     for statement in _upgrade_audit_statements():
         op.execute(statement)
     op.execute(f"SET LOCAL ROLE {content_owner}")

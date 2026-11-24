@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid7
 
@@ -14,6 +15,7 @@ from aieos.domains.content.application.audit import (
 from aieos.domains.content.application.errors import (
     ContentApplicationError,
     IdempotencyKeyReused,
+    PersistenceInvariantViolation,
     ReviewAssignmentConflict,
     ReviewAssignmentForbidden,
     ReviewAssignmentNotAllowed,
@@ -24,14 +26,16 @@ from aieos.domains.content.application.ports import (
     ReviewAuthorizationPort,
 )
 from aieos.domains.content.application.review_assignment_commands_common import (
+    validate_issue_issuer_locked,
     validate_issue_targets_locked,
-    validate_issuer_locked,
 )
 from aieos.domains.content.application.review_assignment_denial_audit import (
     CONTENT_REVIEW_ASSIGN_DENIED,
+    REASON_EFFECTIVE_ACTOR_MISMATCH,
     AssignmentDenialRecord,
     ReviewAssignmentDenialAuditPort,
     record_assignment_denial,
+    reason_for_assignment_error,
 )
 from aieos.domains.content.application.review_assignment_state import (
     resolve_slot_active_assignment,
@@ -72,9 +76,10 @@ class IssueReviewAssignmentService:
         principal_classification: CurrentPrincipalClassificationAuthority,
         issuer_class_authority: SchoolContextClassAuthority,
         reviewer_eligibility: SchoolContextReviewerEligibility,
+        denial_audit: ReviewAssignmentDenialAuditPort,
         *,
         idempotency_retention: timedelta,
-        denial_audit: ReviewAssignmentDenialAuditPort | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be positive")
@@ -84,8 +89,9 @@ class IssueReviewAssignmentService:
         self._principal_classification = principal_classification
         self._issuer_class_authority = issuer_class_authority
         self._reviewer_eligibility = reviewer_eligibility
-        self._idempotency_retention = idempotency_retention
         self._denial_audit = denial_audit
+        self._idempotency_retention = idempotency_retention
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def issue(
         self,
@@ -98,10 +104,21 @@ class IssueReviewAssignmentService:
         idempotency_key: str,
         event_context: MutationEventContext,
         audit_provenance: MutationAuditProvenance,
-        now: datetime | None = None,
     ) -> ReviewAssignmentId:
         effective = event_context.effective_actor_id
         if effective != issuer_principal_id:
+            record_assignment_denial(
+                self._denial_audit,
+                AssignmentDenialRecord(
+                    tenant_id=execution_tenant_id,
+                    principal_id=issuer_principal_id,
+                    action=CONTENT_REVIEW_ASSIGN_DENIED,
+                    correlation_id=event_context.correlation_id,
+                    reason_code=REASON_EFFECTIVE_ACTOR_MISMATCH,
+                    content_id=content_id.value,
+                    version_id=version_id.value,
+                ),
+            )
             raise ReviewAssignmentForbidden("effective actor must align with issuer")
         scope = IdempotencyScope(
             tenant_id=execution_tenant_id,
@@ -118,15 +135,22 @@ class IssueReviewAssignmentService:
         )
         try:
             with self._uow_factory(execution_tenant_id) as uow:
-                effective_now = now if now is not None else datetime.now(UTC)
                 uow.idempotency.acquire_scope(scope)
                 stored = uow.idempotency.get(scope)
+                uow.contents.get_head_for_update(content_id)
+                effective_now = self._clock()
+                uow.review_assignments.ensure_slot(
+                    tenant_id=execution_tenant_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    now=effective_now,
+                )
                 if stored is not None:
                     if stored.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused(
                             "idempotency key reused with different body"
                         )
-                    class_ref = validate_issuer_locked(
+                    class_ref = validate_issue_issuer_locked(
                         uow,
                         execution_tenant_id=execution_tenant_id,
                         issuer_principal_id=issuer_principal_id,
@@ -149,8 +173,20 @@ class IssueReviewAssignmentService:
                         principal_classification=self._principal_classification,
                         reviewer_eligibility=self._reviewer_eligibility,
                     )
-                    return ReviewAssignmentId(stored.result_content_id)
-                class_ref = validate_issuer_locked(
+                    assignment_id = ReviewAssignmentId(stored.result_content_id)
+                    assigned = uow.review_assignments.get_assigned(assignment_id)
+                    if (
+                        assigned is None
+                        or assigned.tenant_id != execution_tenant_id
+                        or assigned.content_id != content_id
+                        or assigned.version_id != version_id
+                        or assigned.reviewer_principal_id != reviewer_principal_id
+                    ):
+                        raise PersistenceInvariantViolation(
+                            "idempotent assign outcome does not match stored issuance"
+                        )
+                    return assignment_id
+                class_ref = validate_issue_issuer_locked(
                     uow,
                     execution_tenant_id=execution_tenant_id,
                     issuer_principal_id=issuer_principal_id,
@@ -198,12 +234,6 @@ class IssueReviewAssignmentService:
                     issued_at=effective_now,
                     valid_until=valid_until,
                     correlation_id=event_context.correlation_id,
-                )
-                uow.review_assignments.ensure_slot(
-                    tenant_id=execution_tenant_id,
-                    content_id=content_id,
-                    version_id=version_id,
-                    now=effective_now,
                 )
                 uow.review_assignments.insert_assigned(event)
                 uow.review_assignments.set_active_assignment(
@@ -254,7 +284,7 @@ class IssueReviewAssignmentService:
                     principal_id=issuer_principal_id,
                     action=CONTENT_REVIEW_ASSIGN_DENIED,
                     correlation_id=event_context.correlation_id,
-                    reason_code=type(exc).__name__,
+                    reason_code=reason_for_assignment_error(exc),
                     content_id=content_id.value,
                     version_id=version_id.value,
                 ),

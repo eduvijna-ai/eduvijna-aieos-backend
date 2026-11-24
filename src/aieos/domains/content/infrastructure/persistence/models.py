@@ -483,6 +483,18 @@ review_assignment_issuances_table = Table(
     Column("valid_until", DateTime(timezone=True), nullable=False),
     Column("correlation_id", UUID(as_uuid=True), nullable=False),
     PrimaryKeyConstraint("assignment_id", name="pk_review_assignment_issuances"),
+    UniqueConstraint(
+        "tenant_id",
+        "content_id",
+        "version_id",
+        "assignment_id",
+        name="uq_review_assignment_issuances_resource",
+    ),
+    UniqueConstraint(
+        "assignment_id",
+        "issuer_principal_id",
+        name="uq_review_assignment_issuances_issuer",
+    ),
     CheckConstraint(
         "reviewer_principal_id <> issuer_principal_id",
         name="ck_review_assignment_issuances_distinct_reviewer",
@@ -515,9 +527,23 @@ review_assignment_revocations_table = Table(
     PrimaryKeyConstraint("revocation_id", name="pk_review_assignment_revocations"),
     UniqueConstraint("assignment_id", name="uq_review_assignment_revocations_assignment"),
     ForeignKeyConstraint(
-        ["assignment_id"],
-        ["content.review_assignment_issuances.assignment_id"],
+        ["tenant_id", "content_id", "version_id", "assignment_id"],
+        [
+            "content.review_assignment_issuances.tenant_id",
+            "content.review_assignment_issuances.content_id",
+            "content.review_assignment_issuances.version_id",
+            "content.review_assignment_issuances.assignment_id",
+        ],
         name="fk_review_assignment_revocations_issuance",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        ["assignment_id", "revoked_by_principal_id"],
+        [
+            "content.review_assignment_issuances.assignment_id",
+            "content.review_assignment_issuances.issuer_principal_id",
+        ],
+        name="fk_review_assignment_revocations_revoker",
         ondelete="RESTRICT",
     ),
     ForeignKeyConstraint(
@@ -559,8 +585,13 @@ review_current_assignments_table = Table(
         ondelete="RESTRICT",
     ),
     ForeignKeyConstraint(
-        ["active_assignment_id"],
-        ["content.review_assignment_issuances.assignment_id"],
+        ["tenant_id", "content_id", "version_id", "active_assignment_id"],
+        [
+            "content.review_assignment_issuances.tenant_id",
+            "content.review_assignment_issuances.content_id",
+            "content.review_assignment_issuances.version_id",
+            "content.review_assignment_issuances.assignment_id",
+        ],
         name="fk_review_current_assignments_active",
         ondelete="RESTRICT",
     ),

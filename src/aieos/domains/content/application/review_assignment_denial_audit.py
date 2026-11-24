@@ -1,17 +1,23 @@
-"""Independent security denial evidence for assignment commands (ADR-O64-05)."""
+"""Review assignment authorization denial evidence port (ADR-O64-05)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Protocol
-from uuid import UUID, uuid7
-
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from uuid import UUID
 
 CONTENT_REVIEW_ASSIGN_DENIED = "content.review.assign.denied"
 CONTENT_REVIEW_REVOKE_DENIED = "content.review.revoke.denied"
+
+REASON_EFFECTIVE_ACTOR_MISMATCH = "effective.actor.mismatch"
+REASON_ASSIGN_CAPABILITY = "assign.capability.denied"
+REASON_REVOKE_CAPABILITY = "revoke.capability.denied"
+REASON_ISSUER_NOT_OWNER = "issuer.not.owner"
+REASON_ISSUER_NOT_CREATOR = "issuer.not.creator"
+REASON_REVIEWER_CLASS = "reviewer.class.ineligible"
+REASON_ISSUER_CLASS = "issuer.class.ineligible"
+REASON_PRINCIPAL_KIND = "principal.kind.denied"
+REASON_SCHOOL_CONTEXT = "school.context.unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,67 +37,44 @@ class ReviewAssignmentDenialAuditPort(Protocol):
     def record(self, record: AssignmentDenialRecord) -> None: ...
 
 
+class DenialAuditUnavailable(RuntimeError):
+    """Mandatory denial evidence sink failed; authorization still denied."""
+
+
 def record_assignment_denial(
-    denial_audit: ReviewAssignmentDenialAuditPort | None,
+    denial_audit: ReviewAssignmentDenialAuditPort,
     record: AssignmentDenialRecord,
 ) -> None:
-    """Append denial evidence outside rolled-back business transactions; never mask forbid."""
-    if denial_audit is None:
-        return
     try:
         denial_audit.record(record)
-    except Exception:
-        return
+    except Exception as exc:
+        raise DenialAuditUnavailable(
+            "authorization denial evidence could not be recorded"
+        ) from exc
 
 
-class SqlAlchemyReviewAssignmentDenialAudit:
-    """Append-only security.authorization_denial_records writer."""
+def reason_for_assignment_error(exc: BaseException) -> str:
+    from aieos.domains.content.application.errors import (
+        ReviewAssignmentForbidden,
+        ReviewAssignmentNotAllowed,
+    )
+    from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
-
-    def record(self, record: AssignmentDenialRecord) -> None:
-        occurred_at = datetime.now(UTC)
-        with self._engine.begin() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(record.tenant_id)},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO security.authorization_denial_records (
-                        denial_record_id,
-                        tenant_id,
-                        action,
-                        principal_id,
-                        content_id,
-                        version_id,
-                        correlation_id,
-                        reason_code,
-                        occurred_at
-                    ) VALUES (
-                        :denial_record_id,
-                        :tenant_id,
-                        :action,
-                        :principal_id,
-                        :content_id,
-                        :version_id,
-                        :correlation_id,
-                        :reason_code,
-                        :occurred_at
-                    )
-                    """
-                ),
-                {
-                    "denial_record_id": uuid7(),
-                    "tenant_id": record.tenant_id,
-                    "action": record.action,
-                    "principal_id": record.principal_id,
-                    "content_id": record.content_id,
-                    "version_id": record.version_id,
-                    "correlation_id": record.correlation_id,
-                    "reason_code": record.reason_code[:64],
-                    "occurred_at": occurred_at,
-                },
-            )
+    message = str(exc).lower()
+    if isinstance(exc, SchoolContextUnavailable):
+        return REASON_SCHOOL_CONTEXT
+    if isinstance(exc, ReviewAssignmentForbidden):
+        if "owner" in message:
+            return REASON_ISSUER_NOT_OWNER
+        if "creator" in message:
+            return REASON_ISSUER_NOT_CREATOR
+        if "class" in message and "reviewer" in message:
+            return REASON_REVIEWER_CLASS
+        if "class" in message:
+            return REASON_ISSUER_CLASS
+        if "capability" in message or "denied" in message:
+            return REASON_ASSIGN_CAPABILITY
+        return REASON_ASSIGN_CAPABILITY
+    if isinstance(exc, ReviewAssignmentNotAllowed):
+        return REASON_ASSIGN_CAPABILITY
+    return REASON_ASSIGN_CAPABILITY

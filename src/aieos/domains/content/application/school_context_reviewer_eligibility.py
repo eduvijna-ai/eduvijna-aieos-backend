@@ -55,7 +55,10 @@ class SchoolContextReviewerEligibilityService:
                 "School Context is temporarily unavailable"
             ) from exc
         normalized = class_ref.strip()
-        if normalized in allowed:
+        if not all(isinstance(item, str) and item.strip() for item in allowed):
+            raise SchoolContextUnavailable("School Context reviewer facts malformed")
+        eligible = {item.strip() for item in allowed}
+        if normalized in eligible:
             return normalized
         raise ReviewAssignmentForbidden(
             "reviewer is not eligible for the mandatory authoring class"
