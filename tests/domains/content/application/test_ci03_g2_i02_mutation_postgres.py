@@ -25,6 +25,7 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
 )
 from aieos.domains.content.domain.identities import AggregateRevision
 from aieos.platform.events.models import MutationEventContext
+from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
 from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.conftest import provision_runtime_grants
 from tests.domains.content.application.helpers_ci03_g2_i01 import (
@@ -46,6 +47,129 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
 from tests.platform.security.authorization.helpers import seed_active_authority
 
 pytestmark = pytest.mark.ci03_g2_i02
+
+_WORKSHEET_HINT_ATTEST_AUDIT = "content.worksheet_hint.attest"
+
+
+def _worksheet_hint_attest_audit_count(engine: Engine, tenant_id: uuid.UUID) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND action = :action
+                    """
+                ),
+                {"tid": tenant_id, "action": _WORKSHEET_HINT_ATTEST_AUDIT},
+            ).scalar_one()
+        )
+
+
+def _attestation_row_count(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    content_id: uuid.UUID,
+    version_id: uuid.UUID,
+) -> int:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE tenant_id = :tid AND content_id = :cid AND version_id = :vid
+                    """
+                ),
+                {"tid": tenant_id, "cid": content_id, "vid": version_id},
+            ).scalar_one()
+        )
+
+
+def _review_decision_count(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    content_id: uuid.UUID,
+    version_id: uuid.UUID,
+) -> int:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.review_decisions
+                    WHERE tenant_id = :tid AND content_id = :cid AND version_id = :vid
+                    """
+                ),
+                {"tid": tenant_id, "cid": content_id, "vid": version_id},
+            ).scalar_one()
+        )
+
+
+def _attest_idempotency_count(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+) -> int:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM api.idempotency_records
+                    WHERE tenant_id = :tid
+                      AND actor_principal_id = :pid
+                      AND operation = :op
+                    """
+                ),
+                {
+                    "tid": tenant_id,
+                    "pid": principal_id,
+                    "op": CONTENT_WORKSHEET_HINT_ATTEST_V1,
+                },
+            ).scalar_one()
+        )
+
+
+def _mutation_denial_count_for_principal(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+) -> int:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.authorization_denial_records
+                    WHERE tenant_id = :tid
+                      AND action = :action
+                      AND principal_id = :pid
+                    """
+                ),
+                {
+                    "tid": tenant_id,
+                    "pid": principal_id,
+                    "action": CONTENT_REVIEW_MUTATION_DENIED,
+                },
+            ).scalar_one()
+        )
 
 
 def _seed_reviewers(
@@ -330,6 +454,21 @@ class TestCi03G2I02AssignmentBoundMutations:
         outcomes = _positive_outcomes(
             _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
         )
+        assert (
+            _attestation_row_count(
+                ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
+            )
+            == 0
+        )
+        assert _worksheet_hint_attest_audit_count(ci03_g2_bootstrap_engine, tenant_id) == 0
+        assert _review_decision_count(
+            ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
+        ) == 0
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, reviewer_id) == 0
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, other_reviewer) == 0
+        denial_before = _denial_count(
+            ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_MUTATION_DENIED
+        )
         first_id = attest.record(
             tenant_id,
             reviewer_id,
@@ -342,6 +481,17 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
+        assert (
+            _attestation_row_count(
+                ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
+            )
+            == 1
+        )
+        assert _worksheet_hint_attest_audit_count(ci03_g2_bootstrap_engine, tenant_id) == 1
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, reviewer_id) == 1
+        assert _review_decision_count(
+            ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
+        ) == 0
         replay_id = attest.record(
             tenant_id,
             reviewer_id,
@@ -355,37 +505,22 @@ class TestCi03G2I02AssignmentBoundMutations:
             now=_NOW,
         )
         assert replay_id == first_id
-        with ci03_g2_runtime_engine.connect() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_id)},
+        assert (
+            _attestation_row_count(
+                ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
             )
-            attest_count = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
-                    WHERE content_id = :cid AND version_id = :vid
-                    """
-                ),
-                {"cid": content_id.value, "vid": version_id.value},
-            ).scalar_one()
-            audit_count = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM security.audit_records
-                    WHERE tenant_id = :tid AND action = 'content.worksheet_hint.attest'
-                    """
-                ),
-                {"tid": tenant_id},
-            ).scalar_one()
-        assert int(attest_count) == 1
-        attest_before = int(attest_count)
-        audit_before = int(audit_count)
+            == 1
+        )
+        assert _worksheet_hint_attest_audit_count(ci03_g2_bootstrap_engine, tenant_id) == 1
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, reviewer_id) == 1
         wrong = integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
             clock=lambda: _NOW,
             school_context_provider=provider,
+        )
+        other_denial_before = _mutation_denial_count_for_principal(
+            ci03_g2_runtime_engine, tenant_id, other_reviewer
         )
         with pytest.raises(
             WorksheetLearnerHintAttestationInvalid,
@@ -403,31 +538,28 @@ class TestCi03G2I02AssignmentBoundMutations:
                 audit_provenance=api_mutation_audit_provenance(other_reviewer),
                 now=_NOW,
             )
-        with ci03_g2_runtime_engine.connect() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_id)},
+        assert (
+            _attestation_row_count(
+                ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
             )
-            attest_after = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
-                    WHERE content_id = :cid AND version_id = :vid
-                    """
-                ),
-                {"cid": content_id.value, "vid": version_id.value},
-            ).scalar_one()
-            audit_after = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM security.audit_records
-                    WHERE tenant_id = :tid AND action = 'content.worksheet_hint.attest'
-                    """
-                ),
-                {"tid": tenant_id},
-            ).scalar_one()
-        assert int(attest_after) == attest_before
-        assert int(audit_after) == audit_before
+            == 1
+        )
+        assert _worksheet_hint_attest_audit_count(ci03_g2_bootstrap_engine, tenant_id) == 1
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, reviewer_id) == 1
+        assert _attest_idempotency_count(ci03_g2_runtime_engine, tenant_id, other_reviewer) == 0
+        assert _review_decision_count(
+            ci03_g2_runtime_engine, tenant_id, content_id.value, version_id.value
+        ) == 0
+        assert (
+            _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_MUTATION_DENIED)
+            == denial_before + 1
+        )
+        assert (
+            _mutation_denial_count_for_principal(
+                ci03_g2_runtime_engine, tenant_id, other_reviewer
+            )
+            == other_denial_before + 1
+        )
 
     def test_reject_wrong_reviewer_records_mutation_denial(
         self,
