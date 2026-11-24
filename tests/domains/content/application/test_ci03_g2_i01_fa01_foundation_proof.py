@@ -67,6 +67,54 @@ FA01_PROOF_MATRIX: dict[str, str] = {
     "db_revoker_composite_fk": "test_runtime_rejects_wrong_revoker_principal_fk",
     "db_issuance_immutability": "test_runtime_rejects_issuance_update",
     "db_corrupt_multiple_live_history": "test_issue_fails_on_corrupt_multiple_live_history",
+    "guard_third_party_reviewer": "test_guard_denies_third_party_principal",
+    "guard_wrong_version": "test_guard_denies_wrong_version_id",
+    "guard_after_issuer_assign_revoked": "test_guard_denies_after_issuer_assign_revoked",
+    "guard_class_authority_unavailable": "test_guard_denies_when_class_authority_unavailable",
+}
+
+# Prior green suite nodes (module + function; established before FA01).
+FA01_ESTABLISHED_PROOFS: dict[str, tuple[str, str]] = {
+    "race_one_winner": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_concurrent_issue_two_reviewers_one_winner",
+    ),
+    "expiry_reissue": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_revoke_after_expiry_allows_reissue",
+    ),
+    "stale_revoke_current_slot": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_stale_revoke_leaves_current_slot",
+    ),
+    "attestation_blocks_reassign": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_attestation_blocks_reassignment",
+    ),
+    "denial_sink_failure_issue": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_denial_sink_failure_forbids_without_mutation",
+    ),
+    "denial_sink_failure_revoke": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_revoke_denied_sink_failure_no_mutation",
+    ),
+    "downgrade_refusal": (
+        "tests.domains.content.infrastructure.persistence.test_ci03_g2_i01_assignment_schema",
+        "test_downgrade_refuses_nonempty_assignment_evidence",
+    ),
+    "cross_version_fk": (
+        "tests.domains.content.infrastructure.persistence.test_ci03_g2_i01_assignment_schema",
+        "test_runtime_rejects_cross_version_slot_binding",
+    ),
+    "guard_terminal_fail_closed": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_guard_fail_closed_terminal_and_protected",
+    ),
+    "substrate_isolation": (
+        "tests.domains.content.application.test_ci03_g2_i01_assignment_postgres",
+        "test_ci03_g2_substrate_isolated_from_shared_gci_session",
+    ),
 }
 
 
@@ -166,6 +214,11 @@ class _MalformedReviewerReader:
         self, tenant_id: UUID, reviewer_principal_id: UUID
     ) -> tuple[object, ...]:
         return ({"class_ref": CLASS_REF},)
+
+
+class _UnavailableClassAuthority:
+    def require_assignable_class_ref(self, *args: Any, **kwargs: Any) -> str:
+        raise SchoolContextUnavailable("authority unavailable")
 
 
 class TestCi03G2I01Fa01FoundationProof:
@@ -489,6 +542,226 @@ class TestCi03G2I01Fa01FoundationProof:
             with pytest.raises(SchoolContextUnavailable, match="malformed"):
                 enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
 
+    def test_guard_denies_third_party_principal(
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        stranger_id = uuid.uuid7()
+        bundle = _issue_baseline(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            reviewer_id=reviewer_id,
+            idem_key="fa01-third-party",
+        )
+        seed_active_authority(
+            ci03_g2_bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=stranger_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        (
+            _issue,
+            _revoke,
+            provider,
+            uow_factory,
+            assign_auth,
+            review_auth,
+            class_auth,
+            elig,
+            content_id,
+            version_id,
+            assignment_id,
+            _r,
+            _o,
+            _t,
+        ) = bundle
+        provider.set_reviewer_class_eligibility(stranger_id, (CLASS_REF,))
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
+        deps = ReviewerUseGuardDependencies(
+            assign_authorization=assign_auth,
+            authorization=review_auth,
+            principal_classification=classification,
+            reviewer_eligibility=elig,
+            issuer_class_authority=class_auth,
+            clock=lambda: _NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=stranger_id,
+            effective_actor_id=stranger_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises((ReviewForbidden, ReviewAssignmentConflict, UnauthorizedError)):
+                enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
+
+    def test_guard_denies_wrong_version_id(
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        bundle = _issue_baseline(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            reviewer_id=reviewer_id,
+            idem_key="fa01-wrong-version",
+        )
+        (
+            _issue,
+            _revoke,
+            _provider,
+            uow_factory,
+            assign_auth,
+            review_auth,
+            class_auth,
+            elig,
+            content_id,
+            version_id,
+            assignment_id,
+            _r,
+            _o,
+            _t,
+        ) = bundle
+        wrong_version = uuid.uuid7()
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
+        deps = ReviewerUseGuardDependencies(
+            assign_authorization=assign_auth,
+            authorization=review_auth,
+            principal_classification=classification,
+            reviewer_eligibility=elig,
+            issuer_class_authority=class_auth,
+            clock=lambda: _NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=wrong_version,
+            assignment_id=assignment_id,
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(ReviewAssignmentConflict):
+                enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
+
+    def test_guard_denies_after_issuer_assign_revoked(
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        bundle = _issue_baseline(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            reviewer_id=reviewer_id,
+            idem_key="fa01-assign-revoke",
+        )
+        (
+            _issue,
+            _revoke,
+            _provider,
+            uow_factory,
+            assign_auth,
+            review_auth,
+            class_auth,
+            elig,
+            content_id,
+            version_id,
+            assignment_id,
+            _r,
+            _o,
+            _t,
+        ) = bundle
+        revoke_grant(
+            ci03_g2_bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=owner_id,
+            capability=CONTENT_REVIEW_ASSIGN,
+        )
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
+        deps = ReviewerUseGuardDependencies(
+            assign_authorization=assign_auth,
+            authorization=review_auth,
+            principal_classification=classification,
+            reviewer_eligibility=elig,
+            issuer_class_authority=class_auth,
+            clock=lambda: _NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises((ReviewForbidden, UnauthorizedError)):
+                enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
+
+    def test_guard_denies_when_class_authority_unavailable(
+        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+    ) -> None:
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        bundle = _issue_baseline(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            reviewer_id=reviewer_id,
+            idem_key="fa01-auth-unavail",
+        )
+        (
+            _issue,
+            _revoke,
+            _provider,
+            uow_factory,
+            assign_auth,
+            review_auth,
+            _class_auth,
+            elig,
+            content_id,
+            version_id,
+            assignment_id,
+            _r,
+            _o,
+            _t,
+        ) = bundle
+        classification = CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine)
+        deps = ReviewerUseGuardDependencies(
+            assign_authorization=assign_auth,
+            authorization=review_auth,
+            principal_classification=classification,
+            reviewer_eligibility=elig,
+            issuer_class_authority=_UnavailableClassAuthority(),
+            clock=lambda: _NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(SchoolContextUnavailable, match="unavailable"):
+                enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=deps)
+
     def test_stale_revoke_allowed_after_reviewer_class_removed(
         self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
     ) -> None:
@@ -794,7 +1067,21 @@ class TestCi03G2I01Fa01SchemaProof:
 
 def test_fa01_proof_matrix_documents_nodes() -> None:
     """Sanity: every FA01 mapping entry names an existing test function."""
+    import importlib
+
     import tests.domains.content.application.test_ci03_g2_i01_fa01_foundation_proof as mod
 
     for _req, node in FA01_PROOF_MATRIX.items():
         assert hasattr(mod, node), f"missing FA01 proof node {node}"
+
+    import inspect
+
+    for _req, (module_path, func) in FA01_ESTABLISHED_PROOFS.items():
+        other = importlib.import_module(module_path)
+        if hasattr(other, func):
+            continue
+        for _, obj in inspect.getmembers(other, inspect.isclass):
+            if hasattr(obj, func):
+                break
+        else:
+            assert False, f"missing established proof {module_path}::{func}"
