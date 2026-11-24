@@ -17,9 +17,6 @@ from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
     ReviewAssignmentNotAllowed,
 )
-from aieos.domains.content.application.review_assignment_bound_mutations import (
-    CONTENT_REVIEW_MUTATION_DENIED,
-)
 from aieos.domains.content.domain.identities import AggregateRevision, ContentId, ContentVersionId
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthorityService
 from tests.conftest import provision_runtime_grants
@@ -44,7 +41,6 @@ from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
 from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import assert_genuine_lock_contention
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
     _NOW,
-    _denial_count,
     _event,
 )
 from tests.domains.content.application.test_ci03_g2_i01_fa01_foundation_proof import (
@@ -124,44 +120,6 @@ def _load_scenario(
         version_id=version_id,
         revision=revision,
     )
-
-
-def _attestation_count(runtime: Engine, tenant_id: uuid.UUID, scenario: _Scenario) -> int:
-    with runtime.connect() as conn:
-        conn.execute(
-            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-            {"tid": str(tenant_id)},
-        )
-        return int(
-            conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
-                    WHERE content_id = :cid AND version_id = :vid
-                    """
-                ),
-                {"cid": scenario.content_id.value, "vid": scenario.version_id.value},
-            ).scalar_one()
-        )
-
-
-def _decision_count(runtime: Engine, tenant_id: uuid.UUID, scenario: _Scenario) -> int:
-    with runtime.connect() as conn:
-        conn.execute(
-            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-            {"tid": str(tenant_id)},
-        )
-        return int(
-            conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM content.review_decisions
-                    WHERE content_id = :cid AND version_id = :vid
-                    """
-                ),
-                {"cid": scenario.content_id.value, "vid": scenario.version_id.value},
-            ).scalar_one()
-        )
 
 
 def _invoke_attest(
