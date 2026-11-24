@@ -139,13 +139,23 @@ class RecordWorksheetLearnerHintAttestationService:
                     raise_assignment_unavailable()
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
-                stored_early = None
                 if existing is not None and hint_bound:
-                    stored_early = uow.worksheet_hint_attestations.get_for_version(
+                    if existing.result_worksheet_hint_attestation_id is None:
+                        raise WorksheetLearnerHintAttestationInvalid(
+                            "idempotent attestation receipt missing result identity"
+                        )
+                    stored_for_receipt = uow.worksheet_hint_attestations.get_for_version(
                         content_id, version_id
                     )
-                    if stored_early is not None:
-                        replay_assignment_id = stored_early.review_assignment_id
+                    if (
+                        stored_for_receipt is None
+                        or stored_for_receipt.attestation_id.value
+                        != existing.result_worksheet_hint_attestation_id
+                    ):
+                        raise WorksheetLearnerHintAttestationInvalid(
+                            "idempotent attestation identity mismatch"
+                        )
+                    replay_assignment_id = stored_for_receipt.review_assignment_id
                 assignment_fp = fingerprint_assignment_id(
                     assignment_id_for_fp=assignment_id_for_fp,
                     replay_assignment_id=replay_assignment_id,
@@ -186,11 +196,12 @@ class RecordWorksheetLearnerHintAttestationService:
                         uow.worksheet_hint_attestations, version_row
                     )
                     if (
-                        stored_early is not None
-                        and stored_attestation.attestation_id != stored_early.attestation_id
+                        existing.result_worksheet_hint_attestation_id is not None
+                        and stored_attestation.attestation_id.value
+                        != existing.result_worksheet_hint_attestation_id
                     ):
                         raise WorksheetLearnerHintAttestationInvalid(
-                            "idempotent attestation identity mismatch"
+                            "idempotent attestation receipt result mismatch"
                         )
                     if stored_attestation.reviewer_principal_id != principal_id:
                         raise WorksheetLearnerHintAttestationInvalid(
@@ -300,6 +311,7 @@ class RecordWorksheetLearnerHintAttestationService:
                 )
                 digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
                 attestation_id = WorksheetLearnerHintAttestationId.generate()
+                attestation_row_id = attestation_id.value
                 stored = WorksheetLearnerHintVersionAttestationV1(
                     attestation_id=attestation_id,
                     tenant_id=execution_tenant_id,
@@ -344,6 +356,7 @@ class RecordWorksheetLearnerHintAttestationService:
                         result_aggregate_revision=int(expected_aggregate_revision),
                         created_at=attested_at,
                         expires_at=attested_at + self._idempotency_retention,
+                        result_worksheet_hint_attestation_id=attestation_row_id,
                     )
                 )
                 uow.commit()

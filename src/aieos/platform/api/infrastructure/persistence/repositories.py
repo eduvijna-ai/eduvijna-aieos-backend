@@ -66,6 +66,9 @@ class SqlAlchemyIdempotencyRepository:
             result_aggregate_revision=int(row["result_aggregate_revision"]),
             created_at=row["created_at"],
             expires_at=row["expires_at"],
+            result_worksheet_hint_attestation_id=row[
+                "result_worksheet_hint_attestation_id"
+            ],
         )
 
     def insert(self, outcome: IdempotencyOutcome) -> None:
@@ -82,6 +85,7 @@ class SqlAlchemyIdempotencyRepository:
                     result_version_id=outcome.result_version_id,
                     result_review_decision_id=outcome.result_review_decision_id,
                     result_publication_id=outcome.result_publication_id,
+                    result_worksheet_hint_attestation_id=outcome.result_worksheet_hint_attestation_id,
                     result_aggregate_revision=outcome.result_aggregate_revision,
                     created_at=outcome.created_at,
                     expires_at=outcome.expires_at,

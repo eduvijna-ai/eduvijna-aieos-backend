@@ -114,6 +114,12 @@ def upgrade() -> None:
     )
     op.execute(f"GRANT SELECT, INSERT ON content.worksheet_learner_hint_version_attestations TO {runtime}")
     op.execute(f"GRANT SELECT, INSERT ON content.review_decisions TO {runtime}")
+    op.execute(
+        """
+        ALTER TABLE api.idempotency_records
+        ADD COLUMN result_worksheet_hint_attestation_id UUID NULL
+        """
+    )
     op.execute(f"SET LOCAL ROLE {security_owner}")
     op.execute(
         """
@@ -209,4 +215,10 @@ def downgrade() -> None:
     )
     op.execute(
         "ALTER TABLE content.review_decisions DROP COLUMN IF EXISTS review_assignment_id"
+    )
+    op.execute(
+        """
+        ALTER TABLE api.idempotency_records
+        DROP COLUMN IF EXISTS result_worksheet_hint_attestation_id
+        """
     )
