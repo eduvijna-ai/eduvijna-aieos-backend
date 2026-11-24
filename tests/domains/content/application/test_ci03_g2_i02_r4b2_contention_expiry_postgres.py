@@ -34,6 +34,7 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     DurableEffectSnapshot,
+    assert_protected_effect_denied_after_revoke,
     assert_snapshot_unchanged_except_denial,
     assignment_valid_until,
     capture_durable_snapshot,
@@ -359,8 +360,7 @@ class TestCi03G2I02R4B2Concurrency:
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
-        assert_snapshot_unchanged_except_denial(snap_before, snap_after)
-        assert snap_after.revocation_rows == snap_before.revocation_rows + 1
+        assert_protected_effect_denied_after_revoke(snap_before, snap_after)
 
     @pytest.mark.parametrize(
         ("effect",),

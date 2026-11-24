@@ -171,6 +171,20 @@ def assignment_valid_until(
         return row
 
 
+def assert_protected_effect_denied_after_revoke(
+    before: DurableEffectSnapshot, after: DurableEffectSnapshot
+) -> None:
+    assert after.attestations == before.attestations
+    assert after.decisions == before.decisions
+    assert after.reviewer_idempotency_success == before.reviewer_idempotency_success
+    assert after.head_revision == before.head_revision
+    assert after.slot_active_assignment is None
+    assert after.revocation_rows == before.revocation_rows + 1
+    assert after.worksheet_hint_attest_audits == before.worksheet_hint_attest_audits
+    assert after.outbox_messages == before.outbox_messages
+    assert after.mutation_denials == before.mutation_denials + 1
+
+
 def assert_snapshot_unchanged_except_denial(
     before: DurableEffectSnapshot, after: DurableEffectSnapshot
 ) -> None:
