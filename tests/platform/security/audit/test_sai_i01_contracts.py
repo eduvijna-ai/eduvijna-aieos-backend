@@ -121,6 +121,8 @@ class TestActionsAndChannels:
             "content.ai.materialize",
             "content.migration.import",
             "content.worksheet_hint.attest",
+            "content.review.assign",
+            "content.review.revoke",
             "asset.create",
             "asset.revision.register",
             "asset.revision.activate",

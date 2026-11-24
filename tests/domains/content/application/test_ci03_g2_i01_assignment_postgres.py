@@ -11,7 +11,9 @@ from sqlalchemy.engine import Engine
 
 from aieos.development.coherent_school_context import development_coherent_school_context_provider
 from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
-from aieos.development.school_context import development_class_authority
+from aieos.domains.teaching.application.school_context import (
+    SchoolContextClassAuthorityService,
+)
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
@@ -99,7 +101,7 @@ def _services(
     assign_auth = KernelReviewAssignmentAuthorization(kernel)
     review_auth = KernelReviewAuthorization(kernel)
     classification = CurrentPrincipalClassificationAuthority(runtime_engine)
-    class_authority = development_class_authority(provider)
+    class_authority = SchoolContextClassAuthorityService(provider)
     reviewer_eligibility = SchoolContextReviewerEligibilityService(
         development_reviewer_eligibility_reader(provider)
     )

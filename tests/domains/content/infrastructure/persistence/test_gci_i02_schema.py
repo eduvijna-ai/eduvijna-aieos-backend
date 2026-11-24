@@ -26,7 +26,12 @@ from tests.conftest import (
     alembic_config,
     provision_identities,
 )
-from tests.dbutil import REPO_ROOT, set_tenant
+from tests.dbutil import (
+    CONTENT_TABLES_AT_FORWARD_HEAD,
+    REPO_ROOT,
+    SECURITY_TABLES_AT_FORWARD_HEAD,
+    set_tenant,
+)
 
 pytestmark = pytest.mark.gci_i02
 
@@ -227,15 +232,7 @@ class TestAlembicAndCatalog:
                     )
                 )
             }
-            assert tables == {
-                "contents",
-                "content_versions",
-                "review_decisions",
-                "publications",
-                "version_asset_refs",
-                "migration_import_records",
-                "worksheet_learner_hint_version_attestations",
-            }
+            assert tables == CONTENT_TABLES_AT_FORWARD_HEAD
             api_tables = {
                 row[0]
                 for row in conn.execute(
@@ -251,13 +248,7 @@ class TestAlembicAndCatalog:
                     text("SELECT tablename FROM pg_tables WHERE schemaname = 'security'")
                 )
             }
-            assert security_tables == {
-                "audit_records",
-                "principals",
-                "tenants",
-                "tenant_memberships",
-                "capability_grants",
-            }
+            assert security_tables == SECURITY_TABLES_AT_FORWARD_HEAD
             revision = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             assert revision == "ci03g020001"
             gcii02 = (
@@ -287,15 +278,7 @@ class TestAlembicAndCatalog:
     ) -> None:
         insp = inspect(bootstrap_engine)
         assert "content" in insp.get_schema_names()
-        assert set(insp.get_table_names(schema="content")) == {
-            "contents",
-            "content_versions",
-            "review_decisions",
-            "publications",
-            "version_asset_refs",
-            "migration_import_records",
-            "worksheet_learner_hint_version_attestations",
-        }
+        assert set(insp.get_table_names(schema="content")) == CONTENT_TABLES_AT_FORWARD_HEAD
         assert "api" in insp.get_schema_names()
         assert set(insp.get_table_names(schema="api")) == {"idempotency_records"}
         with bootstrap_engine.connect() as conn:

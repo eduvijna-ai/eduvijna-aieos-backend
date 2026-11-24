@@ -16,7 +16,9 @@ from sqlalchemy.engine import Engine
 from tests.dbutil import (
     REPO_ROOT,
     assert_worksheet_hint_attestation_present_at_forward_head,
+    authorization_denial_records_table_exists,
     clear_asset_audit_rows_for_schema_downgrade,
+    review_assignment_authority_tables_exist,
     set_tenant,
     worksheet_hint_attestation_table_exists,
 )
@@ -310,54 +312,56 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                         f"FROM {RUNTIME_USER}"
                     )
                 )
-            conn.execute(
-                text(
-                    "GRANT SELECT, INSERT ON content.review_assignment_issuances "
-                    f"TO {RUNTIME_USER}"
+            if review_assignment_authority_tables_exist(conn):
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON content.review_assignment_issuances "
+                        f"TO {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "REVOKE UPDATE, DELETE ON content.review_assignment_issuances "
-                    f"FROM {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON content.review_assignment_issuances "
+                        f"FROM {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "GRANT SELECT, INSERT ON content.review_assignment_revocations "
-                    f"TO {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON content.review_assignment_revocations "
+                        f"TO {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "REVOKE UPDATE, DELETE ON content.review_assignment_revocations "
-                    f"FROM {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON content.review_assignment_revocations "
+                        f"FROM {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "GRANT SELECT, INSERT, UPDATE ON content.review_current_assignments "
-                    f"TO {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT, UPDATE ON content.review_current_assignments "
+                        f"TO {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "REVOKE DELETE ON content.review_current_assignments "
-                    f"FROM {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "REVOKE DELETE ON content.review_current_assignments "
+                        f"FROM {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "GRANT SELECT, INSERT ON security.authorization_denial_records "
-                    f"TO {RUNTIME_USER}"
+            if authorization_denial_records_table_exists(conn):
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON security.authorization_denial_records "
+                        f"TO {RUNTIME_USER}"
+                    )
                 )
-            )
-            conn.execute(
-                text(
-                    "REVOKE UPDATE, DELETE ON security.authorization_denial_records "
-                    f"FROM {RUNTIME_USER}"
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON security.authorization_denial_records "
+                        f"FROM {RUNTIME_USER}"
+                    )
                 )
-            )
             conn.execute(
                 text(
                     f"GRANT SELECT, INSERT ON content.publications TO {RUNTIME_USER}"

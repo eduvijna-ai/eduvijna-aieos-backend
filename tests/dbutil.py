@@ -23,10 +23,71 @@ CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION = frozenset(
         "migration_import_records",
     }
 )
+REVIEW_ASSIGNMENT_TABLES = frozenset(
+    {
+        "review_assignment_issuances",
+        "review_assignment_revocations",
+        "review_current_assignments",
+    }
+)
+AUTHORIZATION_DENIAL_RECORDS_TABLE = "authorization_denial_records"
+
 CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION = (
     CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION
     | {WORKSHEET_HINT_ATTESTATION_TABLE}
 )
+CONTENT_TABLES_AT_FORWARD_HEAD = (
+    CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION | REVIEW_ASSIGNMENT_TABLES
+)
+
+SECURITY_TABLES_WITHOUT_AUTHORIZATION_DENIALS = frozenset(
+    {
+        "audit_records",
+        "principals",
+        "tenants",
+        "tenant_memberships",
+        "capability_grants",
+    }
+)
+SECURITY_TABLES_AT_FORWARD_HEAD = SECURITY_TABLES_WITHOUT_AUTHORIZATION_DENIALS | {
+    AUTHORIZATION_DENIAL_RECORDS_TABLE
+}
+
+
+def _content_table_exists(conn, table_name: str) -> bool:
+    return bool(
+        conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'content' "
+                f"AND table_name = '{table_name}'"
+                ")"
+            )
+        ).scalar()
+    )
+
+
+def _security_table_exists(conn, table_name: str) -> bool:
+    return bool(
+        conn.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'security' "
+                f"AND table_name = '{table_name}'"
+                ")"
+            )
+        ).scalar()
+    )
+
+
+def review_assignment_authority_tables_exist(conn) -> bool:
+    return _content_table_exists(conn, "review_assignment_issuances")
+
+
+def authorization_denial_records_table_exists(conn) -> bool:
+    return _security_table_exists(conn, AUTHORIZATION_DENIAL_RECORDS_TABLE)
 
 
 def worksheet_hint_attestation_table_exists(conn) -> bool:
