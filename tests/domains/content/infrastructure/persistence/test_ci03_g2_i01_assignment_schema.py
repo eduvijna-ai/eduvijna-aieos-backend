@@ -18,5 +18,9 @@ def test_head_and_tables(bootstrap_engine: Engine) -> None:
             == "ci03g020001"
         )
     insp = inspect(bootstrap_engine)
-    assert "review_assignment_events" in insp.get_table_names(schema="content")
-    assert "review_current_assignments" in insp.get_table_names(schema="content")
+    names = set(insp.get_table_names(schema="content"))
+    assert "review_assignment_issuances" in names
+    assert "review_assignment_revocations" in names
+    assert "review_current_assignments" in names
+    security_names = set(insp.get_table_names(schema="security"))
+    assert "authorization_denial_records" in security_names

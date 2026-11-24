@@ -202,7 +202,6 @@ def version_asset_ref_from_row(row: Any) -> VersionAssetRef:
 
 def review_assignment_assigned_from_row(row: Any) -> ReviewAssignmentAssignedEvent:
     return ReviewAssignmentAssignedEvent(
-        event_id=_row_value(row, "event_id"),
         assignment_id=ReviewAssignmentId(_row_value(row, "assignment_id")),
         tenant_id=_row_value(row, "tenant_id"),
         content_id=ContentId(_row_value(row, "content_id")),

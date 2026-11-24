@@ -56,59 +56,60 @@ _CONTENT_ASSIGN_ACTIONS_SQL = """
 
 _TABLE_STATEMENTS: tuple[str, ...] = (
     """
-    CREATE TABLE content.review_assignment_events (
-        event_id UUID NOT NULL,
-        event_kind TEXT NOT NULL,
+    CREATE TABLE content.review_assignment_issuances (
         assignment_id UUID NOT NULL,
         tenant_id UUID NOT NULL,
         content_id UUID NOT NULL,
         version_id UUID NOT NULL,
-        reviewer_principal_id UUID NULL,
-        issuer_principal_id UUID NULL,
-        class_ref TEXT NULL,
-        issued_at TIMESTAMPTZ NULL,
-        valid_until TIMESTAMPTZ NULL,
-        revoked_at TIMESTAMPTZ NULL,
-        revoked_by_principal_id UUID NULL,
+        reviewer_principal_id UUID NOT NULL,
+        issuer_principal_id UUID NOT NULL,
+        class_ref TEXT NOT NULL,
+        issued_at TIMESTAMPTZ NOT NULL,
+        valid_until TIMESTAMPTZ NOT NULL,
         correlation_id UUID NOT NULL,
-        CONSTRAINT pk_review_assignment_events PRIMARY KEY (event_id),
-        CONSTRAINT ck_review_assignment_events_kind
-            CHECK (event_kind IN ('ASSIGNED', 'REVOKED')),
-        CONSTRAINT ck_review_assignment_events_class_ref
+        CONSTRAINT pk_review_assignment_issuances PRIMARY KEY (assignment_id),
+        CONSTRAINT ck_review_assignment_issuances_class_ref
             CHECK ({class_ref_check}),
-        CONSTRAINT ck_review_assignment_events_assigned_shape
+        CONSTRAINT ck_review_assignment_issuances_validity
             CHECK (
-                event_kind <> 'ASSIGNED' OR (
-                    reviewer_principal_id IS NOT NULL
-                    AND issuer_principal_id IS NOT NULL
-                    AND class_ref IS NOT NULL
-                    AND issued_at IS NOT NULL
-                    AND valid_until IS NOT NULL
-                    AND valid_until > issued_at
-                )
+                valid_until > issued_at
+                AND valid_until <= issued_at + interval '7 days'
             ),
-        CONSTRAINT ck_review_assignment_events_revoked_shape
-            CHECK (
-                event_kind <> 'REVOKED' OR (
-                    revoked_at IS NOT NULL AND revoked_by_principal_id IS NOT NULL
-                )
-            ),
-        CONSTRAINT fk_review_assignment_events_version
+        CONSTRAINT ck_review_assignment_issuances_distinct_reviewer
+            CHECK (reviewer_principal_id <> issuer_principal_id),
+        CONSTRAINT fk_review_assignment_issuances_version
             FOREIGN KEY (tenant_id, content_id, version_id)
             REFERENCES content.content_versions (tenant_id, content_id, version_id)
             ON DELETE RESTRICT
     )
-    """.format(
-        class_ref_check=_CLASS_REF_CHECK
-    ),
-    "CREATE INDEX ix_review_assignment_events_tenant_id "
-    "ON content.review_assignment_events (tenant_id)",
-    "CREATE UNIQUE INDEX uq_review_assignment_assigned_id "
-    "ON content.review_assignment_events (assignment_id) "
-    "WHERE event_kind = 'ASSIGNED'",
-    "CREATE UNIQUE INDEX uq_review_assignment_revoked_id "
-    "ON content.review_assignment_events (assignment_id) "
-    "WHERE event_kind = 'REVOKED'",
+    """.format(class_ref_check=_CLASS_REF_CHECK),
+    "CREATE INDEX ix_review_assignment_issuances_tenant_id "
+    "ON content.review_assignment_issuances (tenant_id)",
+    """
+    CREATE TABLE content.review_assignment_revocations (
+        revocation_id UUID NOT NULL,
+        assignment_id UUID NOT NULL,
+        tenant_id UUID NOT NULL,
+        content_id UUID NOT NULL,
+        version_id UUID NOT NULL,
+        revoked_at TIMESTAMPTZ NOT NULL,
+        revoked_by_principal_id UUID NOT NULL,
+        correlation_id UUID NOT NULL,
+        CONSTRAINT pk_review_assignment_revocations PRIMARY KEY (revocation_id),
+        CONSTRAINT uq_review_assignment_revocations_assignment
+            UNIQUE (assignment_id),
+        CONSTRAINT fk_review_assignment_revocations_issuance
+            FOREIGN KEY (assignment_id)
+            REFERENCES content.review_assignment_issuances (assignment_id)
+            ON DELETE RESTRICT,
+        CONSTRAINT fk_review_assignment_revocations_version
+            FOREIGN KEY (tenant_id, content_id, version_id)
+            REFERENCES content.content_versions (tenant_id, content_id, version_id)
+            ON DELETE RESTRICT
+    )
+    """,
+    "CREATE INDEX ix_review_assignment_revocations_tenant_id "
+    "ON content.review_assignment_revocations (tenant_id)",
     """
     CREATE TABLE content.review_current_assignments (
         tenant_id UUID NOT NULL,
@@ -122,38 +123,75 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
         CONSTRAINT fk_review_current_assignments_version
             FOREIGN KEY (tenant_id, content_id, version_id)
             REFERENCES content.content_versions (tenant_id, content_id, version_id)
+            ON DELETE RESTRICT,
+        CONSTRAINT fk_review_current_assignments_active
+            FOREIGN KEY (active_assignment_id)
+            REFERENCES content.review_assignment_issuances (assignment_id)
             ON DELETE RESTRICT
     )
     """,
     """
-    CREATE OR REPLACE FUNCTION content.reject_review_assignment_event_mutation()
+    CREATE OR REPLACE FUNCTION content.reject_review_assignment_issuance_mutation()
     RETURNS trigger
     LANGUAGE plpgsql
     SET search_path = content, pg_temp
     AS $$
     BEGIN
-        RAISE EXCEPTION 'content.review_assignment_events is immutable'
+        RAISE EXCEPTION 'content.review_assignment_issuances is immutable'
             USING ERRCODE = '27000';
     END;
     $$
     """,
     """
-    CREATE TRIGGER review_assignment_events_immutable_update
-        BEFORE UPDATE ON content.review_assignment_events
+    CREATE TRIGGER review_assignment_issuances_immutable_update
+        BEFORE UPDATE ON content.review_assignment_issuances
         FOR EACH ROW
-        EXECUTE FUNCTION content.reject_review_assignment_event_mutation()
+        EXECUTE FUNCTION content.reject_review_assignment_issuance_mutation()
     """,
     """
-    CREATE TRIGGER review_assignment_events_immutable_delete
-        BEFORE DELETE ON content.review_assignment_events
+    CREATE TRIGGER review_assignment_issuances_immutable_delete
+        BEFORE DELETE ON content.review_assignment_issuances
         FOR EACH ROW
-        EXECUTE FUNCTION content.reject_review_assignment_event_mutation()
+        EXECUTE FUNCTION content.reject_review_assignment_issuance_mutation()
     """,
-    "ALTER TABLE content.review_assignment_events ENABLE ROW LEVEL SECURITY",
-    "ALTER TABLE content.review_assignment_events FORCE ROW LEVEL SECURITY",
     """
-    CREATE POLICY review_assignment_events_tenant_isolation
-        ON content.review_assignment_events
+    CREATE OR REPLACE FUNCTION content.reject_review_assignment_revocation_mutation()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path = content, pg_temp
+    AS $$
+    BEGIN
+        RAISE EXCEPTION 'content.review_assignment_revocations is immutable'
+            USING ERRCODE = '27000';
+    END;
+    $$
+    """,
+    """
+    CREATE TRIGGER review_assignment_revocations_immutable_update
+        BEFORE UPDATE ON content.review_assignment_revocations
+        FOR EACH ROW
+        EXECUTE FUNCTION content.reject_review_assignment_revocation_mutation()
+    """,
+    """
+    CREATE TRIGGER review_assignment_revocations_immutable_delete
+        BEFORE DELETE ON content.review_assignment_revocations
+        FOR EACH ROW
+        EXECUTE FUNCTION content.reject_review_assignment_revocation_mutation()
+    """,
+    "ALTER TABLE content.review_assignment_issuances ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE content.review_assignment_issuances FORCE ROW LEVEL SECURITY",
+    """
+    CREATE POLICY review_assignment_issuances_tenant_isolation
+        ON content.review_assignment_issuances
+        FOR ALL
+        USING (tenant_id = content.current_tenant_id())
+        WITH CHECK (tenant_id = content.current_tenant_id())
+    """,
+    "ALTER TABLE content.review_assignment_revocations ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE content.review_assignment_revocations FORCE ROW LEVEL SECURITY",
+    """
+    CREATE POLICY review_assignment_revocations_tenant_isolation
+        ON content.review_assignment_revocations
         FOR ALL
         USING (tenant_id = content.current_tenant_id())
         WITH CHECK (tenant_id = content.current_tenant_id())
@@ -166,6 +204,67 @@ _TABLE_STATEMENTS: tuple[str, ...] = (
         FOR ALL
         USING (tenant_id = content.current_tenant_id())
         WITH CHECK (tenant_id = content.current_tenant_id())
+    """,
+    """
+    CREATE TABLE security.authorization_denial_records (
+        denial_record_id UUID NOT NULL,
+        tenant_id UUID NOT NULL,
+        action TEXT NOT NULL,
+        principal_id UUID NOT NULL,
+        content_id UUID NULL,
+        version_id UUID NULL,
+        correlation_id UUID NOT NULL,
+        reason_code TEXT NOT NULL,
+        occurred_at TIMESTAMPTZ NOT NULL,
+        CONSTRAINT pk_authorization_denial_records PRIMARY KEY (denial_record_id),
+        CONSTRAINT ck_authorization_denial_records_action
+            CHECK (
+                action IN (
+                    'content.review.assign.denied',
+                    'content.review.revoke.denied'
+                )
+            ),
+        CONSTRAINT ck_authorization_denial_records_reason
+            CHECK (
+                char_length(reason_code) BETWEEN 1 AND 64
+                AND reason_code ~ '^[a-z0-9][a-z0-9._-]*$'
+            )
+    )
+    """,
+    "CREATE INDEX ix_authorization_denial_records_tenant "
+    "ON security.authorization_denial_records (tenant_id)",
+    """
+    CREATE OR REPLACE FUNCTION security.reject_authorization_denial_mutation()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path = security, pg_temp
+    AS $$
+    BEGIN
+        RAISE EXCEPTION 'security.authorization_denial_records is immutable'
+            USING ERRCODE = '27000';
+    END;
+    $$
+    """,
+    """
+    CREATE TRIGGER authorization_denial_records_immutable_update
+        BEFORE UPDATE ON security.authorization_denial_records
+        FOR EACH ROW
+        EXECUTE FUNCTION security.reject_authorization_denial_mutation()
+    """,
+    """
+    CREATE TRIGGER authorization_denial_records_immutable_delete
+        BEFORE DELETE ON security.authorization_denial_records
+        FOR EACH ROW
+        EXECUTE FUNCTION security.reject_authorization_denial_mutation()
+    """,
+    "ALTER TABLE security.authorization_denial_records ENABLE ROW LEVEL SECURITY",
+    "ALTER TABLE security.authorization_denial_records FORCE ROW LEVEL SECURITY",
+    """
+    CREATE POLICY authorization_denial_records_tenant_isolation
+        ON security.authorization_denial_records
+        FOR ALL
+        USING (tenant_id = security.current_tenant_id())
+        WITH CHECK (tenant_id = security.current_tenant_id())
     """,
 )
 
@@ -321,9 +420,23 @@ def upgrade() -> None:
     )
     op.execute(f"REVOKE DELETE ON content.review_current_assignments FROM {runtime}")
     op.execute(
-        f"GRANT SELECT, INSERT ON content.review_assignment_events TO {runtime}"
+        f"GRANT SELECT, INSERT ON content.review_assignment_issuances TO {runtime}"
     )
-    op.execute(f"REVOKE UPDATE, DELETE ON content.review_assignment_events FROM {runtime}")
+    op.execute(
+        f"REVOKE UPDATE, DELETE ON content.review_assignment_issuances FROM {runtime}"
+    )
+    op.execute(
+        f"GRANT SELECT, INSERT ON content.review_assignment_revocations TO {runtime}"
+    )
+    op.execute(
+        f"REVOKE UPDATE, DELETE ON content.review_assignment_revocations FROM {runtime}"
+    )
+    op.execute(
+        f"GRANT SELECT, INSERT ON security.authorization_denial_records TO {runtime}"
+    )
+    op.execute(
+        f"REVOKE UPDATE, DELETE ON security.authorization_denial_records FROM {runtime}"
+    )
     op.execute(f"SET LOCAL ROLE {security_owner}")
     for statement in _upgrade_audit_statements():
         op.execute(statement)
@@ -341,7 +454,8 @@ def downgrade() -> None:
     op.execute(f"SET LOCAL ROLE {content_owner}")
     for table in (
         "content.review_current_assignments",
-        "content.review_assignment_events",
+        "content.review_assignment_revocations",
+        "content.review_assignment_issuances",
     ):
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
         row_count = bind.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
@@ -365,10 +479,28 @@ def downgrade() -> None:
         op.execute(f"SET LOCAL ROLE {content_owner}")
         raise RuntimeError(_DOWNGRADE_BLOCKED)
     op.execute(f"SET LOCAL ROLE {content_owner}")
-    op.execute("DROP TABLE IF EXISTS content.review_current_assignments")
-    op.execute("DROP TABLE IF EXISTS content.review_assignment_events")
+    op.execute(f"SET LOCAL ROLE {security_owner}")
+    op.execute("ALTER TABLE security.authorization_denial_records DISABLE ROW LEVEL SECURITY")
+    denial_count = bind.execute(
+        text("SELECT count(*) FROM security.authorization_denial_records")
+    ).scalar_one()
+    op.execute("ALTER TABLE security.authorization_denial_records ENABLE ROW LEVEL SECURITY")
+    if int(denial_count) > 0:
+        op.execute(f"SET LOCAL ROLE {content_owner}")
+        raise RuntimeError(_DOWNGRADE_BLOCKED)
+    op.execute("DROP TABLE IF EXISTS security.authorization_denial_records")
     op.execute(
-        "DROP FUNCTION IF EXISTS content.reject_review_assignment_event_mutation()"
+        "DROP FUNCTION IF EXISTS security.reject_authorization_denial_mutation()"
+    )
+    op.execute(f"SET LOCAL ROLE {content_owner}")
+    op.execute("DROP TABLE IF EXISTS content.review_current_assignments")
+    op.execute("DROP TABLE IF EXISTS content.review_assignment_revocations")
+    op.execute("DROP TABLE IF EXISTS content.review_assignment_issuances")
+    op.execute(
+        "DROP FUNCTION IF EXISTS content.reject_review_assignment_revocation_mutation()"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS content.reject_review_assignment_issuance_mutation()"
     )
     op.execute(f"SET LOCAL ROLE {security_owner}")
     for statement in _predecessor_upgrade_audit_statements():

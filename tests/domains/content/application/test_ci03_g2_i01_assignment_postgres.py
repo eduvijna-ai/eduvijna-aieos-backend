@@ -17,11 +17,21 @@ from aieos.domains.content.application.audit import api_mutation_audit_provenanc
 from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
     ReviewAssignmentForbidden,
+    ReviewAssignmentNotAllowed,
 )
 from aieos.domains.content.application.ports import (
     CONTENT_REVIEW_ASSIGN,
     CONTENT_REVIEW_DECIDE,
     CONTENT_REVIEW_SUBMIT,
+)
+from aieos.domains.content.application.review_assignment_denial_audit import (
+    CONTENT_REVIEW_ASSIGN_DENIED,
+    SqlAlchemyReviewAssignmentDenialAudit,
+)
+from aieos.domains.content.application.review_assignment_guard import (
+    ReviewerUseGuardContext,
+    ReviewerUseMode,
+    enforce_reviewer_use_guard,
 )
 from aieos.domains.content.application.review_assignment_issue import (
     IssueReviewAssignmentService,
@@ -182,6 +192,7 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
     reviewer_eligibility = SchoolContextReviewerEligibilityService(
         development_reviewer_eligibility_reader(provider)
     )
+    denial = SqlAlchemyReviewAssignmentDenialAudit(runtime_engine)
     retention = timedelta(hours=24)
     issue = IssueReviewAssignmentService(
         uow_factory,
@@ -191,6 +202,7 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
         class_authority,
         reviewer_eligibility,
         idempotency_retention=retention,
+        denial_audit=denial,
     )
     revoke = RevokeReviewAssignmentService(
         uow_factory,
@@ -199,8 +211,9 @@ def _services(runtime_engine: Engine, tenant_id: uuid.UUID):
         classification,
         class_authority,
         idempotency_retention=retention,
+        denial_audit=denial,
     )
-    return issue, revoke, provider
+    return issue, revoke, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility
 
 
 def _event(owner_id: uuid.UUID) -> MutationEventContext:
@@ -211,30 +224,49 @@ def _event(owner_id: uuid.UUID) -> MutationEventContext:
     )
 
 
+def _denial_count(engine: Engine, tenant_id: uuid.UUID, action: str) -> int:
+    with engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.authorization_denial_records
+                    WHERE tenant_id = :tid AND action = :action
+                    """
+                ),
+                {"tid": tenant_id, "action": action},
+            ).scalar_one()
+        )
+
+
 class TestCi03G2I01AssignmentPostgres:
     def test_issue_revoke_idempotent_and_slot_rules(
         self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
     ) -> None:
         _ = postgres18
-        provision_runtime_grants(bootstrap_engine, runtime_engine)
+        provision_runtime_grants(bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            runtime_engine,
+            bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
         )
         seed_active_authority(
-            runtime_engine,
+            bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, revoke, provider = _services(runtime_engine, tenant_id)
+        issue, revoke, provider, *_ = _services(runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
@@ -301,34 +333,35 @@ class TestCi03G2I01AssignmentPostgres:
         )
         assert reassigned != assignment_id
 
-    def test_fail_closed_without_assign_grant(
+    def test_fail_closed_without_assign_grant_and_denial_audit(
         self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
     ) -> None:
         _ = postgres18
-        provision_runtime_grants(bootstrap_engine, runtime_engine)
+        provision_runtime_grants(bootstrap_engine)
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         seed_active_authority(
-            runtime_engine,
+            bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=owner_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_SUBMIT,),
         )
         seed_active_authority(
-            runtime_engine,
+            bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
-        issue, _revoke, provider = _services(runtime_engine, tenant_id)
+        issue, _revoke, provider, *_ = _services(runtime_engine, tenant_id)
         provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
         provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
         content_id, version_id = _seed_worksheet_in_review(
             runtime_engine, tenant_id=tenant_id, owner_id=owner_id
         )
+        ctx = _event(owner_id)
         with pytest.raises(ReviewAssignmentForbidden):
             issue.issue(
                 tenant_id,
@@ -337,7 +370,139 @@ class TestCi03G2I01AssignmentPostgres:
                 version_id=version_id,
                 reviewer_principal_id=reviewer_id,
                 idempotency_key="deny",
-                event_context=_event(owner_id),
+                event_context=ctx,
                 audit_provenance=api_mutation_audit_provenance(owner_id),
                 now=_NOW,
             )
+        assert _denial_count(runtime_engine, tenant_id, CONTENT_REVIEW_ASSIGN_DENIED) == 1
+
+    def test_guard_fail_closed_terminal_and_protected(
+        self, bootstrap_engine: Engine, runtime_engine: Engine, postgres18: str
+    ) -> None:
+        _ = postgres18
+        provision_runtime_grants(bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=owner_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+        )
+        seed_active_authority(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        issue, revoke, provider, uow_factory, assign_auth, review_auth, class_authority, reviewer_eligibility = _services(
+            runtime_engine, tenant_id
+        )
+        classification = CurrentPrincipalClassificationAuthority(runtime_engine)
+        provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
+        provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
+        content_id, version_id = _seed_worksheet_in_review(
+            runtime_engine, tenant_id=tenant_id, owner_id=owner_id
+        )
+        ctx = _event(owner_id)
+        assignment_id = issue.issue(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            version_id=version_id,
+            reviewer_principal_id=reviewer_id,
+            idempotency_key="guard-issue",
+            event_context=ctx,
+            audit_provenance=api_mutation_audit_provenance(owner_id),
+            now=_NOW,
+        )
+        guard_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+            class_ref="wrong-class",
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(ReviewAssignmentForbidden):
+                enforce_reviewer_use_guard(
+                    uow,
+                    ctx=guard_ctx,
+                    assign_authorization=assign_auth,
+                    authorization=review_auth,
+                    principal_classification=classification,
+                    reviewer_eligibility=reviewer_eligibility,
+                    issuer_class_authority=class_authority,
+                    now=_NOW,
+                )
+        guard_ctx_ok = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+            class_ref=CLASS_REF,
+        )
+        with uow_factory(tenant_id) as uow:
+            active = enforce_reviewer_use_guard(
+                uow,
+                ctx=guard_ctx_ok,
+                assign_authorization=assign_auth,
+                authorization=review_auth,
+                principal_classification=classification,
+                reviewer_eligibility=reviewer_eligibility,
+                issuer_class_authority=class_authority,
+                now=_NOW,
+            )
+            assert active.assignment_id == assignment_id
+        revoke.revoke(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+            idempotency_key="guard-revoke",
+            event_context=ctx,
+            audit_provenance=api_mutation_audit_provenance(owner_id),
+            now=_NOW + timedelta(minutes=5),
+        )
+        terminal_ctx = ReviewerUseGuardContext(
+            execution_tenant_id=tenant_id,
+            principal_id=reviewer_id,
+            effective_actor_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            assignment_id=assignment_id,
+            class_ref=CLASS_REF,
+            mode=ReviewerUseMode.TERMINAL_RECEIPT,
+        )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(ReviewAssignmentNotAllowed):
+                enforce_reviewer_use_guard(
+                    uow,
+                    ctx=terminal_ctx,
+                    assign_authorization=assign_auth,
+                    authorization=review_auth,
+                    principal_classification=classification,
+                    reviewer_eligibility=reviewer_eligibility,
+                    issuer_class_authority=class_authority,
+                    now=_NOW + timedelta(minutes=6),
+                )
+        with uow_factory(tenant_id) as uow:
+            with pytest.raises(ReviewAssignmentConflict):
+                enforce_reviewer_use_guard(
+                    uow,
+                    ctx=guard_ctx,
+                    assign_authorization=assign_auth,
+                    authorization=review_auth,
+                    principal_classification=classification,
+                    reviewer_eligibility=reviewer_eligibility,
+                    issuer_class_authority=class_authority,
+                    now=_NOW + timedelta(minutes=6),
+                )

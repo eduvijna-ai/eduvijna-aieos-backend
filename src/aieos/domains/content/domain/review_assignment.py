@@ -22,7 +22,6 @@ class ReviewAssignmentEventKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ReviewAssignmentAssignedEvent:
-    event_id: UUID
     assignment_id: ReviewAssignmentId
     tenant_id: UUID
     content_id: ContentId
@@ -35,7 +34,6 @@ class ReviewAssignmentAssignedEvent:
     correlation_id: UUID
 
     def __post_init__(self) -> None:
-        require_foreign_uuid(self.event_id, label="event_id")
         require_foreign_uuid(self.tenant_id, label="tenant_id")
         require_foreign_uuid(self.reviewer_principal_id, label="reviewer_principal_id")
         require_foreign_uuid(self.issuer_principal_id, label="issuer_principal_id")
@@ -49,7 +47,7 @@ class ReviewAssignmentAssignedEvent:
 
 @dataclass(frozen=True, slots=True)
 class ReviewAssignmentRevokedEvent:
-    event_id: UUID
+    revocation_id: UUID
     assignment_id: ReviewAssignmentId
     tenant_id: UUID
     content_id: ContentId
@@ -59,7 +57,7 @@ class ReviewAssignmentRevokedEvent:
     correlation_id: UUID
 
     def __post_init__(self) -> None:
-        require_foreign_uuid(self.event_id, label="event_id")
+        require_foreign_uuid(self.revocation_id, label="revocation_id")
         require_foreign_uuid(self.tenant_id, label="tenant_id")
         require_foreign_uuid(self.revoked_by_principal_id, label="revoked_by_principal_id")
         require_foreign_uuid(self.correlation_id, label="correlation_id")

@@ -1,4 +1,4 @@
-"""SQLAlchemy persistence for reviewer assignment events and current slot."""
+"""SQLAlchemy persistence for reviewer assignment issuances and current slot."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from aieos.domains.content.domain.identities import (
 )
 from aieos.domains.content.domain.review_assignment import (
     ReviewAssignmentAssignedEvent,
-    ReviewAssignmentEventKind,
     ReviewAssignmentRevokedEvent,
     ReviewCurrentAssignmentSlot,
 )
@@ -24,7 +23,8 @@ from aieos.domains.content.infrastructure.persistence.mapping import (
     review_current_slot_from_row,
 )
 from aieos.domains.content.infrastructure.persistence.models import (
-    review_assignment_events_table,
+    review_assignment_issuances_table,
+    review_assignment_revocations_table,
     review_current_assignments_table,
 )
 
@@ -35,9 +35,7 @@ class SqlAlchemyReviewAssignmentRepository:
 
     def insert_assigned(self, event: ReviewAssignmentAssignedEvent) -> None:
         self._connection.execute(
-            insert(review_assignment_events_table).values(
-                event_id=event.event_id,
-                event_kind=ReviewAssignmentEventKind.ASSIGNED.value,
+            insert(review_assignment_issuances_table).values(
                 assignment_id=event.assignment_id.value,
                 tenant_id=event.tenant_id,
                 content_id=event.content_id.value,
@@ -53,9 +51,8 @@ class SqlAlchemyReviewAssignmentRepository:
 
     def insert_revoked(self, event: ReviewAssignmentRevokedEvent) -> None:
         self._connection.execute(
-            insert(review_assignment_events_table).values(
-                event_id=event.event_id,
-                event_kind=ReviewAssignmentEventKind.REVOKED.value,
+            insert(review_assignment_revocations_table).values(
+                revocation_id=event.revocation_id,
                 assignment_id=event.assignment_id.value,
                 tenant_id=event.tenant_id,
                 content_id=event.content_id.value,
@@ -66,12 +63,12 @@ class SqlAlchemyReviewAssignmentRepository:
             )
         )
 
-    def get_assigned(self, assignment_id: ReviewAssignmentId) -> ReviewAssignmentAssignedEvent | None:
+    def get_assigned(
+        self, assignment_id: ReviewAssignmentId
+    ) -> ReviewAssignmentAssignedEvent | None:
         row = self._connection.execute(
-            select(review_assignment_events_table).where(
-                review_assignment_events_table.c.assignment_id == assignment_id.value,
-                review_assignment_events_table.c.event_kind
-                == ReviewAssignmentEventKind.ASSIGNED.value,
+            select(review_assignment_issuances_table).where(
+                review_assignment_issuances_table.c.assignment_id == assignment_id.value
             )
         ).one_or_none()
         if row is None:
@@ -80,10 +77,8 @@ class SqlAlchemyReviewAssignmentRepository:
 
     def has_revoked(self, assignment_id: ReviewAssignmentId) -> bool:
         row = self._connection.execute(
-            select(review_assignment_events_table.c.event_id).where(
-                review_assignment_events_table.c.assignment_id == assignment_id.value,
-                review_assignment_events_table.c.event_kind
-                == ReviewAssignmentEventKind.REVOKED.value,
+            select(review_assignment_revocations_table.c.revocation_id).where(
+                review_assignment_revocations_table.c.assignment_id == assignment_id.value
             )
         ).one_or_none()
         return row is not None
@@ -93,16 +88,14 @@ class SqlAlchemyReviewAssignmentRepository:
         content_id: ContentId,
         version_id: ContentVersionId,
     ) -> ReviewCurrentAssignmentSlot | None:
-        row = (
-            self._connection.execute(
-                select(review_current_assignments_table)
-                .where(
-                    review_current_assignments_table.c.content_id == content_id.value,
-                    review_current_assignments_table.c.version_id == version_id.value,
-                )
-                .with_for_update()
-            ).one_or_none()
-        )
+        row = self._connection.execute(
+            select(review_current_assignments_table)
+            .where(
+                review_current_assignments_table.c.content_id == content_id.value,
+                review_current_assignments_table.c.version_id == version_id.value,
+            )
+            .with_for_update()
+        ).one_or_none()
         if row is None:
             return None
         return review_current_slot_from_row(row)
@@ -151,5 +144,10 @@ class SqlAlchemyReviewAssignmentRepository:
                 review_current_assignments_table.c.content_id == content_id.value,
                 review_current_assignments_table.c.version_id == version_id.value,
             )
-            .values(active_assignment_id=active_assignment_id and active_assignment_id.value, updated_at=now)
+            .values(
+                active_assignment_id=(
+                    None if active_assignment_id is None else active_assignment_id.value
+                ),
+                updated_at=now,
+            )
         )
