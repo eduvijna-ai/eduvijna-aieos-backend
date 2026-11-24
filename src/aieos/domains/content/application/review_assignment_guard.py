@@ -164,26 +164,6 @@ def enforce_reviewer_use_guard(
         raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
     if active.class_ref != canonical_class:
         raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
-    validate_revoke_issuer_locked(
-        uow,
-        execution_tenant_id=ctx.execution_tenant_id,
-        issuer_principal_id=active.issuer_principal_id,
-        content_id=ctx.content_id,
-        version_id=ctx.version_id,
-        assign_authorization=deps.assign_authorization,
-        review_authorization=deps.authorization,
-        principal_classification=deps.principal_classification,
-        issuer_class_authority=deps.issuer_class_authority,
-    )
-    revalidate_reviewer_locked(
-        uow,
-        execution_tenant_id=ctx.execution_tenant_id,
-        reviewer_principal_id=ctx.principal_id,
-        content_id=ctx.content_id,
-        version_id=ctx.version_id,
-        class_ref=canonical_class,
-        review_authorization=deps.authorization,
-        principal_classification=deps.principal_classification,
-        reviewer_eligibility=deps.reviewer_eligibility,
-    )
+    if active.issuer_principal_id != issuer_id:
+        raise ReviewAssignmentForbidden("issuer does not match content owner")
     return active

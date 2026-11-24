@@ -19,6 +19,7 @@ from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
     ReviewAssignmentForbidden,
     ReviewAssignmentNotAllowed,
+    ReviewForbidden,
 )
 from aieos.domains.content.application.ports import (
     ContentUnitOfWorkFactory,
@@ -52,7 +53,11 @@ from aieos.domains.content.domain.identities import (
 from aieos.domains.content.domain.review_assignment import (
     ReviewAssignmentAssignedEvent,
 )
-from aieos.domains.teaching.application.errors import SchoolContextUnavailable
+from aieos.domains.teaching.application.errors import (
+    ClassRefNotAssignable,
+    SchoolContextContractError,
+    SchoolContextUnavailable,
+)
 from aieos.domains.teaching.application.school_context import SchoolContextClassAuthority
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.idempotency.hashing import fingerprint_material, hash_idempotency_key
@@ -62,6 +67,7 @@ from aieos.platform.idempotency.models import (
     IdempotencyScope,
 )
 from aieos.platform.security import UnauthorizedError
+from aieos.platform.security.context import AuthorizationUnavailableError
 from aieos.platform.security.audit import SecurityAuditAction
 from aieos.platform.security.authorization.principal_classification import (
     CurrentPrincipalClassificationAuthority,
@@ -71,8 +77,12 @@ _ASSIGNMENT_TTL = timedelta(days=7)
 _DENIED_EXCEPTIONS = (
     ReviewAssignmentForbidden,
     ReviewAssignmentNotAllowed,
+    ReviewForbidden,
     UnauthorizedError,
     SchoolContextUnavailable,
+    ClassRefNotAssignable,
+    SchoolContextContractError,
+    AuthorizationUnavailableError,
 )
 
 

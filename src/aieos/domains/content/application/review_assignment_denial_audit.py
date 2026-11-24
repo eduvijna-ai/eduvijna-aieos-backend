@@ -23,6 +23,9 @@ REASON_ASSIGNMENT_CONFLICT = "assignment.conflict"
 REASON_ATTESTATION_BLOCKED = "assignment.attestation.blocked"
 REASON_NOT_ALLOWED = "assign.not.allowed"
 REASON_PERSISTENCE_INVARIANT = "persistence.invariant.violation"
+REASON_REVIEW_CAPABILITY = "review.capability.denied"
+REASON_AUTHORITY_UNAVAILABLE = "authority.unavailable"
+REASON_SCHOOL_CONTEXT_CONTRACT = "school.context.contract.invalid"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,7 @@ def reason_for_assignment_error(exc: BaseException) -> str:
         ReviewAssignmentConflict,
         ReviewAssignmentForbidden,
         ReviewAssignmentNotAllowed,
+        ReviewForbidden,
     )
     from aieos.domains.teaching.application.errors import (
         ClassRefNotAssignable,
@@ -71,12 +75,19 @@ def reason_for_assignment_error(exc: BaseException) -> str:
         SchoolContextUnavailable,
     )
     from aieos.platform.security import UnauthorizedError
+    from aieos.platform.security.context import AuthorizationUnavailableError
 
+    if isinstance(exc, AuthorizationUnavailableError):
+        return REASON_AUTHORITY_UNAVAILABLE
     if isinstance(exc, UnauthorizedError):
         return REASON_PRINCIPAL_KIND
+    if isinstance(exc, ReviewForbidden):
+        return REASON_REVIEW_CAPABILITY
     if isinstance(exc, SchoolContextUnavailable):
         return REASON_SCHOOL_CONTEXT
-    if isinstance(exc, (SchoolContextContractError, ClassRefNotAssignable)):
+    if isinstance(exc, SchoolContextContractError):
+        return REASON_SCHOOL_CONTEXT_CONTRACT
+    if isinstance(exc, ClassRefNotAssignable):
         return REASON_ISSUER_CLASS
     message = str(exc).lower()
     if isinstance(exc, PersistenceInvariantViolation):
