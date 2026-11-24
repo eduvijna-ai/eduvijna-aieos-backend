@@ -15,7 +15,6 @@ from tests.conftest import (
     BOOTSTRAP_USER,
     DB_NAME,
     DB_PASSWORD,
-    HOST_PORT,
     POSTGRES_IMAGE,
     SCHEMA_OWNER_ROLE,
     SECURITY_SCHEMA_OWNER_ROLE,
@@ -40,13 +39,6 @@ from tests.conftest import (
 
 CI03_G2_I01_CONTAINER = "aieos-ci03-g2-i01-pg"
 CI03_G2_I01_HOST_PORT = os.environ.get("AIEOS_CI03_G2_I01_PG_PORT", "55433")
-
-_REQUIRED_EXTERNAL_URLS = (
-    "AIEOS_CI03_G2_I01_DATABASE_URL",
-    "AIEOS_CI03_G2_I01_BOOTSTRAP_DATABASE_URL",
-    "AIEOS_CI03_G2_I01_RUNTIME_DATABASE_URL",
-    "AIEOS_CI03_G2_I01_MIGRATION_RUNTIME_DATABASE_URL",
-)
 
 
 def _start_ci03_postgres() -> str:
@@ -84,36 +76,19 @@ def _start_ci03_postgres() -> str:
 
 @pytest.fixture(scope="session")
 def ci03_g2_postgres18() -> Iterator[dict[str, str]]:
-    """Isolated PG18 for reviewer-assignment evidence; separate from GCI shared DB."""
-    external = os.environ.get("AIEOS_CI03_G2_I01_DATABASE_URL")
-    started_container = False
-    if external:
-        missing = [k for k in _REQUIRED_EXTERNAL_URLS if not os.environ.get(k)]
-        if missing:
-            raise RuntimeError(
-                "CI03-G2-I01 isolated substrate requires distinct role URLs: "
-                + ", ".join(missing)
-            )
-        b_url = os.environ["AIEOS_CI03_G2_I01_BOOTSTRAP_DATABASE_URL"]
-        m_url = os.environ["AIEOS_CI03_G2_I01_DATABASE_URL"]
-        r_url = os.environ["AIEOS_CI03_G2_I01_RUNTIME_DATABASE_URL"]
-        mig_url = os.environ["AIEOS_CI03_G2_I01_MIGRATION_RUNTIME_DATABASE_URL"]
-        d_url = os.environ.get(
-            "AIEOS_CI03_G2_I01_WORKFLOW_DISPATCHER_DATABASE_URL", r_url
+    """Isolated PG18 on dedicated Docker only (no external/shared database URLs)."""
+    if os.environ.get("AIEOS_CI03_G2_I01_DATABASE_URL"):
+        raise RuntimeError(
+            "CI03-G2-I01 isolated substrate refuses external database URLs; "
+            "use disposable Docker (CI default)."
         )
-        e_url = os.environ.get(
-            "AIEOS_CI03_G2_I01_EVENT_DISPATCHER_DATABASE_URL", r_url
-        )
-        port = CI03_G2_I01_HOST_PORT
-    else:
-        port = _start_ci03_postgres()
-        started_container = True
-        b_url = bootstrap_url(port)
-        m_url = migrator_url(port)
-        r_url = runtime_url(port)
-        mig_url = migration_runtime_url(port)
-        d_url = workflow_dispatcher_url(port)
-        e_url = event_dispatcher_url(port)
+    port = _start_ci03_postgres()
+    b_url = bootstrap_url(port)
+    m_url = migrator_url(port)
+    r_url = runtime_url(port)
+    mig_url = migration_runtime_url(port)
+    d_url = workflow_dispatcher_url(port)
+    e_url = event_dispatcher_url(port)
 
     bootstrap = wait_for_engine(b_url)
     with bootstrap.connect() as conn:
@@ -137,7 +112,7 @@ def ci03_g2_postgres18() -> Iterator[dict[str, str]]:
             "event_dispatcher_url": e_url,
             "server_version": str(version),
             "port": port,
-            "container_name": CI03_G2_I01_CONTAINER if started_container else None,
+            "container_name": CI03_G2_I01_CONTAINER,
             "schema_owner_role": SCHEMA_OWNER_ROLE,
             "security_schema_owner_role": SECURITY_SCHEMA_OWNER_ROLE,
             "asset_schema_owner_role": ASSET_SCHEMA_OWNER_ROLE,
@@ -149,12 +124,11 @@ def ci03_g2_postgres18() -> Iterator[dict[str, str]]:
         }
     finally:
         bootstrap.dispose()
-        if started_container:
-            subprocess.run(
-                ["docker", "rm", "-f", CI03_G2_I01_CONTAINER],
-                check=False,
-                capture_output=True,
-            )
+        subprocess.run(
+            ["docker", "rm", "-f", CI03_G2_I01_CONTAINER],
+            check=False,
+            capture_output=True,
+        )
 
 
 @pytest.fixture(scope="session")

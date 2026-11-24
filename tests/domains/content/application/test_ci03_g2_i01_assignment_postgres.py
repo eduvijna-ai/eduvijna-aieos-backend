@@ -98,6 +98,9 @@ def test_ci03_g2_substrate_isolated_from_shared_gci_session(
         assert ci03_g2_postgres18["port"] != HOST_PORT
     with ci03_g2_runtime_engine.connect() as conn:
         current_user = conn.execute(text("SELECT current_user")).scalar_one()
+        rolsuper = conn.execute(
+            text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+        ).scalar_one()
         bypass = conn.execute(
             text(
                 "SELECT rolbypassrls FROM pg_roles "
@@ -105,8 +108,25 @@ def test_ci03_g2_substrate_isolated_from_shared_gci_session(
             )
         ).scalar_one()
         server_version = conn.execute(text("SHOW server_version")).scalar_one()
+        rls_forced = conn.execute(
+            text(
+                """
+                SELECT bool_and(c.relforcerowsecurity)
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'content'
+                  AND c.relname IN (
+                    'review_assignment_issuances',
+                    'review_assignment_revocations',
+                    'review_current_assignments'
+                  )
+                """
+            )
+        ).scalar_one()
     assert current_user == RUNTIME_USER
+    assert rolsuper is False
     assert bypass is False
+    assert rls_forced is True
     assert str(server_version).startswith("18.")
     with ci03_g2_bootstrap_engine.connect() as conn:
         head = conn.execute(
