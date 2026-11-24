@@ -291,6 +291,7 @@ class TestCi03G2I02R4B2Concurrency:
             slot_held=slot_held,
             release=release,
             holder_pid=holder_pid,
+            hold_after_slot_lock=2,
         )
         contend_factory = ContendingContentUowFactory(
             ci03_g2_runtime_engine,

@@ -50,12 +50,14 @@ class SlotHoldingContentUow(SqlAlchemyContentUnitOfWork):
         release: threading.Event,
         holder_pid: list[int | None],
         while_held: Callable[[], None] | None = None,
+        hold_after_slot_lock: int = 1,
     ) -> None:
         super().__init__(engine, execution_tenant_id)
         self._slot_held = slot_held
         self._release = release
         self._holder_pid = holder_pid
         self._while_held = while_held
+        self._hold_after_slot_lock = hold_after_slot_lock
 
     def __enter__(self) -> SlotHoldingContentUow:
         super().__enter__()
@@ -63,11 +65,16 @@ class SlotHoldingContentUow(SqlAlchemyContentUnitOfWork):
         original = repo.get_slot_for_update
         connection = self._connection
         assert connection is not None
+        slot_lock_count = 0
 
         def get_slot_for_update(
             content_id: ContentId, version_id: ContentVersionId
         ) -> Any:
+            nonlocal slot_lock_count
             row = original(content_id, version_id)
+            slot_lock_count += 1
+            if slot_lock_count < self._hold_after_slot_lock:
+                return row
             self._holder_pid[0] = connection.execute(
                 text("SELECT pg_backend_pid()")
             ).scalar_one()
@@ -91,12 +98,14 @@ class SlotHoldingContentUowFactory:
         release: threading.Event,
         holder_pid: list[int | None],
         while_held: Callable[[], None] | None = None,
+        hold_after_slot_lock: int = 1,
     ) -> None:
         self._engine = engine
         self._slot_held = slot_held
         self._release = release
         self._holder_pid = holder_pid
         self._while_held = while_held
+        self._hold_after_slot_lock = hold_after_slot_lock
 
     def __call__(self, execution_tenant_id: uuid.UUID) -> SlotHoldingContentUow:
         return SlotHoldingContentUow(
@@ -106,6 +115,7 @@ class SlotHoldingContentUowFactory:
             release=self._release,
             holder_pid=self._holder_pid,
             while_held=self._while_held,
+            hold_after_slot_lock=self._hold_after_slot_lock,
         )
 
 
