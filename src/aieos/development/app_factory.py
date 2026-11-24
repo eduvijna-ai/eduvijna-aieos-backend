@@ -20,10 +20,12 @@ from aieos.development.auth_adapters import (
     DevelopmentTeachingWorkPermit,
     DevelopmentTenantSecurityResolver,
 )
+from aieos.development.assignment_bound import build_assignment_bound_mutation_dependencies
 from aieos.development.schemas import (
     build_development_schema_registry,
     development_content_type_names,
 )
+from aieos.domains.teaching.application.school_context import SchoolContextClassAuthorityService
 from aieos.development.principal_school_context import (
     DevelopmentSchoolContextPrincipalScopeReader,
     DevelopmentSchoolIntelligencePermit,
@@ -85,6 +87,16 @@ def build_development_teacher_os_app(
         model_id=ai_model_id if model_gateway is not None else None,
     )
 
+    school_reader = DevelopmentSchoolContextClassReader(
+        tenant_id=tenant_id,
+        teacher_principal_id=principal_id,
+    )
+    class_authority = SchoolContextClassAuthorityService(school_reader)
+    assignment_bound = build_assignment_bound_mutation_dependencies(
+        runtime_engine,
+        tenant_id=tenant_id,
+        issuer_class_authority=class_authority,
+    )
     return create_app(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
         teaching_uow_factory=SqlAlchemyTeachingUnitOfWorkFactory(
@@ -114,10 +126,8 @@ def build_development_teacher_os_app(
         ai_model_id=configured.model_id,
         provider_runtime=configured.projection,
         generation_lease_seconds=load_generation_lease_seconds(),
-        school_context_class_reader=DevelopmentSchoolContextClassReader(
-            tenant_id=tenant_id,
-            teacher_principal_id=principal_id,
-        ),
+        school_context_class_reader=school_reader,
+        assignment_bound=assignment_bound,
         teaching_authorization=DevelopmentTeachingWorkPermit(),
         student_learning_uow_factory=SqlAlchemyStudentLearningCommandUnitOfWorkFactory(
             runtime_engine

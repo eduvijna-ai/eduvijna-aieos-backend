@@ -242,6 +242,14 @@ def enforce_worksheet_hint_publish_interlock(
         raise WorksheetLearnerHintPublicationBlocked(
             "approve reviewer does not match stored attestation reviewer"
         )
+    if (
+        attestation.review_assignment_id is not None
+        or decision.review_assignment_id is not None
+    ):
+        if attestation.review_assignment_id != decision.review_assignment_id:
+            raise WorksheetLearnerHintPublicationBlocked(
+                "approve assignment does not match attestation assignment binding"
+            )
     if publisher_principal_id in {
         attestation.author_principal_id,
         attestation.reviewer_principal_id,

@@ -37,6 +37,9 @@ from aieos.domains.content.application.ports import (
 from aieos.domains.content.application.publish import PublishContentService
 from aieos.domains.content.application.queries import GetContentService, ListContentsService
 from aieos.domains.content.application.review import ReviewCommandService
+from aieos.domains.content.application.review_assignment_bound_mutations import (
+    AssignmentBoundMutationDependencies,
+)
 from aieos.domains.content.application.library import (
     GetTeacherLibraryItemService,
     GetTeacherLibraryVersionService,
@@ -353,6 +356,7 @@ def create_app(
         LearnerPrincipalIntegrityAuthority | None
     ) = None,
     parent_intelligence_facts_reader: ParentIntelligenceFactsReader | None = None,
+    assignment_bound: AssignmentBoundMutationDependencies | None = None,
 ) -> FastAPI:
     codec = CursorCodec(cursor_signing_key)
     app = FastAPI(
@@ -411,6 +415,7 @@ def create_app(
         review_comment_policy,
         idempotency_retention=idempotency_retention,
         principal_classification=classification,
+        assignment_bound=assignment_bound,
     )
     app.state.publish_content_service = PublishContentService(
         uow_factory,
@@ -536,6 +541,7 @@ def create_app(
             review_authorization,
             classification,
             idempotency_retention=idempotency_retention,
+            assignment_bound=assignment_bound,
         )
     )
     app.state.get_teaching_assignment_service = GetTeachingAssignmentService(

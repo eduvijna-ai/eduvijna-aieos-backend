@@ -23,6 +23,7 @@ from aieos.domains.content.application.review_assignment_commands_common import 
     validate_revoke_issuer_locked,
 )
 from aieos.domains.content.application.review_assignment_state import (
+    materialize_assignment,
     resolve_slot_active_assignment,
 )
 from aieos.domains.content.application.school_context_reviewer_eligibility import (
@@ -76,10 +77,7 @@ def enforce_reviewer_use_guard(
     deps: ReviewerUseGuardDependencies,
 ) -> ActiveReviewAssignment:
     """Full O64-03-C predicate before any future private disclosure/mutation."""
-    if ctx.mode is ReviewerUseMode.TERMINAL_RECEIPT:
-        raise ReviewAssignmentNotAllowed(
-            "terminal receipt authority requires G2-I02 proven binding"
-        )
+    terminal_mode = ctx.mode is ReviewerUseMode.TERMINAL_RECEIPT
     if ctx.effective_actor_id != ctx.principal_id:
         raise ReviewAssignmentForbidden(
             "effective actor must align with reviewer principal"
@@ -87,15 +85,17 @@ def enforce_reviewer_use_guard(
     head = uow.contents.get_head_for_update(ctx.content_id)
     if head is None or head.tenant_id != ctx.execution_tenant_id:
         raise ReviewAssignmentNotAllowed("content head missing")
-    if head.current_version_id != ctx.version_id:
-        raise ReviewAssignmentNotAllowed("version is not current")
+    if not terminal_mode:
+        if head.current_version_id != ctx.version_id:
+            raise ReviewAssignmentNotAllowed("version is not current")
     if uow.review_assignments.get_slot_for_update(ctx.content_id, ctx.version_id) is None:
         raise ReviewAssignmentConflict("assignment slot missing")
     version = uow.versions.get(ctx.version_id)
     if version is None:
         raise ReviewAssignmentNotAllowed("version missing")
-    if head.stewardship_state != StewardshipState.IN_REVIEW.value:
-        raise ReviewAssignmentNotAllowed("version not IN_REVIEW")
+    if not terminal_mode:
+        if head.stewardship_state != StewardshipState.IN_REVIEW.value:
+            raise ReviewAssignmentNotAllowed("version not IN_REVIEW")
     if str(version.schema_id) != WORKSHEET_SCHEMA_ID:
         raise ReviewAssignmentNotAllowed("assignment guard requires worksheet content")
     if not version_requires_worksheet_hint_attestation(
@@ -104,7 +104,7 @@ def enforce_reviewer_use_guard(
         payload=version.payload.body,
     ):
         raise ReviewAssignmentNotAllowed("assignment guard requires hint-bearing worksheet@2")
-    if uow.reviews.get_for_version(ctx.content_id, ctx.version_id) is not None:
+    if not terminal_mode and uow.reviews.get_for_version(ctx.content_id, ctx.version_id) is not None:
         raise ReviewAssignmentNotAllowed("version already has terminal decision")
     content_row = uow.contents.get(ctx.content_id)
     if content_row is None or content_row.tenant_id != ctx.execution_tenant_id:
@@ -147,6 +147,27 @@ def enforce_reviewer_use_guard(
         issuer_class_authority=deps.issuer_class_authority,
     )
     effect_at = deps.clock()
+    if terminal_mode:
+        bound = materialize_assignment(
+            uow.review_assignments,
+            tenant_id=ctx.execution_tenant_id,
+            assignment_id=ctx.assignment_id,
+            content_id=ctx.content_id,
+            version_id=ctx.version_id,
+            now=effect_at,
+            require_slot_binding=False,
+        )
+        if bound.assignment_id != ctx.assignment_id:
+            raise ReviewAssignmentConflict("assignment identity mismatch")
+        if bound.revoked:
+            raise ReviewAssignmentConflict("assignment is revoked or expired")
+        if bound.reviewer_principal_id != ctx.principal_id:
+            raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
+        if bound.class_ref != canonical_class:
+            raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
+        if bound.issuer_principal_id != issuer_id:
+            raise ReviewAssignmentForbidden("issuer does not match content owner")
+        return bound
     active = resolve_slot_active_assignment(
         uow.review_assignments,
         tenant_id=ctx.execution_tenant_id,

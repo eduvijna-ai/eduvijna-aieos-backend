@@ -27,6 +27,7 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
     AssignmentBoundMutationDependencies,
     _MUTATION_DENIED_EXCEPTIONS,
     assignment_bound_deps_configured,
+    fingerprint_assignment_id,
     raise_assignment_unavailable,
     record_mutation_denial,
     require_assignment_authority_for_new_effect,
@@ -105,19 +106,6 @@ class RecordWorksheetLearnerHintAttestationService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None = None,
     ) -> WorksheetLearnerHintAttestationId:
-        self._principal_classification.require_current_human_principal(principal_id)
-        if event_context.effective_actor_id != principal_id:
-            raise WorksheetLearnerHintAttestationInvalid(
-                "effective actor must align with reviewer principal"
-            )
-        self._authorization.authorize(
-            tenant_id=execution_tenant_id,
-            principal_id=principal_id,
-            content_id=content_id,
-            version_id=version_id,
-            capability=CONTENT_REVIEW_DECIDE,
-        )
-        attested_at = now if now is not None else datetime.now(UTC)
         scope = IdempotencyScope(
             tenant_id=execution_tenant_id,
             principal_id=principal_id,
@@ -125,6 +113,18 @@ class RecordWorksheetLearnerHintAttestationService:
             key_sha256=hash_idempotency_key(idempotency_key),
         )
         try:
+            self._principal_classification.require_current_human_principal(principal_id)
+            if event_context.effective_actor_id != principal_id:
+                raise WorksheetLearnerHintAttestationInvalid(
+                    "effective actor must align with reviewer principal"
+                )
+            self._authorization.authorize(
+                tenant_id=execution_tenant_id,
+                principal_id=principal_id,
+                content_id=content_id,
+                version_id=version_id,
+                capability=CONTENT_REVIEW_DECIDE,
+            )
             with self._uow_factory(execution_tenant_id) as uow:
                 version_precheck = uow.versions.get(version_id)
                 hint_bound = (
@@ -134,29 +134,20 @@ class RecordWorksheetLearnerHintAttestationService:
                 if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
                     raise_assignment_unavailable()
                 uow.idempotency.acquire_scope(scope)
+                uow.contents.get_head_for_update(content_id)
                 existing = uow.idempotency.get(scope)
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
-                if existing is None and hint_bound:
-                    assert self._assignment_bound is not None
-                    active = require_assignment_authority_for_new_effect(
-                        uow,
-                        self._assignment_bound,
-                        execution_tenant_id=execution_tenant_id,
-                        principal_id=principal_id,
-                        effective_actor_id=event_context.effective_actor_id,
-                        content_id=content_id,
-                        version_id=version_id,
+                if existing is not None and hint_bound:
+                    stored_early = uow.worksheet_hint_attestations.get_for_version(
+                        content_id, version_id
                     )
-                    assignment_id_for_fp = active.assignment_id
-                elif existing is not None and hint_bound:
-                    version_row = uow.versions.get(version_id)
-                    if version_row is not None:
-                        stored_early = uow.worksheet_hint_attestations.get_for_version(
-                            content_id, version_id
-                        )
-                        if stored_early is not None:
-                            replay_assignment_id = stored_early.review_assignment_id
+                    if stored_early is not None:
+                        replay_assignment_id = stored_early.review_assignment_id
+                assignment_fp = fingerprint_assignment_id(
+                    assignment_id_for_fp=assignment_id_for_fp,
+                    replay_assignment_id=replay_assignment_id,
+                )
                 fingerprint = fingerprint_material(
                     {
                         "content_id": str(content_id),
@@ -166,12 +157,8 @@ class RecordWorksheetLearnerHintAttestationService:
                         "per_question_outcomes": list(per_question_outcomes),
                         **(
                             {}
-                            if (assignment_id_for_fp or replay_assignment_id) is None
-                            else {
-                                "review_assignment_id": str(
-                                    assignment_id_for_fp or replay_assignment_id
-                                ),
-                            }
+                            if assignment_fp is None
+                            else {"review_assignment_id": assignment_fp}
                         ),
                     }
                 )
@@ -200,31 +187,28 @@ class RecordWorksheetLearnerHintAttestationService:
                         raise WorksheetLearnerHintAttestationInvalid(
                             "idempotent attestation reviewer mismatch"
                         )
-                    if (
-                        hint_bound
-                        and stored_attestation.review_assignment_id is not None
-                    ):
+                    if hint_bound:
                         assert self._assignment_bound is not None
+                        if stored_attestation.review_assignment_id is None:
+                            raise WorksheetLearnerHintAttestationInvalid(
+                                "idempotency replay requires assignment binding"
+                            )
                         head = uow.contents.get_head_for_update(content_id)
                         terminal = head is not None and not stewardship_allows_protected_replay(
                             head.stewardship_state
                         )
-                        fp_assignment = str(assignment_id_for_fp) if assignment_id_for_fp else None
-                        if fp_assignment is not None:
-                            validate_bound_assignment_replay(
-                                uow,
-                                self._assignment_bound,
-                                execution_tenant_id=execution_tenant_id,
-                                principal_id=principal_id,
-                                effective_actor_id=event_context.effective_actor_id,
-                                content_id=content_id,
-                                version_id=version_id,
-                                bound_assignment_id=stored_attestation.review_assignment_id,
-                                fingerprint_assignment_id=fp_assignment,
-                                terminal_outcome=terminal,
-                            )
-                    elif hint_bound and stored_attestation.review_assignment_id is None:
-                        pass
+                        validate_bound_assignment_replay(
+                            uow,
+                            self._assignment_bound,
+                            execution_tenant_id=execution_tenant_id,
+                            principal_id=principal_id,
+                            effective_actor_id=event_context.effective_actor_id,
+                            content_id=content_id,
+                            version_id=version_id,
+                            bound_assignment_id=stored_attestation.review_assignment_id,
+                            fingerprint_assignment_id=assignment_fp,
+                            terminal_outcome=terminal,
+                        )
                     return stored_attestation.attestation_id
 
                 head = uow.contents.get_head_for_update(content_id)
@@ -270,6 +254,42 @@ class RecordWorksheetLearnerHintAttestationService:
                 hinted_ids = hinted_question_ids(payload_body)
                 outcomes = outcomes_from_command(hinted_ids, per_question_outcomes)
                 assert_attestation_outcomes_against_qa(payload=payload_body, outcomes=outcomes)
+                effect_assignment_id = assignment_id_for_fp
+                if hint_bound:
+                    assert self._assignment_bound is not None
+                    active = require_assignment_authority_for_new_effect(
+                        uow,
+                        self._assignment_bound,
+                        execution_tenant_id=execution_tenant_id,
+                        principal_id=principal_id,
+                        effective_actor_id=event_context.effective_actor_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                    )
+                    effect_assignment_id = active.assignment_id
+                attested_at = (
+                    self._assignment_bound.clock()
+                    if hint_bound and self._assignment_bound is not None
+                    else (now if now is not None else datetime.now(UTC))
+                )
+                assignment_fp = fingerprint_assignment_id(
+                    assignment_id_for_fp=effect_assignment_id,
+                    replay_assignment_id=None,
+                )
+                fingerprint = fingerprint_material(
+                    {
+                        "content_id": str(content_id),
+                        "version_id": str(version_id),
+                        "expected_aggregate_revision": int(expected_aggregate_revision),
+                        "qa_policy_version": WORKSHEET_HINT_QA_POLICY_VERSION,
+                        "per_question_outcomes": list(per_question_outcomes),
+                        **(
+                            {}
+                            if assignment_fp is None
+                            else {"review_assignment_id": assignment_fp}
+                        ),
+                    }
+                )
                 digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
                 attestation_id = WorksheetLearnerHintAttestationId.generate()
                 stored = WorksheetLearnerHintVersionAttestationV1(
@@ -284,7 +304,7 @@ class RecordWorksheetLearnerHintAttestationService:
                     per_question_outcomes=outcomes,
                     attested_at=attested_at,
                     correlation_id=event_context.correlation_id,
-                    review_assignment_id=assignment_id_for_fp,
+                    review_assignment_id=effect_assignment_id,
                 )
                 uow.worksheet_hint_attestations.insert(stored)
                 insert_required_content_audit(

@@ -24,6 +24,7 @@ from aieos.domains.content.application.errors import (
     ReviewSubmitNotAllowed,
     ReviewVersionNotCurrent,
     WorkflowCoordinationFailed,
+    WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.models import (
     ReviewDecisionResult,
@@ -88,6 +89,7 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
     _MUTATION_DENIED_EXCEPTIONS,
     assert_approve_attestation_assignment_match,
     assignment_bound_deps_configured,
+    fingerprint_assignment_id,
     raise_assignment_unavailable,
     record_mutation_denial,
     require_assignment_authority_for_new_effect,
@@ -424,19 +426,11 @@ class ReviewCommandService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None,
     ) -> ReviewDecisionResult:
-        self._authorization.authorize(
-            tenant_id=execution_tenant_id,
-            principal_id=principal_id,
-            content_id=content_id,
-            version_id=version_id,
-            capability=CONTENT_REVIEW_DECIDE,
-        )
         code, text = _parse_review_text(
             reason_code=reason_code,
             comment=comment,
             require_comment=require_comment,
         )
-        decided_at = _now(now)
         scope = IdempotencyScope(
             tenant_id=execution_tenant_id,
             principal_id=principal_id,
@@ -444,6 +438,13 @@ class ReviewCommandService:
             key_sha256=hash_idempotency_key(idempotency_key),
         )
         try:
+            self._authorization.authorize(
+                tenant_id=execution_tenant_id,
+                principal_id=principal_id,
+                content_id=content_id,
+                version_id=version_id,
+                capability=CONTENT_REVIEW_DECIDE,
+            )
             with self._uow_factory(execution_tenant_id) as uow:
                 version_precheck = uow.versions.get(version_id)
                 hint_bound = (
@@ -453,25 +454,18 @@ class ReviewCommandService:
                 if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
                     raise_assignment_unavailable()
                 uow.idempotency.acquire_scope(scope)
+                uow.contents.get_head_for_update(content_id)
                 existing = uow.idempotency.get(scope)
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
-                if existing is None and hint_bound:
-                    assert self._assignment_bound is not None
-                    active = require_assignment_authority_for_new_effect(
-                        uow,
-                        self._assignment_bound,
-                        execution_tenant_id=execution_tenant_id,
-                        principal_id=principal_id,
-                        effective_actor_id=event_context.effective_actor_id,
-                        content_id=content_id,
-                        version_id=version_id,
-                    )
-                    assignment_id_for_fp = active.assignment_id
-                elif existing is not None and hint_bound:
+                if existing is not None and hint_bound:
                     prior = uow.reviews.get_for_version(content_id, version_id)
                     if prior is not None:
                         replay_assignment_id = prior.review_assignment_id
+                assignment_fp = fingerprint_assignment_id(
+                    assignment_id_for_fp=assignment_id_for_fp,
+                    replay_assignment_id=replay_assignment_id,
+                )
                 fingerprint = _review_fingerprint(
                     content_id=content_id,
                     version_id=version_id,
@@ -479,14 +473,20 @@ class ReviewCommandService:
                     reason_code=code,
                     comment=text,
                     include_comment=True,
-                    review_assignment_id=assignment_id_for_fp or replay_assignment_id,
+                    review_assignment_id=assignment_id_for_fp
+                    if assignment_id_for_fp
+                    else replay_assignment_id,
                 )
                 if existing is not None:
                     if existing.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused("idempotency key already bound")
                     version_row = _require_visible_version(uow, content_id, version_id)
-                    if hint_bound and replay_assignment_id is not None:
+                    if hint_bound:
                         assert self._assignment_bound is not None
+                        if replay_assignment_id is None:
+                            raise WorksheetLearnerHintAttestationInvalid(
+                                "idempotency replay requires assignment binding"
+                            )
                         head = uow.contents.get_head_for_update(content_id)
                         terminal = head is not None and not stewardship_allows_protected_replay(
                             head.stewardship_state
@@ -500,7 +500,7 @@ class ReviewCommandService:
                             content_id=content_id,
                             version_id=version_id,
                             bound_assignment_id=replay_assignment_id,
-                            fingerprint_assignment_id=str(replay_assignment_id),
+                            fingerprint_assignment_id=assignment_fp,
                             terminal_outcome=terminal,
                         )
                     if decision is ReviewDecisionCode.APPROVE:
@@ -513,6 +513,37 @@ class ReviewCommandService:
                         )
                     return self._replay_decision(uow, existing, frozen_state)
                 self._comment_policy.evaluate(text)
+                effect_assignment_id = assignment_id_for_fp
+                if hint_bound:
+                    assert self._assignment_bound is not None
+                    active = require_assignment_authority_for_new_effect(
+                        uow,
+                        self._assignment_bound,
+                        execution_tenant_id=execution_tenant_id,
+                        principal_id=principal_id,
+                        effective_actor_id=event_context.effective_actor_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                    )
+                    effect_assignment_id = active.assignment_id
+                    assignment_fp = fingerprint_assignment_id(
+                        assignment_id_for_fp=effect_assignment_id,
+                        replay_assignment_id=None,
+                    )
+                    fingerprint = _review_fingerprint(
+                        content_id=content_id,
+                        version_id=version_id,
+                        expected_aggregate_revision=expected_aggregate_revision,
+                        reason_code=code,
+                        comment=text,
+                        include_comment=True,
+                        review_assignment_id=effect_assignment_id,
+                    )
+                decided_at = (
+                    self._assignment_bound.clock()
+                    if hint_bound and self._assignment_bound is not None
+                    else _now(now)
+                )
                 stored, revision = self._decide_new(
                     uow,
                     execution_tenant_id,
@@ -526,7 +557,7 @@ class ReviewCommandService:
                     target_state=target_state,
                     event_context=event_context,
                     decided_at=decided_at,
-                    review_assignment_id=assignment_id_for_fp,
+                    review_assignment_id=effect_assignment_id,
                 )
                 insert_required_content_audit(
                     uow,

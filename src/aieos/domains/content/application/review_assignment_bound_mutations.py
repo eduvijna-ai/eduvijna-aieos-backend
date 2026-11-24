@@ -33,13 +33,6 @@ from aieos.domains.content.application.review_assignment_guard import (
     ReviewerUseMode,
     enforce_reviewer_use_guard,
 )
-from aieos.domains.content.application.review_assignment_state import (
-    materialize_assignment,
-    resolve_slot_active_assignment,
-)
-from aieos.domains.content.application.school_context_reviewer_eligibility import (
-    SchoolContextReviewerEligibility,
-)
 from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
@@ -149,10 +142,16 @@ def require_assignment_authority_for_new_effect(
     content_id: ContentId,
     version_id: ContentVersionId,
 ) -> ActiveReviewAssignment:
-    effect_at = deps.clock()
-    slot = uow.review_assignments.get_slot_for_update(content_id, version_id)
-    if slot is None:
+    head = uow.contents.get_head_for_update(content_id)
+    if head is None or head.tenant_id != execution_tenant_id:
+        raise ReviewAssignmentNotAllowed("content head missing")
+    if uow.review_assignments.get_slot_for_update(content_id, version_id) is None:
         raise ReviewAssignmentConflict("assignment slot missing")
+    effect_at = deps.clock()
+    from aieos.domains.content.application.review_assignment_state import (
+        resolve_slot_active_assignment,
+    )
+
     active = resolve_slot_active_assignment(
         uow.review_assignments,
         tenant_id=execution_tenant_id,
@@ -197,36 +196,24 @@ def validate_bound_assignment_replay(
         raise WorksheetLearnerHintAttestationInvalid(
             "idempotency replay assignment binding mismatch"
         )
-    if terminal_outcome:
-        materialize_assignment(
-            uow.review_assignments,
-            tenant_id=execution_tenant_id,
-            assignment_id=bound_assignment_id,
-            content_id=content_id,
-            version_id=version_id,
-            now=deps.clock(),
-            require_slot_binding=False,
-        )
-        if effective_actor_id != principal_id:
-            raise ReviewAssignmentForbidden(
-                "effective actor must align with reviewer principal"
-            )
-        deps.principal_classification.require_current_human_principal(principal_id)
-        assigned = uow.review_assignments.get_assigned(bound_assignment_id)
-        if assigned is None:
-            raise PersistenceInvariantViolation("replay assignment issuance missing")
-        if assigned.reviewer_principal_id != principal_id:
-            raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
-        return
-    require_assignment_authority_for_new_effect(
-        uow,
-        deps,
+    uow.contents.get_head_for_update(content_id)
+    if uow.review_assignments.get_slot_for_update(content_id, version_id) is None:
+        raise ReviewAssignmentConflict("assignment slot missing")
+    mode = (
+        ReviewerUseMode.TERMINAL_RECEIPT
+        if terminal_outcome
+        else ReviewerUseMode.PROTECTED_EFFECT
+    )
+    guard_ctx = ReviewerUseGuardContext(
         execution_tenant_id=execution_tenant_id,
         principal_id=principal_id,
         effective_actor_id=effective_actor_id,
         content_id=content_id,
         version_id=version_id,
+        assignment_id=bound_assignment_id,
+        mode=mode,
     )
+    enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))
 
 
 def assert_approve_attestation_assignment_match(
@@ -251,3 +238,12 @@ def raise_assignment_unavailable() -> None:
     raise ReviewAssignmentNotAllowed(
         "assignment-bound mutation authority is unavailable"
     )
+
+
+def fingerprint_assignment_id(
+    *,
+    assignment_id_for_fp: ReviewAssignmentId | None,
+    replay_assignment_id: ReviewAssignmentId | None,
+) -> str | None:
+    chosen = assignment_id_for_fp or replay_assignment_id
+    return None if chosen is None else str(chosen)

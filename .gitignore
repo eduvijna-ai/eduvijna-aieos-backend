@@ -92,4 +92,3 @@ agent-tools/
 
 # TOS-DEV01 / development reference evidence (non-secret local reports)
 tools/development/*.local.json
-*.pyc

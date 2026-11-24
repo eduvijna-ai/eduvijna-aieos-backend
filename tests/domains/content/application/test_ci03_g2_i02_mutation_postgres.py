@@ -10,7 +10,11 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
-from aieos.domains.content.application.errors import ReviewAssignmentConflict
+from aieos.domains.content.application.errors import (
+    ReviewAssignmentConflict,
+    ReviewAssignmentForbidden,
+    WorksheetLearnerHintAttestationInvalid,
+)
 from aieos.domains.content.application.ports import (
     CONTENT_REVIEW_ASSIGN,
     CONTENT_REVIEW_DECIDE,
@@ -97,7 +101,7 @@ class TestCi03G2I02AssignmentBoundMutations:
                 {"cid": content_id.value},
             ).scalar_one()
         attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
-        with pytest.raises(ReviewAssignmentConflict, match="no active assignment"):
+        with pytest.raises(ReviewAssignmentConflict, match="assignment slot missing"):
             attest.record(
                 tenant_id,
                 reviewer_id,
@@ -228,6 +232,10 @@ class TestCi03G2I02AssignmentBoundMutations:
             now=_NOW,
         )
         with ci03_g2_runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
             revision = conn.execute(
                 text(
                     "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
@@ -235,7 +243,7 @@ class TestCi03G2I02AssignmentBoundMutations:
                 {"cid": content_id.value},
             ).scalar_one()
         review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
-        with pytest.raises(ReviewAssignmentConflict):
+        with pytest.raises(ReviewAssignmentConflict, match="assignment slot missing"):
             review.reject(
                 tenant_id,
                 reviewer_id,
@@ -249,3 +257,165 @@ class TestCi03G2I02AssignmentBoundMutations:
                 audit_provenance=api_mutation_audit_provenance(reviewer_id),
                 now=_NOW,
             )
+
+    def test_attest_idempotent_replay_requires_assignment_in_fingerprint(
+        self,
+        ci03_g2_bootstrap_engine: Engine,
+        ci03_g2_runtime_engine: Engine,
+    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        other_reviewer = uuid.uuid7()
+        _seed_reviewers(ci03_g2_bootstrap_engine, tenant_id, owner_id, reviewer_id)
+        seed_active_authority(
+            ci03_g2_bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=other_reviewer,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
+        provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
+        provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
+        content_id, version_id = seed_worksheet_in_review_governed(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            class_ref=CLASS_REF,
+            now=_NOW,
+        )
+        issue.issue(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            version_id=version_id,
+            reviewer_principal_id=reviewer_id,
+            idempotency_key=f"replay-{uuid.uuid7()}",
+            event_context=_event(owner_id),
+            audit_provenance=api_mutation_audit_provenance(owner_id),
+        )
+        with ci03_g2_runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            revision = conn.execute(
+                text(
+                    "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
+                ),
+                {"cid": content_id.value},
+            ).scalar_one()
+        attest = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        idem = f"idem-replay-{uuid.uuid7()}"
+        outcomes = _positive_outcomes(
+            _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+        )
+        attest.record(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=AggregateRevision(int(revision)),
+            per_question_outcomes=outcomes,
+            idempotency_key=idem,
+            event_context=_event(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
+        )
+        attest.record(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=AggregateRevision(int(revision)),
+            per_question_outcomes=outcomes,
+            idempotency_key=idem,
+            event_context=_event(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
+        )
+        wrong = integrated_attest_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        with pytest.raises(WorksheetLearnerHintAttestationInvalid, match="reviewer mismatch"):
+            wrong.record(
+                tenant_id,
+                other_reviewer,
+                content_id=content_id,
+                version_id=version_id,
+                expected_aggregate_revision=AggregateRevision(int(revision)),
+                per_question_outcomes=outcomes,
+                idempotency_key=idem,
+                event_context=_event(other_reviewer),
+                audit_provenance=api_mutation_audit_provenance(other_reviewer),
+                now=_NOW,
+            )
+
+    def test_reject_wrong_reviewer_records_mutation_denial(
+        self,
+        ci03_g2_bootstrap_engine: Engine,
+        ci03_g2_runtime_engine: Engine,
+    ) -> None:
+        provision_runtime_grants(ci03_g2_bootstrap_engine)
+        tenant_id = uuid.uuid7()
+        owner_id = uuid.uuid7()
+        reviewer_id = uuid.uuid7()
+        wrong_id = uuid.uuid7()
+        _seed_reviewers(ci03_g2_bootstrap_engine, tenant_id, owner_id, reviewer_id)
+        seed_active_authority(
+            ci03_g2_bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=wrong_id,
+            principal_kind=PrincipalKind.HUMAN,
+            capabilities=(CONTENT_REVIEW_DECIDE,),
+        )
+        issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
+        provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
+        provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
+        provider.set_reviewer_class_eligibility(wrong_id, (CLASS_REF,))
+        content_id, version_id = seed_worksheet_in_review_governed(
+            ci03_g2_bootstrap_engine,
+            ci03_g2_runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            class_ref=CLASS_REF,
+            now=_NOW,
+        )
+        issue.issue(
+            tenant_id,
+            owner_id,
+            content_id=content_id,
+            version_id=version_id,
+            reviewer_principal_id=reviewer_id,
+            idempotency_key=f"wrong-rej-{uuid.uuid7()}",
+            event_context=_event(owner_id),
+            audit_provenance=api_mutation_audit_provenance(owner_id),
+        )
+        with ci03_g2_runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            revision = conn.execute(
+                text(
+                    "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
+                ),
+                {"cid": content_id.value},
+            ).scalar_one()
+        review = integrated_review_service(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
+        with pytest.raises(ReviewAssignmentForbidden):
+            review.reject(
+                tenant_id,
+                wrong_id,
+                content_id=content_id,
+                version_id=version_id,
+                expected_aggregate_revision=AggregateRevision(int(revision)),
+                reason_code=None,
+                comment=None,
+                idempotency_key=f"rej-wrong-{uuid.uuid7()}",
+                event_context=_event(wrong_id),
+                audit_provenance=api_mutation_audit_provenance(wrong_id),
+                now=_NOW,
+            )
+        assert _denial_count(ci03_g2_runtime_engine, tenant_id, CONTENT_REVIEW_MUTATION_DENIED) >= 1
