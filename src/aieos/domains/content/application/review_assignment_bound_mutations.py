@@ -167,7 +167,7 @@ def require_assignment_authority_for_new_effect(
         effective_actor_id=effective_actor_id,
         content_id=content_id,
         version_id=version_id,
-        assignment_id=ReviewAssignmentId(pointer),
+        assignment_id=pointer,
         mode=ReviewerUseMode.PROTECTED_EFFECT,
     )
     return enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))

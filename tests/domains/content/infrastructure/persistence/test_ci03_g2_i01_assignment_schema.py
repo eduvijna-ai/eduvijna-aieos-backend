@@ -367,7 +367,7 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
                         ) VALUES (
                             :att_id, :tid, :cid, :vid,
                             :digest, 'worksheet_hint_qa_v1', :owner, :wrong_rev,
-                            '[]'::jsonb, :now, :corr, :aid
+                            CAST(:outcomes AS jsonb), :now, :corr, :aid
                         )
                         """
                     ),
@@ -382,6 +382,15 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
                         "now": _NOW,
                         "corr": uuid.uuid7(),
                         "aid": assignment_id,
+                        "outcomes": json.dumps(
+                            [
+                                {
+                                    "question_id": "q-1",
+                                    "hard_block_clear": "false",
+                                    "human_review_pass": True,
+                                }
+                            ]
+                        ),
                     },
                 )
         assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]

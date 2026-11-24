@@ -163,6 +163,10 @@ def enforce_reviewer_use_guard(
         if bound.assignment_id != ctx.assignment_id:
             raise ReviewAssignmentConflict("assignment identity mismatch")
         if bound.revoked:
+            if terminal_mode:
+                raise ReviewAssignmentNotAllowed(
+                    "assignment is not eligible for terminal receipt"
+                )
             raise ReviewAssignmentConflict("assignment is revoked or expired")
         if bound.reviewer_principal_id != ctx.principal_id:
             raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
