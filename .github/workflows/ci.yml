@@ -41,8 +41,6 @@ jobs:
   ci03-g1-pg18-evidence:
     name: ci03-g1-pg18-evidence
     if: github.event_name == 'pull_request'
-    needs:
-      - quality-gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR head

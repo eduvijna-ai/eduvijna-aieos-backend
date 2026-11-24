@@ -22,8 +22,10 @@ from aieos.platform.ai.fake import FakeStructuredModelGateway
 from aieos.platform.ai.infrastructure.persistence.uow import (
     SqlAlchemyAIUnitOfWorkFactory,
 )
+from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.domains.teaching.helpers_dev03 import build_client, create_work, headers
 from tests.domains.teaching.worksheet_fixtures import valid_worksheet_model
+from tests.platform.security.authorization.helpers import seed_active_authority
 
 pytestmark = [pytest.mark.tos_dev03, pytest.mark.tos_dev03r2]
 
@@ -33,6 +35,17 @@ LEASE_SECONDS = 120
 
 def _etag(response) -> str:
     return response.headers["ETag"]
+
+
+def _seed_owner_classification(
+    bootstrap_engine: Engine, *, tenant_id: uuid.UUID, principal_id: uuid.UUID
+) -> None:
+    seed_active_authority(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        principal_kind=PrincipalKind.HUMAN,
+    )
 
 
 def _create_and_etag(client, tenant_id: uuid.UUID, *, key: str) -> tuple[str, str]:
@@ -52,10 +65,13 @@ def _create_and_etag(client, tenant_id: uuid.UUID, *, key: str) -> tuple[str, st
 
 class TestTosDev03R2FalseStaleAdversarial:
     def test_heartbeat_extends_lease_before_competing_request(
-        self, runtime_engine: Engine
+        self, runtime_engine: Engine, bootstrap_engine: Engine
     ) -> None:
         tenant_id = uuid.uuid7()
         principal_id = uuid.uuid7()
+        _seed_owner_classification(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=principal_id
+        )
         clock = ControllableClock(T0)
         materialize_started = threading.Event()
         materialize_release = threading.Event()
@@ -160,10 +176,16 @@ class TestTosDev03R2FalseStaleAdversarial:
 
 class TestTosDev03R2FailureTimestamp:
     def test_materialization_failure_uses_monotonic_timestamps(
-        self, runtime_engine: Engine, monkeypatch: pytest.MonkeyPatch
+        self,
+        runtime_engine: Engine,
+        bootstrap_engine: Engine,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         tenant_id = uuid.uuid7()
         principal_id = uuid.uuid7()
+        _seed_owner_classification(
+            bootstrap_engine, tenant_id=tenant_id, principal_id=principal_id
+        )
         clock = ControllableClock(T0)
         gateway = FakeStructuredModelGateway(
             result_factory=lambda _r: valid_worksheet_model(),

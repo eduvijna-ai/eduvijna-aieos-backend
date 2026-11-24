@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aieos.domains.content.api.v1.routes import content_version_get
+from tests.domains.content.api.ci03_g1_provenance import collect_matrix_provenance
 from tests.domains.content.api.helpers_ci03_g1_i01 import (
     GET_VERSION,
     assert_no_private_fields_recursive,
@@ -21,6 +22,7 @@ from tests.domains.content.api.helpers_ci03_g1_i01 import (
     mint_token,
     normalized_problem_body,
     owner_worksheet_fixtures,
+    private_denial_receipt_fields,
     private_field_names,
     private_fields_recursive,
     problem_code,
@@ -46,10 +48,15 @@ def _rsa():
     return rsa_material()
 
 
-@pytest.fixture(autouse=True)
-def _ci03_pg_receipt_meta(postgres18) -> None:
-    os.environ["CI03_G1_PG_SERVER_VERSION"] = postgres18["server_version"]
-    os.environ["CI03_G1_PG_RUNTIME_USER"] = postgres18["runtime_user"]
+@pytest.fixture(scope="module", autouse=True)
+def _ci03_matrix_provenance(runtime_engine) -> None:
+    import json
+
+    provenance = collect_matrix_provenance(runtime_engine)
+    os.environ["CI03_G1_PROVENANCE_JSON"] = json.dumps(provenance, sort_keys=True)
+    for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
+        if val := os.environ.get(key):
+            os.environ[key.lower()] = val
 
 
 class TestCi03G1Pg18SharedMatrix:
@@ -161,7 +168,7 @@ class TestCi03G1Pg18SharedMatrix:
                 assert response.status_code == 404
                 assert problem_code(response) == "content_version_not_found"
                 assert_no_private_fields_recursive(response.json())
-                if fixture_label == "student" and schema == "worksheet@1":
+                if fixture_label in {"student", "reviewer_decide"}:
                     missing = GET_VERSION(actor, content_id, str(uuid.uuid7()))
                     assert missing.status_code == 404
                     assert normalized_problem_body(response) == normalized_problem_body(
@@ -173,7 +180,7 @@ class TestCi03G1Pg18SharedMatrix:
                     schema=schema,
                     status=404,
                     problem_code=problem_code(response),
-                    private_field_names=[],
+                    **private_denial_receipt_fields(response.json()),
                 )
 
     def test_workload_owner_classification_denied(
@@ -222,6 +229,7 @@ class TestCi03G1Pg18SharedMatrix:
                 "candidate_workload_owner",
                 status=404,
                 problem_code=problem_code(response),
+                **private_denial_receipt_fields(response.json()),
             )
 
     def test_suspended_owner_auth_boundary(
@@ -254,6 +262,7 @@ class TestCi03G1Pg18SharedMatrix:
             "suspended_owner",
             status=403,
             problem_code=problem_code(response),
+            **private_denial_receipt_fields(response.json()),
         )
 
     def test_revoked_membership_same_resource(
@@ -280,6 +289,7 @@ class TestCi03G1Pg18SharedMatrix:
             "revoked_membership_same_resource",
             status=403,
             problem_code=problem_code(response),
+            **private_denial_receipt_fields(response.json()),
         )
 
     def test_wrong_content_id_correlation(
@@ -313,6 +323,7 @@ class TestCi03G1Pg18SharedMatrix:
             "wrong_content_id_correlation",
             status=404,
             problem_code=problem_code(response),
+            **private_denial_receipt_fields(response.json()),
         )
 
     def test_missing_version_same_envelope(
@@ -338,6 +349,7 @@ class TestCi03G1Pg18SharedMatrix:
             "missing_version",
             status=404,
             problem_code=problem_code(missing),
+            **private_denial_receipt_fields(missing.json()),
         )
 
     def test_trust_boundaries(
@@ -369,8 +381,18 @@ class TestCi03G1Pg18SharedMatrix:
         )
         assert forged.status_code == 403
         assert problem_code(forged) == "forbidden"
-        emit_receipt("anonymous", status=401, problem_code=problem_code(unauth))
-        emit_receipt("forged_tenant", status=403, problem_code=problem_code(forged))
+        emit_receipt(
+            "anonymous",
+            status=401,
+            problem_code=problem_code(unauth),
+            **private_denial_receipt_fields(unauth.json()),
+        )
+        emit_receipt(
+            "forged_tenant",
+            status=403,
+            problem_code=problem_code(forged),
+            **private_denial_receipt_fields(forged.json()),
+        )
 
     def test_owner_library_and_review_queue(
         self, runtime_engine, bootstrap_engine, postgres18, _rsa
@@ -448,11 +470,13 @@ class TestCi03G1Pg18SharedMatrix:
             "reviewer_review_queue_detail_denied",
             status=reviewer_queue.status_code,
             problem_code=problem_code(reviewer_queue),
+            **private_denial_receipt_fields(reviewer_queue.json()),
         )
         emit_receipt(
             "non_owner_library_denied",
             status=student_library.status_code,
             problem_code=problem_code(student_library),
+            **private_denial_receipt_fields(student_library.json()),
         )
 
     def test_nonworksheet_regression(
@@ -538,6 +562,7 @@ class TestCi03G1Pg18SharedMatrix:
             "cross_tenant",
             status=404,
             problem_code=problem_code(response),
+            **private_denial_receipt_fields(response.json()),
         )
 
     def test_artifact_view_operation_still_registered(self) -> None:

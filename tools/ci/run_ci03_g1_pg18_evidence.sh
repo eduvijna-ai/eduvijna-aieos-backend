@@ -10,11 +10,13 @@ WORKTREE="${RECEIPTS_ROOT}/base-worktree"
 MATRIX_REL="tests/domains/content/api/test_ci03_g1_pg18_matrix.py"
 HELPERS_REL="tests/domains/content/api/helpers_ci03_g1_i01.py"
 MANIFEST_REL="tests/domains/content/api/ci03_g1_receipt_manifest.py"
+PROVENANCE_REL="tests/domains/content/api/ci03_g1_provenance.py"
 VERIFY_REL="tools/ci/verify_ci03_g1_receipts.py"
 COPIED_TESTS=(
   "${HELPERS_REL}"
   "${MATRIX_REL}"
   "${MANIFEST_REL}"
+  "${PROVENANCE_REL}"
 )
 
 ARTIFACT_DIR="${GITHUB_WORKSPACE:-${ROOT}}/ci03-g1-evidence"
@@ -44,6 +46,8 @@ mkdir -p "${ARTIFACT_DIR}"
 run_candidate() {
   export CI03_G1_BASELINE_MODE=0
   export CI03_G1_SOURCE_SHA="${HEAD_SHA}"
+  export github_run_id="${GITHUB_RUN_ID:-local}"
+  export github_run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
   export CI03_G1_RECEIPTS_PATH="${RECEIPTS_ROOT}/candidate.jsonl"
   : > "${CI03_G1_RECEIPTS_PATH}"
   uv run pytest -q "${MATRIX_REL}" --tb=short
@@ -60,6 +64,8 @@ run_baseline() {
   uv sync --locked --group dev
   export CI03_G1_BASELINE_MODE=1
   export CI03_G1_SOURCE_SHA="${BASE_SHA}"
+  export github_run_id="${GITHUB_RUN_ID:-local}"
+  export github_run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
   export CI03_G1_RECEIPTS_PATH="${RECEIPTS_ROOT}/baseline.jsonl"
   : > "${CI03_G1_RECEIPTS_PATH}"
   uv run pytest -q "${MATRIX_REL}" --tb=short

@@ -399,17 +399,22 @@ def emit_receipt(case: str, **fields: object) -> None:
     path = os.environ.get("CI03_G1_RECEIPTS_PATH")
     if not path:
         return
-    pg_meta: dict[str, object] = {}
-    if sv := os.environ.get("CI03_G1_PG_SERVER_VERSION"):
-        pg_meta["db_server_version"] = sv
-        pg_meta["pg_major"] = sv.split(".", 1)[0]
-    if role := os.environ.get("CI03_G1_PG_RUNTIME_USER"):
-        pg_meta["runtime_role"] = role
+    provenance: dict[str, object] = {}
+    blob = os.environ.get("CI03_G1_PROVENANCE_JSON")
+    if blob:
+        loaded = json.loads(blob)
+        if isinstance(loaded, dict):
+            provenance = loaded
+    run_meta: dict[str, object] = {}
+    for key in ("github_run_id", "github_run_attempt"):
+        if val := os.environ.get(key):
+            run_meta[key] = val
     record: dict[str, object] = {
         "case": case,
         "source_sha": source_git_sha(),
         "baseline_mode": baseline_mode(),
-        **pg_meta,
+        **provenance,
+        **run_meta,
         **fields,
     }
     with open(path, "a", encoding="utf-8") as handle:
@@ -431,6 +436,14 @@ def private_fields_recursive(value: object) -> set[str]:
 
 def assert_no_private_fields_recursive(body: object) -> None:
     assert not private_fields_recursive(body)
+
+
+def private_denial_receipt_fields(body: object) -> dict[str, list[str]]:
+    observed = sorted(private_fields_recursive(body))
+    return {
+        "private_fields_observed": observed,
+        "private_field_names": [],
+    }
 
 
 def set_content_owner(

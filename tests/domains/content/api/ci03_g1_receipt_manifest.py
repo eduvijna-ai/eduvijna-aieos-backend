@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from tools.release.common import EXPECTED_MIGRATION_HEAD, EXPECTED_OPENAPI_SHA256
+
 Mode = Literal["baseline", "candidate"]
 
 NON_OWNER_FIXTURES = (
@@ -76,7 +78,25 @@ class ReceiptExpectation:
     private_field_names: frozenset[str] | None = None
     private_field_names_superset: frozenset[str] | None = None
     private_field_names_empty: bool = False
+    require_private_fields_observed_empty: bool = False
     source_sha: str | None = None
+
+
+CASES_REQUIRING_OBSERVED_EMPTY = frozenset(
+    {
+        "candidate_workload_owner",
+        "suspended_owner",
+        "revoked_membership_same_resource",
+        "wrong_content_id_correlation",
+        "missing_version",
+        "anonymous",
+        "forged_tenant",
+        "cross_tenant",
+        "reviewer_review_queue_detail_denied",
+        "non_owner_library_denied",
+    }
+    | {f"candidate_non_owner_{f}_{s}" for f in NON_OWNER_FIXTURES for s in WORKSHEET_SCHEMAS}
+)
 
 
 def _owner_positive(schema: str, mode: Mode) -> ReceiptExpectation:
@@ -216,6 +236,17 @@ def _check_record(record: dict[str, Any], *, mode: Mode, source_sha: str) -> lis
         if no_store != exp.no_store:
             errors.append(f"{case}: no_store expected {exp.no_store!r} got {no_store!r}")
     names = _field_names(record)
+    if case in CASES_REQUIRING_OBSERVED_EMPTY or exp.private_field_names_empty:
+        if "private_fields_observed" not in record:
+            errors.append(f"{case}: missing private_fields_observed")
+        else:
+            observed = record.get("private_fields_observed")
+            if not isinstance(observed, list):
+                errors.append(f"{case}: private_fields_observed must be a list")
+            elif observed:
+                errors.append(
+                    f"{case}: private_fields_observed must be empty, got {observed}"
+                )
     if exp.private_field_names_empty and names:
         errors.append(f"{case}: expected no private field names, got {sorted(names)}")
     if exp.private_field_names is not None and names != set(exp.private_field_names):
@@ -224,10 +255,31 @@ def _check_record(record: dict[str, Any], *, mode: Mode, source_sha: str) -> lis
         errors.append(
             f"{case}: missing private fields {sorted(exp.private_field_names_superset - names)}"
         )
-    if not record.get("db_server_version", "").startswith("18."):
+    if not str(record.get("db_server_version", "")).startswith("18."):
         errors.append(f"{case}: missing or invalid db_server_version")
-    if not record.get("runtime_role"):
-        errors.append(f"{case}: missing runtime_role")
+    runtime_user = record.get("runtime_current_user") or record.get("runtime_role")
+    if not runtime_user:
+        errors.append(f"{case}: missing runtime_current_user")
+    if record.get("runtime_rolsuper") is not False:
+        errors.append(f"{case}: runtime_rolsuper must be false")
+    if record.get("runtime_rolbypassrls") is not False:
+        errors.append(f"{case}: runtime_rolbypassrls must be false")
+    if str(record.get("row_security_active", "")).lower() not in {"on", "true"}:
+        errors.append(f"{case}: row_security_active must be on")
+    if record.get("content_contents_rls_enabled") is not True:
+        errors.append(f"{case}: content.contents RLS must be enabled")
+    if record.get("content_versions_rls_enabled") is not True:
+        errors.append(f"{case}: content.content_versions RLS must be enabled")
+    if record.get("runtime_security_write_denied") is not True:
+        errors.append(f"{case}: runtime_security_write_denied must be true")
+    if record.get("alembic_head") != EXPECTED_MIGRATION_HEAD:
+        errors.append(f"{case}: alembic_head pin mismatch")
+    if record.get("openapi_sha256") != EXPECTED_OPENAPI_SHA256:
+        errors.append(f"{case}: openapi_sha256 pin mismatch")
+    if record.get("git_head_sha") and record.get("git_head_sha") != source_sha:
+        errors.append(f"{case}: git_head_sha must match source_sha")
+    if not record.get("application_module"):
+        errors.append(f"{case}: missing application_module path")
     return errors
 
 
