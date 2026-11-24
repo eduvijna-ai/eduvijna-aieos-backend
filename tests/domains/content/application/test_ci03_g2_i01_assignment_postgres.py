@@ -10,7 +10,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from aieos.development.coherent_school_context import development_coherent_school_context_provider
+from aieos.development.coherent_school_context import (
+    CLASS_REF_5A,
+    development_coherent_school_context_provider,
+)
 from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
 from aieos.domains.teaching.application.school_context import (
     SchoolContextClassAuthorityService,
@@ -71,7 +74,7 @@ from tests.platform.security.authorization.helpers import seed_active_authority
 
 pytestmark = pytest.mark.ci03_g2_i01
 
-CLASS_REF = "class-5a-ci03-g2"
+CLASS_REF = CLASS_REF_5A
 _NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
 
