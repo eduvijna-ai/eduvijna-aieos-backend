@@ -192,6 +192,8 @@ class TestCi03G2I02AssignmentBoundMutations:
             content_id=content_id,
             version_id=version_id,
             expected_aggregate_revision=AggregateRevision(int(revision)),
+            reason_code=None,
+            comment=None,
             idempotency_key=f"bind-approve-{uuid.uuid7()}",
             event_context=_event(reviewer_id),
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
@@ -328,7 +330,7 @@ class TestCi03G2I02AssignmentBoundMutations:
         outcomes = _positive_outcomes(
             _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
         )
-        attest.record(
+        first_id = attest.record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -340,7 +342,7 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        attest.record(
+        replay_id = attest.record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -352,13 +354,43 @@ class TestCi03G2I02AssignmentBoundMutations:
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
+        assert replay_id == first_id
+        with ci03_g2_runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            attest_count = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE content_id = :cid AND version_id = :vid
+                    """
+                ),
+                {"cid": content_id.value, "vid": version_id.value},
+            ).scalar_one()
+            audit_count = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND action = 'content.worksheet_hint.attest'
+                    """
+                ),
+                {"tid": tenant_id},
+            ).scalar_one()
+        assert int(attest_count) == 1
+        attest_before = int(attest_count)
+        audit_before = int(audit_count)
         wrong = integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
             clock=lambda: _NOW,
             school_context_provider=provider,
         )
-        with pytest.raises(WorksheetLearnerHintAttestationInvalid, match="reviewer mismatch"):
+        with pytest.raises(
+            WorksheetLearnerHintAttestationInvalid,
+            match="already exists for this ContentVersion",
+        ):
             wrong.record(
                 tenant_id,
                 other_reviewer,
@@ -371,6 +403,31 @@ class TestCi03G2I02AssignmentBoundMutations:
                 audit_provenance=api_mutation_audit_provenance(other_reviewer),
                 now=_NOW,
             )
+        with ci03_g2_runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            attest_after = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE content_id = :cid AND version_id = :vid
+                    """
+                ),
+                {"cid": content_id.value, "vid": version_id.value},
+            ).scalar_one()
+            audit_after = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND action = 'content.worksheet_hint.attest'
+                    """
+                ),
+                {"tid": tenant_id},
+            ).scalar_one()
+        assert int(attest_after) == attest_before
+        assert int(audit_after) == audit_before
 
     def test_reject_wrong_reviewer_records_mutation_denial(
         self,

@@ -335,6 +335,12 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
     from datetime import timedelta
     from sqlalchemy.exc import IntegrityError
 
+    from aieos.domains.education.worksheet_hint_digest import (
+        worksheet_hint_attestation_digest_from_version_payload,
+    )
+    from aieos.domains.content.infrastructure.persistence.uow import (
+        SqlAlchemyContentUnitOfWorkFactory,
+    )
     from tests.domains.education.test_aieos_v1_hint_t2 import (
         _hinted_ids_from_version,
         _positive_outcomes,
@@ -402,6 +408,12 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
         event_context=ctx,
         audit_provenance=api_mutation_audit_provenance(owner_id),
     )
+    with SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine)(tenant_id) as uow:
+        version = uow.versions.get(version_id)
+        assert version is not None
+        payload_body = dict(version.payload.body)
+        author_id = version.created_by_principal_id
+        digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
     question_ids = _hinted_ids_from_version(
         ci03_g2_runtime_engine, tenant_id, version_id
     )
@@ -411,9 +423,9 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
         "tid": tenant_id,
         "cid": content_id.value,
         "vid": version_id.value,
-        "digest": "a" * 64,
+        "digest": digest,
         "qa": WORKSHEET_HINT_QA_POLICY_VERSION,
-        "owner": owner_id,
+        "owner": author_id,
         "reviewer": reviewer_id,
         "now": _NOW,
         "corr": uuid.uuid7(),
@@ -440,8 +452,19 @@ def test_bound_attestation_fk_requires_matching_reviewer_principal(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
             )
-            with conn.begin_nested():
-                conn.execute(fk_sql, att_row)
+            positive_sp = conn.begin_nested()
+            conn.execute(fk_sql, att_row)
+            positive_sp.rollback()
+            remaining = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE tenant_id = :tid AND version_id = :vid
+                    """
+                ),
+                {"tid": tenant_id, "vid": version_id.value},
+            ).scalar_one()
+            assert int(remaining) == 0
             with pytest.raises(IntegrityError) as exc_info:
                 with conn.begin_nested():
                     conn.execute(
