@@ -206,7 +206,7 @@ def _invoke_decision(
         uow_factory=uow_factory,
     )
     kwargs = dict(
-        tenant_id=scenario.tenant_id,
+        execution_tenant_id=scenario.tenant_id,
         principal_id=scenario.reviewer_id,
         content_id=scenario.content_id,
         version_id=scenario.version_id,
@@ -658,7 +658,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                 issuer_class_authority=slow,
             )
             kwargs = dict(
-                tenant_id=scenario.tenant_id,
+                execution_tenant_id=scenario.tenant_id,
                 principal_id=scenario.reviewer_id,
                 content_id=scenario.content_id,
                 version_id=scenario.version_id,
