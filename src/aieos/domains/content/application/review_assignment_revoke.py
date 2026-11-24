@@ -15,6 +15,7 @@ from aieos.domains.content.application.audit import (
 from aieos.domains.content.application.errors import (
     ContentApplicationError,
     IdempotencyKeyReused,
+    PersistenceInvariantViolation,
     ReviewAssignmentForbidden,
     ReviewAssignmentNotAllowed,
     ReviewAssignmentNotFound,
@@ -130,17 +131,6 @@ class RevokeReviewAssignmentService:
                 uow.idempotency.acquire_scope(scope)
                 stored = uow.idempotency.get(scope)
                 uow.contents.get_head_for_update(content_id)
-                validate_revoke_issuer_locked(
-                    uow,
-                    execution_tenant_id=execution_tenant_id,
-                    issuer_principal_id=issuer_principal_id,
-                    content_id=content_id,
-                    version_id=version_id,
-                    assign_authorization=self._assign_authorization,
-                    review_authorization=self._review_authorization,
-                    principal_classification=self._principal_classification,
-                    issuer_class_authority=self._issuer_class_authority,
-                )
                 assigned = uow.review_assignments.get_assigned(assignment_id)
                 if (
                     assigned is None
@@ -160,7 +150,6 @@ class RevokeReviewAssignmentService:
                     version_id=version_id,
                     now=slot_now,
                 )
-                effective_now = self._clock()
                 if stored is not None:
                     if stored.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused(
@@ -170,7 +159,7 @@ class RevokeReviewAssignmentService:
                         raise IdempotencyKeyReused(
                             "idempotency key bound to different assignment"
                         )
-                    validate_revoke_issuer_locked(
+                    class_ref = validate_revoke_issuer_locked(
                         uow,
                         execution_tenant_id=execution_tenant_id,
                         issuer_principal_id=issuer_principal_id,
@@ -181,8 +170,33 @@ class RevokeReviewAssignmentService:
                         principal_classification=self._principal_classification,
                         issuer_class_authority=self._issuer_class_authority,
                     )
+                    if assigned.class_ref != class_ref:
+                        raise ReviewAssignmentForbidden(
+                            "class_ref does not match governed provenance"
+                        )
+                    effective_now = self._clock()
+                    if effective_now < slot_now:
+                        raise ReviewAssignmentNotAllowed("invalid revoke effect time")
                     return assignment_id
                 if uow.review_assignments.has_revoked(assignment_id):
+                    class_ref = validate_revoke_issuer_locked(
+                        uow,
+                        execution_tenant_id=execution_tenant_id,
+                        issuer_principal_id=issuer_principal_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                        assign_authorization=self._assign_authorization,
+                        review_authorization=self._review_authorization,
+                        principal_classification=self._principal_classification,
+                        issuer_class_authority=self._issuer_class_authority,
+                    )
+                    if assigned.class_ref != class_ref:
+                        raise ReviewAssignmentForbidden(
+                            "class_ref does not match governed provenance"
+                        )
+                    effective_now = self._clock()
+                    if effective_now < slot_now:
+                        raise ReviewAssignmentNotAllowed("invalid revoke effect time")
                     head = uow.contents.get_head_for_update(content_id)
                     if head is None:
                         raise ReviewAssignmentNotAllowed("content head missing")
@@ -204,6 +218,24 @@ class RevokeReviewAssignmentService:
                     )
                     uow.commit()
                     return assignment_id
+                class_ref = validate_revoke_issuer_locked(
+                    uow,
+                    execution_tenant_id=execution_tenant_id,
+                    issuer_principal_id=issuer_principal_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    assign_authorization=self._assign_authorization,
+                    review_authorization=self._review_authorization,
+                    principal_classification=self._principal_classification,
+                    issuer_class_authority=self._issuer_class_authority,
+                )
+                if assigned.class_ref != class_ref:
+                    raise ReviewAssignmentForbidden(
+                        "class_ref does not match governed provenance"
+                    )
+                effective_now = self._clock()
+                if effective_now < slot_now:
+                    raise ReviewAssignmentNotAllowed("invalid revoke effect time")
                 slot = uow.review_assignments.get_slot_for_update(content_id, version_id)
                 event = ReviewAssignmentRevokedEvent(
                     revocation_id=uuid7(),
@@ -276,6 +308,20 @@ class RevokeReviewAssignmentService:
                     action=CONTENT_REVIEW_REVOKE_DENIED,
                     correlation_id=event_context.correlation_id,
                     reason_code=reason,
+                    content_id=content_id.value,
+                    version_id=version_id.value,
+                ),
+            )
+            raise
+        except PersistenceInvariantViolation as exc:
+            record_assignment_denial(
+                self._denial_audit,
+                AssignmentDenialRecord(
+                    tenant_id=execution_tenant_id,
+                    principal_id=issuer_principal_id,
+                    action=CONTENT_REVIEW_REVOKE_DENIED,
+                    correlation_id=event_context.correlation_id,
+                    reason_code=reason_for_assignment_error(exc),
                     content_id=content_id.value,
                     version_id=version_id.value,
                 ),

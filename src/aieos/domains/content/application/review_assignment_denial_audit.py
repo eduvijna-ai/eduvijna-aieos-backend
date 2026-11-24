@@ -18,6 +18,11 @@ REASON_REVIEWER_CLASS = "reviewer.class.ineligible"
 REASON_ISSUER_CLASS = "issuer.class.ineligible"
 REASON_PRINCIPAL_KIND = "principal.kind.denied"
 REASON_SCHOOL_CONTEXT = "school.context.unavailable"
+REASON_REPLAY_ENTITLEMENT = "replay.entitlement.denied"
+REASON_ASSIGNMENT_CONFLICT = "assignment.conflict"
+REASON_ATTESTATION_BLOCKED = "assignment.attestation.blocked"
+REASON_NOT_ALLOWED = "assign.not.allowed"
+REASON_PERSISTENCE_INVARIANT = "persistence.invariant.violation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,29 +60,49 @@ def record_assignment_denial(
 
 def reason_for_assignment_error(exc: BaseException) -> str:
     from aieos.domains.content.application.errors import (
+        PersistenceInvariantViolation,
+        ReviewAssignmentConflict,
         ReviewAssignmentForbidden,
         ReviewAssignmentNotAllowed,
     )
-    from aieos.domains.teaching.application.errors import SchoolContextUnavailable
+    from aieos.domains.teaching.application.errors import (
+        ClassRefNotAssignable,
+        SchoolContextContractError,
+        SchoolContextUnavailable,
+    )
     from aieos.platform.security import UnauthorizedError
 
     if isinstance(exc, UnauthorizedError):
         return REASON_PRINCIPAL_KIND
-    message = str(exc).lower()
     if isinstance(exc, SchoolContextUnavailable):
         return REASON_SCHOOL_CONTEXT
+    if isinstance(exc, (SchoolContextContractError, ClassRefNotAssignable)):
+        return REASON_ISSUER_CLASS
+    message = str(exc).lower()
+    if isinstance(exc, PersistenceInvariantViolation):
+        if "replay" in message or "entitlement" in message:
+            return REASON_REPLAY_ENTITLEMENT
+        return REASON_PERSISTENCE_INVARIANT
+    if isinstance(exc, ReviewAssignmentConflict):
+        if "attestation" in message:
+            return REASON_ATTESTATION_BLOCKED
+        return REASON_ASSIGNMENT_CONFLICT
     if isinstance(exc, ReviewAssignmentForbidden):
+        if "effective actor" in message:
+            return REASON_EFFECTIVE_ACTOR_MISMATCH
         if "owner" in message:
             return REASON_ISSUER_NOT_OWNER
         if "creator" in message:
             return REASON_ISSUER_NOT_CREATOR
-        if "class" in message and "reviewer" in message:
+        if "reviewer" in message and "class" in message:
             return REASON_REVIEWER_CLASS
         if "class" in message:
             return REASON_ISSUER_CLASS
-        if "capability" in message or "denied" in message:
-            return REASON_ASSIGN_CAPABILITY
+        if "only the original issuer" in message:
+            return REASON_REVOKE_CAPABILITY
         return REASON_ASSIGN_CAPABILITY
     if isinstance(exc, ReviewAssignmentNotAllowed):
-        return REASON_ASSIGN_CAPABILITY
+        if "distinct" in message and "reviewer" in message:
+            return REASON_NOT_ALLOWED
+        return REASON_NOT_ALLOWED
     return REASON_ASSIGN_CAPABILITY

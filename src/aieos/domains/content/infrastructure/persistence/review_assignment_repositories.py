@@ -90,7 +90,16 @@ class SqlAlchemyReviewAssignmentRepository:
         *,
         now: datetime,
     ) -> bool:
-        row = self._connection.execute(
+        return bool(self.live_issuance_ids_for_version(content_id, version_id, now=now))
+
+    def live_issuance_ids_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> tuple[ReviewAssignmentId, ...]:
+        rows = self._connection.execute(
             select(review_assignment_issuances_table.c.assignment_id)
             .select_from(review_assignment_issuances_table)
             .outerjoin(
@@ -104,9 +113,8 @@ class SqlAlchemyReviewAssignmentRepository:
                 review_assignment_issuances_table.c.valid_until > now,
                 review_assignment_revocations_table.c.revocation_id.is_(None),
             )
-            .limit(1)
-        ).one_or_none()
-        return row is not None
+        ).scalars().all()
+        return tuple(ReviewAssignmentId(value) for value in rows)
 
     def get_slot_for_update(
         self,

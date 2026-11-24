@@ -188,7 +188,6 @@ class IssueReviewAssignmentService:
                     version_id=version_id,
                     now=slot_now,
                 )
-                effective_now = self._clock()
                 if stored is not None:
                     if stored.request_fingerprint_sha256 != fingerprint:
                         raise IdempotencyKeyReused(
@@ -225,6 +224,32 @@ class IssueReviewAssignmentService:
                         raise PersistenceInvariantViolation(
                             "idempotent assign outcome identity mismatch"
                         )
+                    validate_issue_issuer_locked(
+                        uow,
+                        execution_tenant_id=execution_tenant_id,
+                        issuer_principal_id=issuer_principal_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                        assign_authorization=self._assign_authorization,
+                        review_authorization=self._review_authorization,
+                        principal_classification=self._principal_classification,
+                        issuer_class_authority=self._issuer_class_authority,
+                    )
+                    validate_issue_targets_locked(
+                        uow,
+                        execution_tenant_id=execution_tenant_id,
+                        issuer_principal_id=issuer_principal_id,
+                        reviewer_principal_id=reviewer_principal_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                        class_ref=class_ref,
+                        review_authorization=self._review_authorization,
+                        principal_classification=self._principal_classification,
+                        reviewer_eligibility=self._reviewer_eligibility,
+                    )
+                    effective_now = self._clock()
+                    if effective_now < slot_now:
+                        raise ReviewAssignmentNotAllowed("invalid assignment effect time")
                     active = resolve_slot_active_assignment(
                         uow.review_assignments,
                         tenant_id=execution_tenant_id,
@@ -252,15 +277,6 @@ class IssueReviewAssignmentService:
                     principal_classification=self._principal_classification,
                     reviewer_eligibility=self._reviewer_eligibility,
                 )
-                active = resolve_slot_active_assignment(
-                    uow.review_assignments,
-                    tenant_id=execution_tenant_id,
-                    content_id=content_id,
-                    version_id=version_id,
-                    now=effective_now,
-                )
-                if active is not None and not active.revoked:
-                    raise ReviewAssignmentConflict("active assignment already bound")
                 validate_issue_issuer_locked(
                     uow,
                     execution_tenant_id=execution_tenant_id,
@@ -284,11 +300,21 @@ class IssueReviewAssignmentService:
                     principal_classification=self._principal_classification,
                     reviewer_eligibility=self._reviewer_eligibility,
                 )
+                effective_now = self._clock()
+                if effective_now < slot_now:
+                    raise ReviewAssignmentNotAllowed("invalid assignment effect time")
+                active = resolve_slot_active_assignment(
+                    uow.review_assignments,
+                    tenant_id=execution_tenant_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    now=effective_now,
+                )
+                if active is not None and not active.revoked:
+                    raise ReviewAssignmentConflict("active assignment already bound")
                 head = uow.contents.get_head_for_update(content_id)
                 if head is None:
                     raise ReviewAssignmentNotAllowed("content head missing")
-                if effective_now < slot_now:
-                    raise ReviewAssignmentNotAllowed("invalid assignment effect time")
                 valid_until = effective_now + _ASSIGNMENT_TTL
                 assignment_id = ReviewAssignmentId(uuid7())
                 event = ReviewAssignmentAssignedEvent(
@@ -345,6 +371,17 @@ class IssueReviewAssignmentService:
                 uow.commit()
                 return assignment_id
         except _DENIED_EXCEPTIONS as exc:
+            _record_assign_denial(
+                self._denial_audit,
+                tenant_id=execution_tenant_id,
+                principal_id=issuer_principal_id,
+                correlation_id=event_context.correlation_id,
+                content_id=content_id,
+                version_id=version_id,
+                exc=exc,
+            )
+            raise
+        except (PersistenceInvariantViolation, ReviewAssignmentConflict) as exc:
             _record_assign_denial(
                 self._denial_audit,
                 tenant_id=execution_tenant_id,

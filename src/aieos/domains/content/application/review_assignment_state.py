@@ -22,27 +22,42 @@ def resolve_slot_active_assignment(
     version_id: ContentVersionId,
     now: datetime,
 ) -> ActiveReviewAssignment | None:
+    live_ids = repo.live_issuance_ids_for_version(content_id, version_id, now=now)
+    if len(live_ids) > 1:
+        raise PersistenceInvariantViolation(
+            "multiple live issuances for version"
+        )
+    sole_live_id = live_ids[0] if live_ids else None
     slot = repo.get_slot_for_update(content_id, version_id)
     if slot is None:
+        if sole_live_id is not None:
+            raise PersistenceInvariantViolation(
+                "live issuance exists without current slot row"
+            )
         return None
     if slot.tenant_id != tenant_id:
         raise PersistenceInvariantViolation("assignment slot tenant mismatch")
-    if slot.active_assignment_id is None:
-        if repo.has_live_issuance_for_version(content_id, version_id, now=now):
+    pointer = slot.active_assignment_id
+    if pointer is None:
+        if sole_live_id is not None:
             raise PersistenceInvariantViolation(
                 "live issuance exists without current slot binding"
             )
         return None
+    if sole_live_id is not None and pointer != sole_live_id:
+        raise PersistenceInvariantViolation(
+            "slot pointer does not match sole live issuance"
+        )
     active = materialize_assignment(
         repo,
         tenant_id=tenant_id,
-        assignment_id=slot.active_assignment_id,
+        assignment_id=pointer,
         content_id=content_id,
         version_id=version_id,
         now=now,
         require_slot_binding=True,
     )
-    if active.assignment_id != slot.active_assignment_id:
+    if active.assignment_id != pointer:
         raise PersistenceInvariantViolation("assignment slot pointer corrupt")
     return active
 

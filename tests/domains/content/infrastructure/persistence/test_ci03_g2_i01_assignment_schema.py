@@ -6,8 +6,12 @@ import json
 import uuid
 
 import pytest
+from alembic import command
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
+
+from tests.conftest import alembic_config, provision_runtime_grants
+from tests.dbutil import clear_asset_audit_rows_for_schema_downgrade
 
 pytestmark = pytest.mark.ci03_g2_i01
 
@@ -144,3 +148,38 @@ def test_runtime_rejects_cross_version_slot_binding(
                     "aid": assignment_a,
                 },
             )
+
+
+def test_downgrade_refuses_nonempty_assignment_evidence(
+    bootstrap_engine: Engine, postgres18: dict
+) -> None:
+    provision_runtime_grants(bootstrap_engine)
+    tenant_id = uuid.uuid7()
+    with bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO content.review_assignment_issuances (
+                    assignment_id, tenant_id, content_id, version_id,
+                    reviewer_principal_id, issuer_principal_id, class_ref,
+                    issued_at, valid_until, correlation_id
+                ) VALUES (
+                    :aid, :tid, :cid, :vid, :reviewer, :issuer, 'class-x',
+                    now(), now() + interval '1 day', :corr
+                )
+                """
+            ),
+            {
+                "aid": uuid.uuid7(),
+                "tid": tenant_id,
+                "cid": uuid.uuid7(),
+                "vid": uuid.uuid7(),
+                "reviewer": uuid.uuid7(),
+                "issuer": uuid.uuid7(),
+                "corr": uuid.uuid7(),
+            },
+        )
+    cfg = alembic_config(postgres18["migrator_url"])
+    clear_asset_audit_rows_for_schema_downgrade(bootstrap_engine)
+    with pytest.raises(Exception, match="refused"):
+        command.downgrade(cfg, "a360s010005")

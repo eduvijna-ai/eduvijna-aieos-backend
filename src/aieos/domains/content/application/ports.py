@@ -154,6 +154,14 @@ class ReviewAssignmentRepository(Protocol):
         now: datetime,
     ) -> bool: ...
 
+    def live_issuance_ids_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> tuple[ReviewAssignmentId, ...]: ...
+
     def get_slot_for_update(
         self,
         content_id: ContentId,

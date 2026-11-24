@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -89,28 +89,8 @@ def enforce_reviewer_use_guard(
         raise ReviewAssignmentNotAllowed("content head missing")
     if head.current_version_id != ctx.version_id:
         raise ReviewAssignmentNotAllowed("version is not current")
-    uow.review_assignments.ensure_slot(
-        tenant_id=ctx.execution_tenant_id,
-        content_id=ctx.content_id,
-        version_id=ctx.version_id,
-        now=deps.clock(),
-    )
-    effect_at = deps.clock()
-    content_row = uow.contents.get(ctx.content_id)
-    if content_row is None or content_row.tenant_id != ctx.execution_tenant_id:
-        raise ReviewAssignmentNotAllowed("content missing")
-    issuer_id = content_row.owner_principal_id
-    canonical_class = validate_revoke_issuer_locked(
-        uow,
-        execution_tenant_id=ctx.execution_tenant_id,
-        issuer_principal_id=issuer_id,
-        content_id=ctx.content_id,
-        version_id=ctx.version_id,
-        assign_authorization=deps.assign_authorization,
-        review_authorization=deps.authorization,
-        principal_classification=deps.principal_classification,
-        issuer_class_authority=deps.issuer_class_authority,
-    )
+    if uow.review_assignments.get_slot_for_update(ctx.content_id, ctx.version_id) is None:
+        raise ReviewAssignmentConflict("assignment slot missing")
     version = uow.versions.get(ctx.version_id)
     if version is None:
         raise ReviewAssignmentNotAllowed("version missing")
@@ -126,19 +106,21 @@ def enforce_reviewer_use_guard(
         raise ReviewAssignmentNotAllowed("assignment guard requires hint-bearing worksheet@2")
     if uow.reviews.get_for_version(ctx.content_id, ctx.version_id) is not None:
         raise ReviewAssignmentNotAllowed("version already has terminal decision")
-    active = resolve_slot_active_assignment(
-        uow.review_assignments,
-        tenant_id=ctx.execution_tenant_id,
+    content_row = uow.contents.get(ctx.content_id)
+    if content_row is None or content_row.tenant_id != ctx.execution_tenant_id:
+        raise ReviewAssignmentNotAllowed("content missing")
+    issuer_id = content_row.owner_principal_id
+    canonical_class = validate_revoke_issuer_locked(
+        uow,
+        execution_tenant_id=ctx.execution_tenant_id,
+        issuer_principal_id=issuer_id,
         content_id=ctx.content_id,
         version_id=ctx.version_id,
-        now=effect_at,
+        assign_authorization=deps.assign_authorization,
+        review_authorization=deps.authorization,
+        principal_classification=deps.principal_classification,
+        issuer_class_authority=deps.issuer_class_authority,
     )
-    if active is None or active.assignment_id != ctx.assignment_id:
-        raise ReviewAssignmentConflict("assignment is not the current slot binding")
-    if active.revoked:
-        raise ReviewAssignmentConflict("assignment is revoked or expired")
-    if active.reviewer_principal_id != ctx.principal_id:
-        raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
     if version.created_by_principal_id == ctx.principal_id:
         raise ReviewAssignmentForbidden("reviewer must be distinct from version author")
     deps.principal_classification.require_current_human_principal(ctx.principal_id)
@@ -156,6 +138,35 @@ def enforce_reviewer_use_guard(
     validate_revoke_issuer_locked(
         uow,
         execution_tenant_id=ctx.execution_tenant_id,
+        issuer_principal_id=issuer_id,
+        content_id=ctx.content_id,
+        version_id=ctx.version_id,
+        assign_authorization=deps.assign_authorization,
+        review_authorization=deps.authorization,
+        principal_classification=deps.principal_classification,
+        issuer_class_authority=deps.issuer_class_authority,
+    )
+    effect_at = deps.clock()
+    active = resolve_slot_active_assignment(
+        uow.review_assignments,
+        tenant_id=ctx.execution_tenant_id,
+        content_id=ctx.content_id,
+        version_id=ctx.version_id,
+        now=effect_at,
+    )
+    if active is None:
+        raise ReviewAssignmentConflict("no active assignment binding at effect time")
+    if active.assignment_id != ctx.assignment_id:
+        raise ReviewAssignmentConflict("assignment is not the current slot binding")
+    if active.revoked:
+        raise ReviewAssignmentConflict("assignment is revoked or expired")
+    if active.reviewer_principal_id != ctx.principal_id:
+        raise ReviewAssignmentForbidden("principal is not the assigned reviewer")
+    if active.class_ref != canonical_class:
+        raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
+    validate_revoke_issuer_locked(
+        uow,
+        execution_tenant_id=ctx.execution_tenant_id,
         issuer_principal_id=active.issuer_principal_id,
         content_id=ctx.content_id,
         version_id=ctx.version_id,
@@ -164,6 +175,15 @@ def enforce_reviewer_use_guard(
         principal_classification=deps.principal_classification,
         issuer_class_authority=deps.issuer_class_authority,
     )
-    if active.class_ref != canonical_class:
-        raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
+    revalidate_reviewer_locked(
+        uow,
+        execution_tenant_id=ctx.execution_tenant_id,
+        reviewer_principal_id=ctx.principal_id,
+        content_id=ctx.content_id,
+        version_id=ctx.version_id,
+        class_ref=canonical_class,
+        review_authorization=deps.authorization,
+        principal_classification=deps.principal_classification,
+        reviewer_eligibility=deps.reviewer_eligibility,
+    )
     return active
