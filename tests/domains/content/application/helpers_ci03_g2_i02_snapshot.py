@@ -107,18 +107,6 @@ def capture_durable_snapshot(
                 {"aid": assignment_id.value},
             ).scalar_one()
         )
-        outbox_messages = int(
-            conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM integration.outbox_messages
-                    WHERE tenant_id = :tid
-                    """
-                ),
-                {"tid": tenant_id},
-            ).scalar_one()
-        )
-
     with bootstrap_engine.connect() as conn:
         worksheet_hint_attest_audits = int(
             conn.execute(
@@ -129,6 +117,17 @@ def capture_durable_snapshot(
                     """
                 ),
                 {"tid": tenant_id, "action": _WORKSHEET_HINT_ATTEST_AUDIT},
+            ).scalar_one()
+        )
+        outbox_messages = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM integration.outbox_messages
+                    WHERE tenant_id = :tid
+                    """
+                ),
+                {"tid": tenant_id},
             ).scalar_one()
         )
 
