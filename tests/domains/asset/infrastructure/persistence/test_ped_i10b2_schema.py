@@ -21,7 +21,7 @@ from tests.conftest import (
     provision_runtime_grants,
 )
 from tests.dbutil import (
-    CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION,
+    CONTENT_TABLES_AT_FORWARD_HEAD,
     CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION,
     REPO_ROOT,
     clear_asset_audit_rows_for_schema_downgrade,
@@ -66,7 +66,7 @@ FORBIDDEN_RESOURCE_TYPES = (
     "Asset.Image",
     "asset.Image",
 )
-CONTENT_TABLES = CONTENT_TABLES_WITH_WORKSHEET_HINT_ATTESTATION
+CONTENT_TABLES = CONTENT_TABLES_AT_FORWARD_HEAD
 CONTENT_TABLES_PRE_HINT_T2 = CONTENT_TABLES_WITHOUT_WORKSHEET_HINT_ATTESTATION
 SECURITY_TABLES = {
     "audit_records",
@@ -324,7 +324,7 @@ class TestMigrationGraph:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010005"
+                == "ci03g020001"
             )
 
     def test_downgrade_removes_asset_keeps_content_security_then_reupgrade(

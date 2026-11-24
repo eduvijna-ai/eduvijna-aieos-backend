@@ -27,7 +27,13 @@ from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
     PublicationId,
+    ReviewAssignmentId,
     ReviewDecisionId,
+)
+from aieos.domains.content.domain.review_assignment import (
+    ReviewAssignmentAssignedEvent,
+    ReviewAssignmentRevokedEvent,
+    ReviewCurrentAssignmentSlot,
 )
 from aieos.domains.content.domain.publication import Publication
 from aieos.domains.content.domain.review import ReviewDecision
@@ -50,6 +56,7 @@ class HumanPrincipalClassificationGate(Protocol):
 
 CONTENT_REVIEW_SUBMIT = "content.review.submit"
 CONTENT_REVIEW_DECIDE = "content.review.decide"
+CONTENT_REVIEW_ASSIGN = "content.review.assign"
 CONTENT_PUBLISH = "content.publish"
 CONTENT_VERSION_CREATE = "content.version.create"
 CONTENT_MIGRATE_IMPORT = "content.migrate.import"
@@ -114,6 +121,69 @@ class ReviewAuthorizationPort(Protocol):
         content_id: ContentId,
         version_id: ContentVersionId,
         capability: str,
+    ) -> None: ...
+
+
+class ReviewAssignmentAuthorizationPort(Protocol):
+    def authorize_assign(
+        self,
+        *,
+        tenant_id: UUID,
+        principal_id: UUID,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+    ) -> None: ...
+
+
+class ReviewAssignmentRepository(Protocol):
+    def insert_assigned(self, event: ReviewAssignmentAssignedEvent) -> None: ...
+
+    def insert_revoked(self, event: ReviewAssignmentRevokedEvent) -> None: ...
+
+    def get_assigned(
+        self, assignment_id: ReviewAssignmentId
+    ) -> ReviewAssignmentAssignedEvent | None: ...
+
+    def has_revoked(self, assignment_id: ReviewAssignmentId) -> bool: ...
+
+    def has_live_issuance_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> bool: ...
+
+    def live_issuance_ids_for_version(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        *,
+        now: datetime,
+    ) -> tuple[ReviewAssignmentId, ...]: ...
+
+    def get_slot_for_update(
+        self,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+    ) -> ReviewCurrentAssignmentSlot | None: ...
+
+    def ensure_slot(
+        self,
+        *,
+        tenant_id: UUID,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        now: datetime,
+    ) -> ReviewCurrentAssignmentSlot: ...
+
+    def set_active_assignment(
+        self,
+        *,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+        active_assignment_id: ReviewAssignmentId | None,
+        now: datetime,
     ) -> None: ...
 
 
@@ -368,6 +438,7 @@ class ContentUnitOfWork(Protocol):
     contents: ContentRepository
     versions: ContentVersionRepository
     worksheet_hint_attestations: WorksheetHintAttestationRepository
+    review_assignments: ReviewAssignmentRepository
     reviews: ReviewRepository
     publications: PublicationRepository
     version_asset_refs: VersionAssetRefRepository

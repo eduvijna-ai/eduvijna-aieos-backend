@@ -82,6 +82,22 @@ class ReviewForbidden(ContentApplicationError):
     """Current principal lacks the required review capability."""
 
 
+class ReviewAssignmentForbidden(ContentApplicationError):
+    """Current principal lacks content.review.assign or assignment predicate failed."""
+
+
+class ReviewAssignmentNotAllowed(ContentApplicationError):
+    """Issue or revoke is not allowed in the current content/version state."""
+
+
+class ReviewAssignmentNotFound(ContentApplicationError):
+    """Target assignment is not visible or does not exist for this version."""
+
+
+class ReviewAssignmentConflict(ContentApplicationError):
+    """Assignment slot or lifecycle invariant failed (active slot, attestation, expiry)."""
+
+
 class ReviewCommentRejected(ContentApplicationError):
     """The review comment was rejected by the comment governance policy."""
 

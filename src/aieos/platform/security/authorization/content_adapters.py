@@ -15,9 +15,11 @@ from aieos.domains.content.application.errors import (
     PublicationForbidden,
     ReviewForbidden,
 )
+from aieos.domains.content.application.errors import ReviewAssignmentForbidden
 from aieos.domains.content.application.ports import (
     CONTENT_MIGRATE_IMPORT,
     CONTENT_PUBLISH,
+    CONTENT_REVIEW_ASSIGN,
     CONTENT_REVIEW_DECIDE,
     CONTENT_REVIEW_SUBMIT,
     CONTENT_VERSION_CREATE,
@@ -32,6 +34,7 @@ AIEOS_CONTENT_CAPABILITIES: frozenset[str] = frozenset(
     {
         CONTENT_REVIEW_SUBMIT,
         CONTENT_REVIEW_DECIDE,
+        CONTENT_REVIEW_ASSIGN,
         CONTENT_PUBLISH,
         CONTENT_VERSION_CREATE,
         CONTENT_MIGRATE_IMPORT,
@@ -39,6 +42,36 @@ AIEOS_CONTENT_CAPABILITIES: frozenset[str] = frozenset(
 )
 
 _REVIEW_CAPABILITIES = frozenset({CONTENT_REVIEW_SUBMIT, CONTENT_REVIEW_DECIDE})
+
+
+class KernelReviewAssignmentAuthorization:
+    def __init__(self, kernel: AuthorizationKernel) -> None:
+        self._kernel = kernel
+
+    def authorize_assign(
+        self,
+        *,
+        tenant_id: UUID,
+        principal_id: UUID,
+        content_id: ContentId,
+        version_id: ContentVersionId,
+    ) -> None:
+        _ = (content_id, version_id)
+        try:
+            decision = self._kernel.decide_capability(
+                principal_id=principal_id,
+                tenant_id=tenant_id,
+                capability=CONTENT_REVIEW_ASSIGN,
+            )
+        except AuthorizationUnavailableError:
+            raise
+        except Exception as exc:
+            raise AuthorizationUnavailableError(
+                "authorization unavailable"
+            ) from exc
+        if decision is AuthorityDecision.ALLOW:
+            return
+        raise ReviewAssignmentForbidden("assignment capability denied")
 
 
 class KernelReviewAuthorization:

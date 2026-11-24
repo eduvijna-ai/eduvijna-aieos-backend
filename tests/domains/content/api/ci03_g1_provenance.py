@@ -10,12 +10,22 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 
+import os
+
 from tools.release.common import (
     EXPECTED_MIGRATION_HEAD,
     EXPECTED_OPENAPI_SHA256,
     assert_openapi_digest,
     derive_and_validate_migration_head,
 )
+
+CI03_G1_BASELINE_MIGRATION_HEAD = "a360s010005"
+
+
+def expected_migration_head_for_run() -> str:
+    if os.environ.get("CI03_G1_BASELINE_MODE") == "1":
+        return CI03_G1_BASELINE_MIGRATION_HEAD
+    return EXPECTED_MIGRATION_HEAD
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -103,8 +113,11 @@ def collect_repo_provenance(repo_root: Path | None = None) -> dict[str, Any]:
     root = repo_root or REPO_ROOT
     alembic_head = derive_and_validate_migration_head(root)
     openapi_sha = assert_openapi_digest(root)
-    if alembic_head != EXPECTED_MIGRATION_HEAD:
-        raise RuntimeError(f"unexpected alembic head {alembic_head}")
+    expected_head = expected_migration_head_for_run()
+    if alembic_head != expected_head:
+        raise RuntimeError(
+            f"unexpected alembic head {alembic_head} (expected {expected_head})"
+        )
     if openapi_sha != EXPECTED_OPENAPI_SHA256:
         raise RuntimeError("unexpected openapi digest")
     return {

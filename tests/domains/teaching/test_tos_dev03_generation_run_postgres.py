@@ -87,7 +87,7 @@ class TestGenerationRunPostgres:
             head = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-            assert head == "a360s010005"
+            assert head == "ci03g020001"
             lease_col = conn.execute(
                 text(
                     """

@@ -58,6 +58,7 @@ _EXPECTED_MIGRATIONS = [
         "a360s010004_learner_evaluation_audit_vocab.py",
         "a360s010005_worksheet_learner_hint_attestations.py",
     "adra045001_dispatcher_candidate_authority.py",
+        "ci03g020001_reviewer_assignment_authority.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",
     "gcii060001_review_decisions.py",
@@ -103,6 +104,8 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "ImportMigratedContentService": "A",
     "AppendWorksheetLearnerHintsContentVersionService": "A",
     "RecordWorksheetLearnerHintAttestationService": "A",
+    "IssueReviewAssignmentService": "B",
+    "RevokeReviewAssignmentService": "B",
     "AppendContentVersionService": "B",
     "GetContentService": "R",
     "ListContentsService": "R",
@@ -113,6 +116,7 @@ _MUTATION_INVENTORY: dict[str, str] = {
     "GetTeacherLibraryItemService": "R",
     "GetTeacherLibraryVersionService": "R",
     "ValidateVersionAssetGovernanceService": "R",
+    "SchoolContextReviewerEligibilityService": "R",
 }
 
 _WIRED_AUDIT_FILES = {
@@ -274,6 +278,8 @@ class TestMutationInventory:
             "content.ai.materialize",
             "content.migration.import",
             "content.worksheet_hint.attest",
+            "content.review.assign",
+            "content.review.revoke",
             "asset.create",
             "asset.revision.register",
             "asset.revision.activate",

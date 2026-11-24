@@ -78,6 +78,51 @@ jobs:
           path: ci03-g1-evidence/
           if-no-files-found: error
 
+  ci03-g2-i01-pg18:
+    name: ci03-g2-i01-pg18
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.4"
+          python-version: "3.14.7"
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev
+
+      - name: CI03-G2-I01 reviewer assignment PG18 targeted matrix
+        env:
+          GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
+          collect_line="$(uv run pytest -m ci03_g2_i01 --collect-only -q 2>&1 | tail -1)"
+          set +e
+          uv run pytest -m ci03_g2_i01 --tb=short -q 2>&1 | tee ci03_g2_i01_pytest.log
+          rc=$?
+          set -e
+          result_line="$(tail -1 ci03_g2_i01_pytest.log)"
+          echo "CI03_G2_I01_SUMMARY collect=${collect_line} result=${result_line} exit=${rc}"
+          exit "${rc}"
+
+      - name: Upload CI03-G2-I01 pytest summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci03-g2-i01-pg18-summary
+          path: ci03_g2_i01_pytest.log
+          if-no-files-found: error
+
   postgresql-candidate-authority:
     name: postgresql-candidate-authority
     needs:

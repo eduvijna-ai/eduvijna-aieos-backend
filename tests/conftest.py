@@ -16,7 +16,9 @@ from sqlalchemy.engine import Engine
 from tests.dbutil import (
     REPO_ROOT,
     assert_worksheet_hint_attestation_present_at_forward_head,
+    authorization_denial_records_table_exists,
     clear_asset_audit_rows_for_schema_downgrade,
+    review_assignment_authority_tables_exist,
     set_tenant,
     worksheet_hint_attestation_table_exists,
 )
@@ -307,6 +309,56 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
                     text(
                         "REVOKE UPDATE, DELETE ON "
                         "content.worksheet_learner_hint_version_attestations "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
+            if review_assignment_authority_tables_exist(conn):
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON content.review_assignment_issuances "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON content.review_assignment_issuances "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON content.review_assignment_revocations "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON content.review_assignment_revocations "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT, UPDATE ON content.review_current_assignments "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "REVOKE DELETE ON content.review_current_assignments "
+                        f"FROM {RUNTIME_USER}"
+                    )
+                )
+            if authorization_denial_records_table_exists(conn):
+                conn.execute(
+                    text(
+                        "GRANT SELECT, INSERT ON security.authorization_denial_records "
+                        f"TO {RUNTIME_USER}"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "REVOKE UPDATE, DELETE ON security.authorization_denial_records "
                         f"FROM {RUNTIME_USER}"
                     )
                 )
@@ -1088,3 +1140,6 @@ def event_dispatcher_engine(postgres18: dict[str, str]) -> Iterator[Engine]:
         yield engine
     finally:
         engine.dispose()
+
+
+pytest_plugins = ("tests.conftest_ci03_g2_i01",)

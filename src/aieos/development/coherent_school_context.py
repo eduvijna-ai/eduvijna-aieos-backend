@@ -96,6 +96,7 @@ class _Facts:
     class_definitions: dict[str, str]
     class_order: tuple[str, ...]
     teacher_authority: dict[UUID, tuple[str, ...]]
+    reviewer_class_eligibility: dict[UUID, tuple[str, ...]]
     learner_memberships: dict[UUID, tuple[CurrentLearnerClassMembership, ...]]
     principal_scope: dict[UUID, tuple[str, ...]]
     adult_learner_access: dict[UUID, tuple[UUID, ...]]
@@ -161,6 +162,7 @@ def _validated_facts(
     tenant_id: object,
     class_definitions: Sequence[tuple[object, object]],
     teacher_authority: Mapping[object, Sequence[object]],
+    reviewer_class_eligibility: Mapping[object, Sequence[object]] | None = None,
     learner_memberships: Mapping[object, Sequence[object]],
     principal_scope: Mapping[object, Sequence[object]],
     adult_learner_access: Mapping[object, Sequence[object]],
@@ -271,11 +273,24 @@ def _validated_facts(
             learners.append(learner_id)
         adult_access[adult_id] = tuple(learners)
 
+    reviewers: dict[UUID, tuple[str, ...]] = {}
+    if reviewer_class_eligibility is None:
+        reviewers = {principal: tuple(refs) for principal, refs in teachers.items()}
+    else:
+        for raw_reviewer, raw_refs in reviewer_class_eligibility.items():
+            reviewer_id = _require_uuid(raw_reviewer, what="reviewer Principal")
+            reviewers[reviewer_id] = _unique_class_refs(
+                raw_refs,
+                what="reviewer ClassRef eligibility",
+                known_classes=definitions,
+            )
+
     return _Facts(
         tenant_id=bound_tenant,
         class_definitions=definitions,
         class_order=tuple(class_order),
         teacher_authority=teachers,
+        reviewer_class_eligibility=reviewers,
         learner_memberships=memberships,
         principal_scope=principals,
         adult_learner_access=adult_access,
@@ -385,6 +400,7 @@ class DevelopmentCoherentSchoolContextProvider:
                 for class_ref in current.class_order
             ),
             "teacher_authority": dict(current.teacher_authority),
+            "reviewer_class_eligibility": dict(current.reviewer_class_eligibility),
             "learner_memberships": dict(current.learner_memberships),
             "principal_scope": dict(current.principal_scope),
             "adult_learner_access": dict(current.adult_learner_access),
@@ -401,6 +417,28 @@ class DevelopmentCoherentSchoolContextProvider:
 
     def _in_tenant(self, tenant_id: UUID) -> bool:
         return tenant_id == self._facts.tenant_id
+
+    def list_reviewer_eligible_class_refs(
+        self,
+        tenant_id: UUID,
+        reviewer_principal_id: UUID,
+    ) -> tuple[str, ...]:
+        bound_tenant, reviewer_id = self._note(
+            "reviewer_eligibility", tenant_id, reviewer_principal_id
+        )
+        if not self._in_tenant(bound_tenant):
+            return ()
+        return self._facts.reviewer_class_eligibility.get(reviewer_id, ())
+
+    def set_reviewer_class_eligibility(
+        self,
+        reviewer_principal_id: UUID,
+        class_refs: Sequence[str],
+    ) -> None:
+        reviewer_id = _require_uuid(reviewer_principal_id, what="reviewer Principal")
+        updated = dict(self._facts.reviewer_class_eligibility)
+        updated[reviewer_id] = tuple(class_refs)
+        self._replace(reviewer_class_eligibility=updated)
 
     def list_assignable_classes(
         self,

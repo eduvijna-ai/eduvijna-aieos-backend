@@ -13,7 +13,12 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from tests.conftest import SCHEMA_OWNER_ROLE, alembic_config, provision_runtime_grants
-from tests.dbutil import REPO_ROOT, clear_asset_audit_rows_for_schema_downgrade, set_tenant
+from tests.dbutil import (
+    CONTENT_TABLES_AT_FORWARD_HEAD,
+    REPO_ROOT,
+    clear_asset_audit_rows_for_schema_downgrade,
+    set_tenant,
+)
 
 pytestmark = pytest.mark.gci_i09
 
@@ -478,22 +483,14 @@ class TestAlembicCycleAndOfflineSql:
         command.upgrade(cfg, "head")
         provision_runtime_grants(bootstrap_engine)
         with bootstrap_engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "a360s010005"
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "ci03g020001"
             tables = {
                 row[0]
                 for row in conn.execute(
                     text("SELECT tablename FROM pg_tables WHERE schemaname = 'content'")
                 )
             }
-        assert tables == {
-            "contents",
-            "content_versions",
-            "review_decisions",
-            "publications",
-            "version_asset_refs",
-            "migration_import_records",
-            "worksheet_learner_hint_version_attestations",
-        }
+        assert tables == CONTENT_TABLES_AT_FORWARD_HEAD
 
     def test_offline_sql_assumes_owner_before_i09_ddl(self, postgres18) -> None:
         cfg = alembic_config(postgres18["migrator_url"])
@@ -526,6 +523,7 @@ class TestAlembicCycleAndOfflineSql:
         "a360s010004_learner_evaluation_audit_vocab.py",
         "a360s010005_worksheet_learner_hint_attestations.py",
     "adra045001_dispatcher_candidate_authority.py",
+        "ci03g020001_reviewer_assignment_authority.py",
             "gcii020001_content_schema.py",
             "gcii050001_api_idempotency.py",
             "gcii060001_review_decisions.py",

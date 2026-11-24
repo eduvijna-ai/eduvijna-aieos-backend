@@ -11,9 +11,14 @@ from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
     PublicationId,
+    ReviewAssignmentId,
     ReviewDecisionId,
     VersionNumber,
     WorksheetLearnerHintAttestationId,
+)
+from aieos.domains.content.domain.review_assignment import (
+    ReviewAssignmentAssignedEvent,
+    ReviewCurrentAssignmentSlot,
 )
 from aieos.domains.content.domain.worksheet_hint_attestation import (
     HintQuestionAttestationOutcome,
@@ -192,4 +197,32 @@ def version_asset_ref_from_row(row: Any) -> VersionAssetRef:
         ordinal=int(_row_value(row, "ordinal")),
         required=bool(_row_value(row, "required")),
         created_at=_row_value(row, "created_at"),
+    )
+
+
+def review_assignment_assigned_from_row(row: Any) -> ReviewAssignmentAssignedEvent:
+    return ReviewAssignmentAssignedEvent(
+        assignment_id=ReviewAssignmentId(_row_value(row, "assignment_id")),
+        tenant_id=_row_value(row, "tenant_id"),
+        content_id=ContentId(_row_value(row, "content_id")),
+        version_id=ContentVersionId(_row_value(row, "version_id")),
+        reviewer_principal_id=_row_value(row, "reviewer_principal_id"),
+        issuer_principal_id=_row_value(row, "issuer_principal_id"),
+        class_ref=str(_row_value(row, "class_ref")),
+        issued_at=_row_value(row, "issued_at"),
+        valid_until=_row_value(row, "valid_until"),
+        correlation_id=_row_value(row, "correlation_id"),
+    )
+
+
+def review_current_slot_from_row(row: Any) -> ReviewCurrentAssignmentSlot:
+    active = _row_value(row, "active_assignment_id")
+    return ReviewCurrentAssignmentSlot(
+        tenant_id=_row_value(row, "tenant_id"),
+        content_id=ContentId(_row_value(row, "content_id")),
+        version_id=ContentVersionId(_row_value(row, "version_id")),
+        active_assignment_id=None
+        if active is None
+        else ReviewAssignmentId(active),
+        updated_at=_row_value(row, "updated_at"),
     )

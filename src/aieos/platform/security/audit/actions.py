@@ -18,6 +18,8 @@ class SecurityAuditAction(StrEnum):
     CONTENT_AI_MATERIALIZE = "content.ai.materialize"
     CONTENT_MIGRATION_IMPORT = "content.migration.import"
     CONTENT_WORKSHEET_HINT_ATTEST = "content.worksheet_hint.attest"
+    CONTENT_REVIEW_ASSIGN = "content.review.assign"
+    CONTENT_REVIEW_REVOKE = "content.review.revoke"
     ASSET_CREATE = "asset.create"
     ASSET_REVISION_REGISTER = "asset.revision.register"
     ASSET_REVISION_ACTIVATE = "asset.revision.activate"
@@ -83,7 +85,11 @@ _ASSET_STABLE_REGISTRATION_ACTIONS = frozenset(
     {SecurityAuditAction.ASSET_REVISION_REGISTER}
 )
 _CONTENT_STABLE_REGISTRATION_ACTIONS = frozenset(
-    {SecurityAuditAction.CONTENT_WORKSHEET_HINT_ATTEST}
+    {
+        SecurityAuditAction.CONTENT_WORKSHEET_HINT_ATTEST,
+        SecurityAuditAction.CONTENT_REVIEW_ASSIGN,
+        SecurityAuditAction.CONTENT_REVIEW_REVOKE,
+    }
 )
 _ASSET_INCREMENT_ACTIONS = frozenset(
     {

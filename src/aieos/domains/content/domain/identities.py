@@ -98,6 +98,18 @@ class ReviewDecisionId:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewAssignmentId:
+    """Stable unique assignment identity (UUIDv7)."""
+
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "value", _require_uuid7(self.value, label="review_assignment_id")
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class WorksheetLearnerHintAttestationId:
     value: UUID
 

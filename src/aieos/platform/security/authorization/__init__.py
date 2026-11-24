@@ -5,6 +5,7 @@ from __future__ import annotations
 from aieos.domains.content.application.ports import (
     CONTENT_MIGRATE_IMPORT,
     CONTENT_PUBLISH,
+    CONTENT_REVIEW_ASSIGN,
     CONTENT_REVIEW_DECIDE,
     CONTENT_REVIEW_SUBMIT,
     CONTENT_VERSION_CREATE,
@@ -22,6 +23,7 @@ from aieos.platform.security.authorization.content_adapters import (
     KernelAIGenerationAuthorization,
     KernelContentMigrationAuthorization,
     KernelPublicationAuthorization,
+    KernelReviewAssignmentAuthorization,
     KernelReviewAuthorization,
 )
 from aieos.platform.security.authorization.decisions import (
@@ -67,6 +69,7 @@ __all__ = [
     "AIEOS_TEACHING_WORK_CAPABILITIES",
     "CONTENT_MIGRATE_IMPORT",
     "CONTENT_PUBLISH",
+    "CONTENT_REVIEW_ASSIGN",
     "CONTENT_REVIEW_DECIDE",
     "CONTENT_REVIEW_SUBMIT",
     "CONTENT_VERSION_CREATE",
@@ -81,6 +84,7 @@ __all__ = [
     "KernelCurrentTenantAccessAuthority",
     "KernelParentIntelligenceAuthorization",
     "KernelPublicationAuthorization",
+    "KernelReviewAssignmentAuthorization",
     "KernelReviewAuthorization",
     "KernelSchoolIntelligenceAuthorization",
     "KernelTeachingWorkAuthorization",

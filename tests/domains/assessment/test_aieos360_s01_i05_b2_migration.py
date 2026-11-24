@@ -37,8 +37,8 @@ class TestA360s010004Static:
         sql = MIGRATION.read_text(encoding="utf-8")
         assert 'revision: str = "a360s010004"' in sql
         assert 'down_revision: str | None = "a360s010003"' in sql
-        assert EXPECTED_ALEMBIC_HEAD == "a360s010005"
-        assert EXPECTED_MIGRATION_HEAD == "a360s010005"
+        assert EXPECTED_ALEMBIC_HEAD == "ci03g020001"
+        assert EXPECTED_MIGRATION_HEAD == "ci03g020001"
 
     def test_66_scope_is_security_audit_vocabulary_only(self) -> None:
         sql = MIGRATION.read_text(encoding="utf-8")
@@ -49,8 +49,14 @@ class TestA360s010004Static:
         assert "ALTER TABLE content." not in sql
         assert "ALTER TABLE assessment." not in sql
         assert "DROP TABLE" not in sql
-        names = [path.name for path in MIGRATIONS.glob("a360s010005*.py")]
-        assert names == ["a360s010005_worksheet_learner_hint_attestations.py"]
+        names = sorted(
+            path.name
+            for path in MIGRATIONS.glob("a360s010005*.py")
+        ) + sorted(path.name for path in MIGRATIONS.glob("ci03g020001*.py"))
+        assert names == [
+            "a360s010005_worksheet_learner_hint_attestations.py",
+            "ci03g020001_reviewer_assignment_authority.py",
+        ]
 
 
 class TestA360s010004Postgres:
@@ -58,7 +64,7 @@ class TestA360s010004Postgres:
         with bootstrap_engine.connect() as conn:
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                == "a360s010005"
+                == "ci03g020001"
             )
 
     def test_valid_evaluation_ensure_audit_inserts(

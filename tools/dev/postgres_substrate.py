@@ -272,6 +272,54 @@ def provision_runtime_grants(bootstrap: Engine) -> None:
             )
             conn.execute(
                 text(
+                    "GRANT SELECT, INSERT ON content.review_assignment_issuances "
+                    f"TO {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "REVOKE UPDATE, DELETE ON content.review_assignment_issuances "
+                    f"FROM {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "GRANT SELECT, INSERT ON content.review_assignment_revocations "
+                    f"TO {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "REVOKE UPDATE, DELETE ON content.review_assignment_revocations "
+                    f"FROM {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "GRANT SELECT, INSERT, UPDATE ON content.review_current_assignments "
+                    f"TO {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "REVOKE DELETE ON content.review_current_assignments "
+                    f"FROM {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "GRANT SELECT, INSERT ON security.authorization_denial_records "
+                    f"TO {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
+                    "REVOKE UPDATE, DELETE ON security.authorization_denial_records "
+                    f"FROM {RUNTIME_USER}"
+                )
+            )
+            conn.execute(
+                text(
                     f"GRANT SELECT, INSERT ON content.publications TO {RUNTIME_USER}"
                 )
             )
