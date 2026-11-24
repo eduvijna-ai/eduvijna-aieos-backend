@@ -26,6 +26,7 @@ from aieos.domains.content.application.catalog import StaticContentTypeCatalog
 from aieos.domains.content.application.ports import (
     CONTENT_PUBLISH,
     CONTENT_REVIEW_DECIDE,
+    CONTENT_REVIEW_SUBMIT,
     CONTENT_VERSION_CREATE,
 )
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId
@@ -161,6 +162,45 @@ def private_field_names(payload: object) -> set[str]:
             continue
         found.update(k for k in PRIVATE_FIELD_NAMES if k in item)
     return found
+
+
+def normalized_problem_body(response) -> dict[str, object] | None:
+    if not response.headers.get("content-type", "").startswith("application/problem+json"):
+        return None
+    try:
+        body = response.json()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(body, dict):
+        return None
+    stripped = {
+        k: v
+        for k, v in body.items()
+        if k not in {"request_id", "correlation_id", "instance"}
+    }
+    return stripped
+
+
+def content_aggregate_etag(client: TestClient, content_id: str) -> str:
+    tenant_id: UUID = client._ci03_tenant_id  # type: ignore[attr-defined]
+    token: str = client._ci03_token  # type: ignore[attr-defined]
+    response = client.get(
+        f"/api/v1/contents/{content_id}",
+        headers=auth_headers(tenant_id, token),
+    )
+    assert response.status_code == 200
+    return response.headers["ETag"]
+
+
+def submit_version_for_review(client: TestClient, content_id: str, version_id: str) -> None:
+    tenant_id: UUID = client._ci03_tenant_id  # type: ignore[attr-defined]
+    hdr = client._ci03_auth_headers  # type: ignore[attr-defined]
+    etag = content_aggregate_etag(client, content_id)
+    response = client.post(
+        f"/api/v1/contents/{content_id}/versions/{version_id}/actions/submit-for-review",
+        headers=hdr({"If-Match": etag}),
+    )
+    assert response.status_code == 200
 
 
 def problem_code(response) -> str | None:
@@ -343,7 +383,7 @@ def seed_owner_bundle(bootstrap_engine: Engine, tenant_id: UUID, owner_id: UUID)
         bootstrap_engine,
         tenant_id=tenant_id,
         principal_id=owner_id,
-        capabilities=(CONTENT_VERSION_CREATE,),
+        capabilities=(CONTENT_VERSION_CREATE, CONTENT_REVIEW_SUBMIT),
     )
 
 
@@ -359,10 +399,17 @@ def emit_receipt(case: str, **fields: object) -> None:
     path = os.environ.get("CI03_G1_RECEIPTS_PATH")
     if not path:
         return
+    pg_meta: dict[str, object] = {}
+    if sv := os.environ.get("CI03_G1_PG_SERVER_VERSION"):
+        pg_meta["db_server_version"] = sv
+        pg_meta["pg_major"] = sv.split(".", 1)[0]
+    if role := os.environ.get("CI03_G1_PG_RUNTIME_USER"):
+        pg_meta["runtime_role"] = role
     record: dict[str, object] = {
         "case": case,
         "source_sha": source_git_sha(),
         "baseline_mode": baseline_mode(),
+        **pg_meta,
         **fields,
     }
     with open(path, "a", encoding="utf-8") as handle:

@@ -28,7 +28,9 @@ from aieos.platform.ai.infrastructure.persistence.uow import (
     SqlAlchemyAIUnitOfWorkFactory,
 )
 from aieos.platform.api.app import create_app
+from aieos.platform.security.authorization.decisions import PrincipalKind
 from tests.domains.teaching.worksheet_fixtures import valid_worksheet_model
+from tests.platform.security.authorization.helpers import seed_active_authority
 from tests.fakes import (
     AllowClassroomAssessmentAuthorization,
     IDEMPOTENCY_RETENTION,
@@ -64,6 +66,12 @@ def build_client(
     generation_lease_seconds: int = 120,
     generation_clock: UtcNow | None = None,
 ) -> TestClient:
+    seed_active_authority(
+        runtime_engine,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        principal_kind=PrincipalKind.HUMAN,
+    )
     gateway = model_gateway if model_gateway is not None else build_fake_gateway()
     app = create_app(
         uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),

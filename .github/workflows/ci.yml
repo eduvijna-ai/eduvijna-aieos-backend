@@ -72,6 +72,14 @@ jobs:
           export CI03_G1_BASE_SHA=5bbc09bc895407b71a61f9ba86a7209ff9c10ffa
           bash tools/ci/run_ci03_g1_pg18_evidence.sh
 
+      - name: Upload CI03-G1 evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@370875e586e15bfed67ae99e0f97401e99b8b06c # v7.0.0
+        with:
+          name: ci03-g1-pg18-evidence
+          path: ci03-g1-evidence/
+          if-no-files-found: error
+
   postgresql-candidate-authority:
     name: postgresql-candidate-authority
     needs:

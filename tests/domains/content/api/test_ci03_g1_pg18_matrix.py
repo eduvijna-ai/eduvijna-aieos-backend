@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from tests.domains.content.api.helpers_ci03_g1_i01 import (
     client_for,
     emit_receipt,
     mint_token,
+    normalized_problem_body,
     owner_worksheet_fixtures,
     private_field_names,
     private_fields_recursive,
@@ -27,6 +29,7 @@ from tests.domains.content.api.helpers_ci03_g1_i01 import (
     seed_principal_fixture,
     seed_worksheet_http_ids,
     set_content_owner,
+    submit_version_for_review,
 )
 from tests.domains.content.api.test_gci_i05_http import APPEND_BODY, CREATE_BODY
 from tests.platform.security.authorization.helpers import (
@@ -41,6 +44,12 @@ pytestmark = pytest.mark.ci03_g1_pg18_matrix
 @pytest.fixture(scope="module")
 def _rsa():
     return rsa_material()
+
+
+@pytest.fixture(autouse=True)
+def _ci03_pg_receipt_meta(postgres18) -> None:
+    os.environ["CI03_G1_PG_SERVER_VERSION"] = postgres18["server_version"]
+    os.environ["CI03_G1_PG_RUNTIME_USER"] = postgres18["runtime_user"]
 
 
 class TestCi03G1Pg18SharedMatrix:
@@ -66,20 +75,22 @@ class TestCi03G1Pg18SharedMatrix:
         for schema, vid in (("worksheet@1", v1_id), ("worksheet@2", v2_id)):
             response = GET_VERSION(owner, content_id, vid)
             assert response.status_code == 200
-            assert response.headers.get("Cache-Control") == "private, no-store"
+            cache_control = response.headers.get("Cache-Control")
+            if baseline_mode():
+                assert cache_control is None
+            else:
+                assert cache_control == "private, no-store"
             names = private_field_names(response.json().get("payload"))
             assert "answer" in names and "explanation" in names
             if schema == "worksheet@2":
                 assert "learner_hint" in names
             emit_receipt(
                 f"owner_positive_{schema}",
-                pg_major="18",
-                runtime_role=postgres18["runtime_user"],
                 schema=schema,
                 status=200,
                 problem_code=problem_code(response),
                 private_field_names=sorted(names),
-                no_store=response.headers.get("Cache-Control"),
+                no_store=cache_control,
             )
 
     @pytest.mark.parametrize(
@@ -150,6 +161,12 @@ class TestCi03G1Pg18SharedMatrix:
                 assert response.status_code == 404
                 assert problem_code(response) == "content_version_not_found"
                 assert_no_private_fields_recursive(response.json())
+                if fixture_label == "student" and schema == "worksheet@1":
+                    missing = GET_VERSION(actor, content_id, str(uuid.uuid7()))
+                    assert missing.status_code == 404
+                    assert normalized_problem_body(response) == normalized_problem_body(
+                        missing
+                    )
                 emit_receipt(
                     f"candidate_non_owner_{fixture_label}_{schema}",
                     fixture=fixture_label,
@@ -362,12 +379,19 @@ class TestCi03G1Pg18SharedMatrix:
         tenant_id = uuid.uuid7()
         owner_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
+        student_id = uuid.uuid7()
         seed_owner_bundle(bootstrap_engine, tenant_id, owner_id)
         seed_principal_fixture(
             bootstrap_engine,
             tenant_id=tenant_id,
             principal_id=reviewer_id,
             fixture_label="reviewer_decide",
+        )
+        seed_principal_fixture(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            principal_id=student_id,
+            fixture_label="student",
         )
         app, _ = build_real_auth_app(
             runtime_engine,
@@ -378,26 +402,57 @@ class TestCi03G1Pg18SharedMatrix:
         )
         owner = client_for(app, private_key, tenant_id=tenant_id, principal_id=owner_id)
         content_id, v1_id, _ = owner_worksheet_fixtures(owner)
+        submit_version_for_review(owner, content_id, v1_id)
         token = owner._ci03_token  # type: ignore[attr-defined]
         library = owner.get(
             f"/api/v1/teacher-os/library/{content_id}/versions/{v1_id}",
             headers=auth_headers(tenant_id, token),
         )
         assert library.status_code == 200
+        queue_list = owner.get(
+            "/api/v1/teacher-os/review-queue",
+            headers=auth_headers(tenant_id, token),
+        )
+        assert queue_list.status_code == 200
+        listed = queue_list.json().get("items", [])
+        assert any(
+            i.get("content_id") == content_id and i.get("version_id") == v1_id for i in listed
+        )
+        queue_detail = owner.get(
+            f"/api/v1/teacher-os/review-queue/{content_id}/versions/{v1_id}",
+            headers=auth_headers(tenant_id, token),
+        )
+        assert queue_detail.status_code == 200
         reviewer = client_for(
             app, private_key, tenant_id=tenant_id, principal_id=reviewer_id
         )
         rev_tok = reviewer._ci03_token  # type: ignore[attr-defined]
-        queue = reviewer.get(
+        reviewer_queue = reviewer.get(
             f"/api/v1/teacher-os/review-queue/{content_id}/versions/{v1_id}",
             headers=auth_headers(tenant_id, rev_tok),
         )
-        assert queue.status_code == 404
+        assert reviewer_queue.status_code == 404
+        assert problem_code(reviewer_queue) == "review_queue_item_not_found"
+        student = client_for(app, private_key, tenant_id=tenant_id, principal_id=student_id)
+        student_tok = student._ci03_token  # type: ignore[attr-defined]
+        student_library = student.get(
+            f"/api/v1/teacher-os/library/{content_id}/versions/{v1_id}",
+            headers=auth_headers(tenant_id, student_tok),
+        )
+        assert student_library.status_code == 404
+        assert problem_code(student_library) == "library_item_not_found"
         emit_receipt("owner_library_positive", status=library.status_code)
+        emit_receipt("owner_review_queue_list_positive", status=queue_list.status_code)
+        emit_receipt("owner_review_queue_detail_positive", status=queue_detail.status_code)
         emit_receipt(
-            "review_queue_non_owner",
-            status=queue.status_code,
-            problem_code=problem_code(queue),
+            "reviewer_review_queue_detail_denied",
+            status=reviewer_queue.status_code,
+            problem_code=problem_code(reviewer_queue),
+        )
+        emit_receipt(
+            "non_owner_library_denied",
+            status=student_library.status_code,
+            problem_code=problem_code(student_library),
         )
 
     def test_nonworksheet_regression(
