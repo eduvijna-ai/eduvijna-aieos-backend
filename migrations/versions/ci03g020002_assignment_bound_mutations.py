@@ -134,6 +134,7 @@ def upgrade() -> None:
             )
         """
     )
+    op.execute(f"SET LOCAL ROLE {content_owner}")
 
 
 def downgrade() -> None:

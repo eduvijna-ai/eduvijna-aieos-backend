@@ -56,8 +56,6 @@ class ReviewerUseGuardContext:
     version_id: ContentVersionId
     assignment_id: ReviewAssignmentId
     mode: ReviewerUseMode = ReviewerUseMode.PROTECTED_EFFECT
-    effect_at: datetime | None = None
-
 
 @dataclass(frozen=True, slots=True)
 class ReviewerUseGuardDependencies:
@@ -76,7 +74,7 @@ def enforce_reviewer_use_guard(
     *,
     ctx: ReviewerUseGuardContext,
     deps: ReviewerUseGuardDependencies,
-) -> ActiveReviewAssignment:
+) -> tuple[ActiveReviewAssignment, datetime]:
     """Full O64-03-C predicate before any future private disclosure/mutation."""
     terminal_mode = ctx.mode is ReviewerUseMode.TERMINAL_RECEIPT
     if ctx.effective_actor_id != ctx.principal_id:
@@ -148,7 +146,7 @@ def enforce_reviewer_use_guard(
         principal_classification=deps.principal_classification,
         issuer_class_authority=deps.issuer_class_authority,
     )
-    effect_at = ctx.effect_at if ctx.effect_at is not None else deps.clock()
+    effect_at = deps.clock()
     if terminal_mode:
         pointer = slot.active_assignment_id
         if pointer is not None and pointer != ctx.assignment_id:
@@ -172,7 +170,7 @@ def enforce_reviewer_use_guard(
             raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
         if bound.issuer_principal_id != issuer_id:
             raise ReviewAssignmentForbidden("issuer does not match content owner")
-        return bound
+        return bound, effect_at
     active = resolve_slot_active_assignment(
         uow.review_assignments,
         tenant_id=ctx.execution_tenant_id,
@@ -192,4 +190,4 @@ def enforce_reviewer_use_guard(
         raise ReviewAssignmentForbidden("class_ref does not match governed provenance")
     if active.issuer_principal_id != issuer_id:
         raise ReviewAssignmentForbidden("issuer does not match content owner")
-    return active
+    return active, effect_at

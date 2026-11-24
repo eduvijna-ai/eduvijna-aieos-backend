@@ -139,6 +139,7 @@ class RecordWorksheetLearnerHintAttestationService:
                     raise_assignment_unavailable()
                 assignment_id_for_fp: ReviewAssignmentId | None = None
                 replay_assignment_id: ReviewAssignmentId | None = None
+                stored_early = None
                 if existing is not None and hint_bound:
                     stored_early = uow.worksheet_hint_attestations.get_for_version(
                         content_id, version_id
@@ -184,6 +185,13 @@ class RecordWorksheetLearnerHintAttestationService:
                     stored_attestation = load_valid_attestation(
                         uow.worksheet_hint_attestations, version_row
                     )
+                    if (
+                        stored_early is not None
+                        and stored_attestation.attestation_id != stored_early.attestation_id
+                    ):
+                        raise WorksheetLearnerHintAttestationInvalid(
+                            "idempotent attestation identity mismatch"
+                        )
                     if stored_attestation.reviewer_principal_id != principal_id:
                         raise WorksheetLearnerHintAttestationInvalid(
                             "idempotent attestation reviewer mismatch"
@@ -290,7 +298,6 @@ class RecordWorksheetLearnerHintAttestationService:
                         ),
                     }
                 )
-                effect_at = now if now is not None else datetime.now(UTC)
                 digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
                 attestation_id = WorksheetLearnerHintAttestationId.generate()
                 stored = WorksheetLearnerHintVersionAttestationV1(

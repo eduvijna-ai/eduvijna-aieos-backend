@@ -621,7 +621,7 @@ class TestCi03G2I01AssignmentPostgres:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            active = enforce_reviewer_use_guard(uow, ctx=guard_ctx_ok, deps=deps)
+            active, _ = enforce_reviewer_use_guard(uow, ctx=guard_ctx_ok, deps=deps)
             assert active.assignment_id == assignment_id
         revoke.revoke(
             tenant_id,

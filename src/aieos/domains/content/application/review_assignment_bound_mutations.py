@@ -155,21 +155,11 @@ def require_assignment_authority_for_new_effect(
     head = uow.contents.get_head_for_update(content_id)
     if head is None or head.tenant_id != execution_tenant_id:
         raise ReviewAssignmentNotAllowed("content head missing")
-    if uow.review_assignments.get_slot_for_update(content_id, version_id) is None:
+    slot = uow.review_assignments.get_slot_for_update(content_id, version_id)
+    if slot is None:
         raise ReviewAssignmentConflict("assignment slot missing")
-    effect_at = deps.clock()
-    from aieos.domains.content.application.review_assignment_state import (
-        resolve_slot_active_assignment,
-    )
-
-    active = resolve_slot_active_assignment(
-        uow.review_assignments,
-        tenant_id=execution_tenant_id,
-        content_id=content_id,
-        version_id=version_id,
-        now=effect_at,
-    )
-    if active is None:
+    pointer = slot.active_assignment_id
+    if pointer is None:
         raise ReviewAssignmentConflict("no active assignment binding at effect time")
     guard_ctx = ReviewerUseGuardContext(
         execution_tenant_id=execution_tenant_id,
@@ -177,14 +167,10 @@ def require_assignment_authority_for_new_effect(
         effective_actor_id=effective_actor_id,
         content_id=content_id,
         version_id=version_id,
-        assignment_id=active.assignment_id,
+        assignment_id=ReviewAssignmentId(pointer),
         mode=ReviewerUseMode.PROTECTED_EFFECT,
-        effect_at=effect_at,
     )
-    guard_active = enforce_reviewer_use_guard(
-        uow, ctx=guard_ctx, deps=_guard_deps(deps)
-    )
-    return guard_active, effect_at
+    return enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))
 
 
 def validate_bound_assignment_replay(
@@ -216,7 +202,6 @@ def validate_bound_assignment_replay(
         if terminal_outcome
         else ReviewerUseMode.PROTECTED_EFFECT
     )
-    effect_at = deps.clock()
     guard_ctx = ReviewerUseGuardContext(
         execution_tenant_id=execution_tenant_id,
         principal_id=principal_id,
@@ -225,9 +210,8 @@ def validate_bound_assignment_replay(
         version_id=version_id,
         assignment_id=bound_assignment_id,
         mode=mode,
-        effect_at=effect_at,
     )
-    enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))
+    _, _ = enforce_reviewer_use_guard(uow, ctx=guard_ctx, deps=_guard_deps(deps))
 
 
 def assert_approve_attestation_assignment_match(
