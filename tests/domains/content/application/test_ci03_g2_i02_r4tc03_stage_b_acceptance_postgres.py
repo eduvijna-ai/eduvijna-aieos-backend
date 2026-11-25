@@ -302,13 +302,6 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
 ) -> None:
     """TC03-02: integrated guard denies protected attest when eligibility facts are malformed."""
 
-    def _non_tuple_class_refs(
-        _self,
-        _tenant_id: uuid.UUID,
-        _reviewer_principal_id: uuid.UUID,
-    ) -> list[str]:
-        return [CLASS_REF]
-
     (
         tenant_id,
         _owner,
@@ -325,7 +318,7 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
     monkeypatch.setattr(
         provider,
         "list_reviewer_eligible_class_refs",
-        _non_tuple_class_refs,
+        lambda _tenant_id, _reviewer_id: [CLASS_REF],
     )
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
