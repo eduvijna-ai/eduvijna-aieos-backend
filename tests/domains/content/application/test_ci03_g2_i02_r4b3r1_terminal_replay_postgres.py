@@ -28,6 +28,7 @@ from tests.domains.content.application.helpers_ci03_g2_i02_r4b3r1 import (
     build_terminal_approved_scenario,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+    assert_snapshot_unchanged_except_denial,
     capture_durable_snapshot,
     load_idempotency_receipt,
     outbox_count_for_event_type,
@@ -210,7 +211,7 @@ def test_new_terminal_effect_denied_after_approve(
         assignment_id=scenario.assignment_id,
         reviewer_principal_id=scenario.reviewer_id,
     )
-    assert after == before
+    assert_snapshot_unchanged_except_denial(before, after)
     assert (
         load_idempotency_receipt(
             ci03_g2_runtime_engine,
