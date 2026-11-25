@@ -46,6 +46,7 @@ class TerminalApprovedScenario:
     content_id: ContentId
     version_id: ContentVersionId
     revision: AggregateRevision
+    attest_effect_revision: AggregateRevision
     provider: object
     attest_idem: str
     approve_idem: str
@@ -76,6 +77,7 @@ def build_terminal_approved_scenario(
         school_context_provider=provider,
     )
     attest_idem = f"b3r1-term-attest-{uuid.uuid7()}"
+    attest_effect_revision = revision
     attest.record(
         tenant_id,
         reviewer_id,
@@ -134,6 +136,7 @@ def build_terminal_approved_scenario(
         content_id=content_id,
         version_id=version_id,
         revision=revision,
+        attest_effect_revision=attest_effect_revision,
         provider=provider,
         attest_idem=attest_idem,
         approve_idem=approve_idem,

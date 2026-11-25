@@ -83,7 +83,7 @@ def test_issuer_assign_revoked_denies_attest_as_bound_reviewer(
             owner_id,
             content_id=content_id,
             version_id=version_id,
-            expected_assignment_id=assignment_id,
+            assignment_id=assignment_id,
             idempotency_key=f"bf-issuer-revoke-{uuid.uuid7()}",
             event_context=event,
             audit_provenance=api_mutation_audit_provenance(owner_id),

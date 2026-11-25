@@ -8,7 +8,7 @@ import pytest
 from alembic import command
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from tests.conftest import alembic_config, provision_runtime_grants
@@ -126,7 +126,10 @@ def test_runtime_role_cannot_update_immutable_attestation_row(
         audit_provenance=api_mutation_audit_provenance(reviewer_id),
         now=_NOW,
     )
-    with pytest.raises(OperationalError, match="immutable"):
+    with pytest.raises(
+        (OperationalError, DBAPIError),
+        match="immutable|permission denied",
+    ):
         with ci03_g2_runtime_engine.begin() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),

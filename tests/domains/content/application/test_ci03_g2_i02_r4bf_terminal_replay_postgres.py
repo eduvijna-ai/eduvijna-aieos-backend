@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
+from aieos.domains.content.domain.identities import AggregateRevision
 from aieos.domains.content.domain.states import StewardshipState
 from aieos.platform.idempotency.models import (
     CONTENT_REVIEW_REJECT_V1,
@@ -87,13 +88,14 @@ def test_terminal_receipt_replay_after_terminal_decision_preserves_durable_state
         clock=lambda: _NOW,
         school_context_provider=scenario.provider,
     )
+    replay_revision = AggregateRevision(receipt_before.result_aggregate_revision)
     if operation == CONTENT_REVIEW_REJECT_V1:
         review.reject(
             scenario.tenant_id,
             scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
-            expected_aggregate_revision=scenario.revision,
+            expected_aggregate_revision=replay_revision,
             reason_code="governed",
             comment="reject",
             idempotency_key=idem_key,
@@ -107,7 +109,7 @@ def test_terminal_receipt_replay_after_terminal_decision_preserves_durable_state
             scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
-            expected_aggregate_revision=scenario.revision,
+            expected_aggregate_revision=replay_revision,
             reason_code="governed",
             comment="changes",
             idempotency_key=idem_key,

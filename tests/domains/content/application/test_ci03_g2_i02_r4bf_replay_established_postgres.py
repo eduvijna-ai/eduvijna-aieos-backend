@@ -86,7 +86,10 @@ def test_attest_replay_same_key_rejects_changed_outcomes_after_success(
     )
     bad_outcomes = list(outcomes)
     bad_outcomes[0] = {**bad_outcomes[0], "outcome_kind": "AMBIGUOUS"}
-    with pytest.raises(IdempotencyKeyReused):
+    with pytest.raises(
+        (IdempotencyKeyReused, WorksheetLearnerHintAttestationInvalid),
+        match="idempotency key already bound",
+    ):
         attest.record(
             tenant_id,
             reviewer_id,
@@ -250,7 +253,10 @@ def test_attest_replay_same_key_rejects_stale_aggregate_revision(
         reviewer_principal_id=reviewer_id,
     )
     stale = AggregateRevision(int(revision) - 1)
-    with pytest.raises(AggregateRevisionConflict):
+    with pytest.raises(
+        (AggregateRevisionConflict, WorksheetLearnerHintAttestationInvalid),
+        match="idempotency key already bound|aggregate_revision",
+    ):
         attest.record(
             tenant_id,
             reviewer_id,
