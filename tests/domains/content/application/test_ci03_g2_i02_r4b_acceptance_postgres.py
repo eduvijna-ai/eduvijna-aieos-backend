@@ -296,7 +296,7 @@ I02_BF_CLOSURE_MATRIX: tuple[dict[str, str], ...] = (
         "obligation": "issuer_reviewer_authority_loss",
         "test": "r4b3r1 + r4bf_authority + grid",
         "status": "PARTIAL",
-        "notes": "issuer assign revoke + membership/decide; class/unavailable gaps",
+        "notes": "issuer assign locks revoke+attest; membership/decide; class/unavailable gaps",
     },
     {
         "id": "BF-05",
@@ -348,9 +348,9 @@ I02_BF_CLOSURE_MATRIX: tuple[dict[str, str], ...] = (
     {
         "id": "BF-12",
         "obligation": "ci_g1_g2_inventory",
-        "test": "CI03 G2 targeted matrix",
-        "status": "PENDING",
-        "notes": "filled at BF handback from actual CI run",
+        "test": "CI run 45541196270 @ 5015338",
+        "status": "EXECUTED",
+        "notes": "G1 28+28 receipts; G2 124 passed/3443 deselected; quality 53 fail unchanged",
     },
 )
 
