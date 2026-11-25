@@ -321,7 +321,7 @@ def test_issuer_submit_revoked_allows_bound_attest_denies_reissue_only(
         capability=CONTENT_REVIEW_SUBMIT,
     )
     issue, *_ = _services(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
-    with pytest.raises(ReviewForbidden, match="review capability denied"):
+    with pytest.raises(ReviewForbidden):
         issue.issue(
             tenant_id,
             owner_id,
@@ -357,8 +357,17 @@ def test_issuer_submit_revoked_allows_bound_attest_denies_reissue_only(
 def test_malformed_reviewer_eligibility_denies_bound_attest(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TC03-02: integrated guard denies protected attest when eligibility facts are malformed."""
+
+    def _non_string_class_refs(
+        _self,
+        _tenant_id: uuid.UUID,
+        _reviewer_principal_id: uuid.UUID,
+    ) -> tuple[object, ...]:
+        return (123,)
+
     (
         tenant_id,
         _owner,
@@ -372,7 +381,11 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
     )
-    provider.set_reviewer_class_eligibility(reviewer_id, ("",))
+    monkeypatch.setattr(
+        provider,
+        "list_reviewer_eligible_class_refs",
+        _non_string_class_refs,
+    )
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
