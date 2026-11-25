@@ -619,6 +619,51 @@ I02_TC03_REQUIREMENT_MAP: tuple[dict[str, str], ...] = (
     },
 )
 
+I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "id": "R1-01",
+        "item": "migration/privilege",
+        "status": "EXECUTED",
+        "tests": (
+            "g2_i01::test_ci03g020002_single_step_downgrade_upgrade_on_clean_substrate "
+            "+ r4tc03r1 cross_tenant_insert + tc03 runtime_catalog; PRIOR tc02 refusal"
+        ),
+    },
+    {
+        "id": "R1-02",
+        "item": "actual interlock",
+        "status": "EXECUTED",
+        "tests": (
+            "r4tc03r1 approve/replay load_valid_attestation dataclasses.replace; "
+            "PRIOR immutability UPDATE boundary in r4tc03"
+        ),
+    },
+    {
+        "id": "R1-03",
+        "item": "authority/legacy",
+        "status": "PARTIAL",
+        "tests": (
+            "r4tc03r1 submit revoke reissue-after-attest, malformed eligibility; "
+            "hint_free approve + historical publish; PRIOR tc01/tc03 authority"
+        ),
+    },
+    {
+        "id": "R1-04",
+        "item": "durable proof/cleanup",
+        "status": "PARTIAL",
+        "tests": (
+            "r4b2 command evidence + tc03 passive reacquire; "
+            "PARTIAL full 24-case identity grid (Chief residual)"
+        ),
+    },
+    {
+        "id": "R1-05",
+        "item": "traceability",
+        "status": "EXECUTED",
+        "tests": "I02_TC03R1_CASE_MAP",
+    },
+)
+
 
 def _idem_attest_result_id(
     runtime_engine: Engine,

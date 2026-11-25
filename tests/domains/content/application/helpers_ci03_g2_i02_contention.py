@@ -226,6 +226,27 @@ def passive_head_slot_blocker(
         uow.__exit__(None, None, None)
 
 
+def reacquire_head_slot_lock_or_timeout(
+    engine: Engine,
+    tenant_id: uuid.UUID,
+    *,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    timeout_seconds: float = 3.0,
+) -> None:
+    """Prove head+slot locks are released after passive blocker teardown."""
+    uow = SqlAlchemyContentUnitOfWork(engine, tenant_id)
+    uow.__enter__()
+    try:
+        connection = uow._connection
+        assert connection is not None
+        connection.execute(text(f"SET lock_timeout = '{int(timeout_seconds * 1000)}ms'"))
+        uow.contents.get_head_for_update(content_id)
+        uow.review_assignments.get_slot_for_update(content_id, version_id)
+    finally:
+        uow.__exit__(None, None, None)
+
+
 def run_two_party_contention(
     *,
     observer_engine: Engine,

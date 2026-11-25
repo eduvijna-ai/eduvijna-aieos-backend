@@ -144,36 +144,28 @@ def test_ci03g020002_single_step_downgrade_upgrade_on_clean_substrate(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_postgres18: dict[str, str],
 ) -> None:
-    """BF-10: one-step ci03g020002↔ci03g020001 roundtrip before assignment evidence accumulates."""
+    """BF-10 / TC03R1-01: clean-substrate roundtrip restores full schema fingerprint."""
     from alembic import command
     from tests.conftest import alembic_config
+    from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+        schema_fingerprint_ci03g020002,
+    )
 
     cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
+    before_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+    assert before_fp.alembic_head == "ci03g020002"
     try:
         command.downgrade(cfg, "ci03g020001")
-        with ci03_g2_bootstrap_engine.connect() as conn:
-            head = conn.execute(
-                text("SELECT version_num FROM alembic_version")
-            ).scalar_one()
-            assert head == "ci03g020001"
-            insp_col = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM information_schema.columns
-                    WHERE table_schema = 'api'
-                      AND table_name = 'idempotency_records'
-                      AND column_name = 'result_worksheet_hint_attestation_id'
-                    """
-                )
-            ).scalar_one()
-            assert int(insp_col) == 0
+        mid_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+        assert mid_fp.alembic_head == "ci03g020001"
+        assert mid_fp.attest_bound_column == 0
+        assert mid_fp.receipt_attest_result_column == 0
+        assert mid_fp.fk_attest_assignment == 0
+        assert mid_fp.uq_issuance_resource_reviewer == 0
     finally:
         command.upgrade(cfg, "ci03g020002")
-    with ci03_g2_bootstrap_engine.connect() as conn:
-        head = conn.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one()
-        assert head == "ci03g020002"
+    after_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+    assert after_fp == before_fp
 
 
 def _seed_worksheet_in_review(

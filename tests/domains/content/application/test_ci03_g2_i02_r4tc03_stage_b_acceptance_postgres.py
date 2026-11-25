@@ -6,7 +6,6 @@ import threading
 import uuid
 
 import pytest
-from alembic import command
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
@@ -17,13 +16,14 @@ from aieos.domains.content.application.errors import (
 )
 from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
-from tests.conftest import RUNTIME_USER, alembic_config
+from tests.conftest import RUNTIME_USER
 from tests.domains.content.application.helpers_ci03_g2_i01 import (
     integrated_attest_service,
     integrated_review_service,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
     passive_head_slot_blocker,
+    reacquire_head_slot_lock_or_timeout,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     assert_snapshot_unchanged_except_denial,
@@ -410,8 +410,12 @@ def test_passive_blocker_fault_during_real_lock_hold_propagates_and_releases(
     assert not thread.is_alive()
     assert len(blocker_errors) == 1
     assert isinstance(blocker_errors[0], RuntimeError)
-    with ci03_g2_runtime_engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
+    reacquire_head_slot_lock_or_timeout(
+        ci03_g2_runtime_engine,
+        tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+    )
 
 
 def test_migration_schema_fingerprint_includes_fks_and_forced_rls(
@@ -428,36 +432,6 @@ def test_migration_schema_fingerprint_includes_fks_and_forced_rls(
     assert fp.uq_issuance_resource_reviewer == 1
     assert fp.attest_rls_forced is True
     assert fp.decision_rls_forced is True
-
-
-def test_migration_clean_roundtrip_restores_fingerprint(
-    ci03_g2_bootstrap_engine: Engine,
-    ci03_g2_postgres18: dict[str, str],
-) -> None:
-    before = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
-    cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
-    with ci03_g2_bootstrap_engine.connect() as conn:
-        bound_before = int(
-            conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
-                    WHERE review_assignment_id IS NOT NULL
-                    """
-                )
-            ).scalar_one()
-        )
-    if bound_before > 0:
-        pytest.skip(
-            "shared G2 substrate already has bound evidence; clean roundtrip credited in g2_i01"
-        )
-    command.downgrade(cfg, "ci03g020001")
-    mid = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
-    assert mid.alembic_head == "ci03g020001"
-    assert mid.attest_bound_column == 0
-    command.upgrade(cfg, "ci03g020002")
-    after = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
-    assert after == before
 
 
 def test_runtime_catalog_shows_forced_rls_without_extra_grants(
@@ -493,52 +467,3 @@ def test_runtime_catalog_shows_forced_rls_without_extra_grants(
     assert forced is True
     assert insert_attest is True
 
-
-def test_cross_tenant_insert_into_assignment_issuance_denied(
-    ci03_g2_bootstrap_engine: Engine,
-    ci03_g2_runtime_engine: Engine,
-) -> None:
-    tenant_b = uuid.uuid7()
-    (
-        _tenant_a,
-        owner_a,
-        reviewer_a,
-        _provider,
-        _revoke,
-        assignment_id,
-        content_id,
-        version_id,
-        _revision,
-    ) = _bound_hint_scenario(
-        ci03_g2_bootstrap_engine,
-        ci03_g2_runtime_engine,
-        clock=lambda: _NOW,
-    )
-    with pytest.raises(Exception):
-        with ci03_g2_runtime_engine.begin() as conn:
-            conn.execute(
-                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_b)},
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO content.review_assignment_issuances (
-                        tenant_id, content_id, version_id, assignment_id,
-                        reviewer_principal_id, issuer_principal_id, class_ref,
-                        valid_from, valid_until
-                    ) VALUES (
-                        :tid_b, :cid, :vid, :aid, :rev, :iss, 'class-a',
-                        NOW(), NOW() + interval '7 days'
-                    )
-                    """
-                ),
-                {
-                    "tid_b": tenant_b,
-                    "cid": content_id.value,
-                    "vid": version_id.value,
-                    "aid": assignment_id.value,
-                    "rev": reviewer_a,
-                    "iss": owner_a,
-                },
-            )
