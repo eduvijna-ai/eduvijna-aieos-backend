@@ -558,8 +558,8 @@ I02_TC03_REQUIREMENT_MAP: tuple[dict[str, str], ...] = (
         "id": "TC03-02",
         "invariant": "issuer/reviewer authority losses",
         "test": (
-            "r4tc03 submit revoke on bound attest + malformed eligibility; "
-            "PRIOR TC01 D/BF issuer-assign/membership/decide/class/unavailable"
+            "r4tc03 malformed eligibility port; PRIOR TC01 issuer submit/reissue + "
+            "D/BF assign/membership/decide/class/unavailable"
         ),
         "stage": "B",
     },

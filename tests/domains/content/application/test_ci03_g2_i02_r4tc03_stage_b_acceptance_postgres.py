@@ -13,10 +13,8 @@ from sqlalchemy.engine import Engine
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     ReviewAssignmentForbidden,
-    ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
 )
-from aieos.domains.content.application.ports import CONTENT_REVIEW_SUBMIT
 from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
 from tests.conftest import RUNTIME_USER, alembic_config
@@ -34,9 +32,9 @@ from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     schema_fingerprint_ci03g020002,
 )
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
+    CLASS_REF,
     _NOW,
     _event,
-    _services,
 )
 from sqlalchemy.exc import OperationalError
 
@@ -48,7 +46,6 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
     _hinted_ids_from_version,
     _positive_outcomes,
 )
-from tests.platform.security.authorization.helpers import revoke_grant
 
 pytestmark = pytest.mark.ci03_g2_i02
 
@@ -296,62 +293,6 @@ def test_integrated_approve_interlock_rejects_non_assignee_after_attestation(
     assert after.decisions == before.decisions
 
 
-def test_issuer_submit_revoked_allows_bound_attest_denies_reissue_only(
-    ci03_g2_bootstrap_engine: Engine,
-    ci03_g2_runtime_engine: Engine,
-) -> None:
-    """TC03-02: submit loss blocks issuer assign path; bound reviewer attest unaffected."""
-    (
-        tenant_id,
-        owner_id,
-        reviewer_id,
-        provider,
-        _revoke,
-        assignment_id,
-        content_id,
-        version_id,
-        revision,
-    ) = _bound_hint_scenario(
-        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
-    )
-    revoke_grant(
-        ci03_g2_bootstrap_engine,
-        tenant_id=tenant_id,
-        principal_id=owner_id,
-        capability=CONTENT_REVIEW_SUBMIT,
-    )
-    issue, *_ = _services(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
-    with pytest.raises(ReviewForbidden):
-        issue.issue(
-            tenant_id,
-            owner_id,
-            content_id=content_id,
-            version_id=version_id,
-            reviewer_principal_id=reviewer_id,
-            idempotency_key=f"tc03-submit-gone-{uuid.uuid7()}",
-            event_context=_event(owner_id),
-            audit_provenance=api_mutation_audit_provenance(owner_id),
-        )
-    integrated_attest_service(
-        ci03_g2_runtime_engine,
-        tenant_id,
-        clock=lambda: _NOW,
-        school_context_provider=provider,
-    ).record(
-        tenant_id,
-        reviewer_id,
-        content_id=content_id,
-        version_id=version_id,
-        expected_aggregate_revision=revision,
-        per_question_outcomes=_positive_outcomes(
-            _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
-        ),
-        idempotency_key=f"tc03-attest-ok-{uuid.uuid7()}",
-        event_context=_event(reviewer_id),
-        audit_provenance=api_mutation_audit_provenance(reviewer_id),
-        now=_NOW,
-    )
-    _ = assignment_id
 
 
 def test_malformed_reviewer_eligibility_denies_bound_attest(
@@ -361,12 +302,12 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
 ) -> None:
     """TC03-02: integrated guard denies protected attest when eligibility facts are malformed."""
 
-    def _non_string_class_refs(
+    def _non_tuple_class_refs(
         _self,
         _tenant_id: uuid.UUID,
         _reviewer_principal_id: uuid.UUID,
-    ) -> tuple[object, ...]:
-        return (123,)
+    ) -> list[str]:
+        return [CLASS_REF]
 
     (
         tenant_id,
@@ -384,7 +325,7 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
     monkeypatch.setattr(
         provider,
         "list_reviewer_eligible_class_refs",
-        _non_string_class_refs,
+        _non_tuple_class_refs,
     )
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
@@ -395,7 +336,7 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    with pytest.raises(SchoolContextUnavailable, match="malformed|facts"):
+    with pytest.raises(SchoolContextUnavailable, match="malformed"):
         integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
