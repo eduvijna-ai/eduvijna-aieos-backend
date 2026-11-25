@@ -82,6 +82,8 @@ def test_terminal_receipt_replay_after_approve_preserves_durable_state(
         TERMINAL_APPROVE_OUTBOX_EVENT,
     )
     replay_revision = scenario.attest_effect_revision
+    if operation == CONTENT_REVIEW_APPROVE_V1:
+        replay_revision = scenario.approve_effect_revision
     if operation == CONTENT_WORKSHEET_HINT_ATTEST_V1:
         attest = integrated_attest_service(
             ci03_g2_runtime_engine,
@@ -94,7 +96,7 @@ def test_terminal_receipt_replay_after_approve_preserves_durable_state(
             scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
-            expected_aggregate_revision=AggregateRevision(replay_revision),
+            expected_aggregate_revision=replay_revision,
             per_question_outcomes=scenario.outcomes,
             idempotency_key=idem_key,
             event_context=_event(scenario.reviewer_id),
@@ -113,7 +115,7 @@ def test_terminal_receipt_replay_after_approve_preserves_durable_state(
             scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
-            expected_aggregate_revision=AggregateRevision(replay_revision),
+            expected_aggregate_revision=replay_revision,
             reason_code=None,
             comment=None,
             idempotency_key=idem_key,

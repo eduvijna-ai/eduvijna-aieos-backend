@@ -38,7 +38,7 @@ from tests.platform.security.authorization.helpers import revoke_grant
 pytestmark = pytest.mark.ci03_g2_i02
 
 
-def test_issuer_assign_revoked_denies_attest_as_bound_reviewer(
+def test_issuer_assign_revoked_denies_revoke_and_bound_attest(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
@@ -125,18 +125,30 @@ def test_issuer_assign_revoked_denies_attest_as_bound_reviewer(
         clock=lambda: _NOW,
         school_context_provider=provider,
     )
-    attest.record(
-        tenant_id,
-        reviewer_id,
+    attest_event = _event(reviewer_id)
+    with pytest.raises(ReviewAssignmentForbidden):
+        attest.record(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=revision,
+            per_question_outcomes=_positive_outcomes(
+                _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+            ),
+            idempotency_key=f"bf-issuer-unchanged-{uuid.uuid7()}",
+            event_context=attest_event,
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
+        )
+    attest_after = capture_durable_snapshot(
+        bootstrap_engine=ci03_g2_bootstrap_engine,
+        runtime_engine=ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
         content_id=content_id,
         version_id=version_id,
-        expected_aggregate_revision=revision,
-        per_question_outcomes=_positive_outcomes(
-            _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
-        ),
-        idempotency_key=f"bf-issuer-unchanged-{uuid.uuid7()}",
-        event_context=_event(reviewer_id),
-        audit_provenance=api_mutation_audit_provenance(reviewer_id),
-        now=_NOW,
+        assignment_id=assignment_id,
+        reviewer_principal_id=reviewer_id,
     )
+    assert attest_after.attestations == after.attestations
     _ = issue  # issuer still callable for other tenants; revoke denied only
