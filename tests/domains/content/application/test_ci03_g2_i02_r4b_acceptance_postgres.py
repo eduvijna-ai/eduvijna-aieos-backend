@@ -378,8 +378,8 @@ I02_TC01_CASE_MAP: tuple[dict[str, str], ...] = (
     {
         "group": "TC01-B",
         "case": "terminal_authority_lost_replay",
-        "test": "test_terminal_receipt_current_authority_lost_still_replays",
-        "evidence": "NEW",
+        "test": "test_terminal_receipt_current_authority_lost_denies_review_replay",
+        "evidence": "NEW; kernel decide gate precedes idempotent replay",
     },
     {
         "group": "TC01-B",

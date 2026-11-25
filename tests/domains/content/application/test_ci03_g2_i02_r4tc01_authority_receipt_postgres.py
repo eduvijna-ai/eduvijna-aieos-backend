@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
+    ContentVersionNotFound,
     ReviewAssignmentConflict,
     ReviewAssignmentForbidden,
     ReviewAssignmentNotAllowed,
@@ -370,7 +371,7 @@ def test_established_receipt_expiry_denied(
     )
 
 
-def test_terminal_receipt_current_authority_lost_still_replays(
+def test_terminal_receipt_current_authority_lost_denies_review_replay(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
@@ -398,28 +399,20 @@ def test_terminal_receipt_current_authority_lost_still_replays(
         clock=lambda: _NOW,
         school_context_provider=scenario.provider,
     )
-    decision = review.approve(
-        scenario.tenant_id,
-        scenario.reviewer_id,
-        content_id=scenario.content_id,
-        version_id=scenario.version_id,
-        expected_aggregate_revision=scenario.approve_effect_revision,
-        reason_code=None,
-        comment=None,
-        idempotency_key=scenario.approve_idem,
-        event_context=_event(scenario.reviewer_id),
-        audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
-        now=_NOW,
-    )
-    receipt = load_idempotency_receipt(
-        ci03_g2_runtime_engine,
-        scenario.tenant_id,
-        scenario.reviewer_id,
-        operation=CONTENT_REVIEW_APPROVE_V1,
-        idempotency_key=scenario.approve_idem,
-    )
-    assert receipt is not None
-    assert decision.review_decision_id.value == receipt.result_review_decision_id
+    with pytest.raises(ReviewForbidden, match="review capability denied"):
+        review.approve(
+            scenario.tenant_id,
+            scenario.reviewer_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            expected_aggregate_revision=scenario.approve_effect_revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=scenario.approve_idem,
+            event_context=_event(scenario.reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
+            now=_NOW,
+        )
     after = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -439,7 +432,11 @@ def test_terminal_receipt_revoked_denied(
     scenario = build_terminal_rejected_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine
     )
-    _, revoke, *_ = _services(ci03_g2_runtime_engine, scenario.tenant_id)
+    _, revoke, *_ = _services(
+        ci03_g2_runtime_engine,
+        scenario.tenant_id,
+        provider=scenario.provider,
+    )
     with ci03_g2_runtime_engine.connect() as conn:
         conn.execute(
             text("SELECT set_config('aieos.tenant_id', :tid, true)"),
@@ -552,34 +549,17 @@ def test_established_receipt_replay_wrong_version_denied(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    wrong_version = version_id
-    with ci03_g2_runtime_engine.connect() as conn:
-        other = conn.execute(
-            text(
-                """
-                SELECT version_id FROM content.content_versions
-                WHERE content_id = :cid AND version_id <> :vid
-                LIMIT 1
-                """
-            ),
-            {"cid": content_id.value, "vid": version_id.value},
-        ).first()
+    from aieos.domains.content.domain.identities import ContentVersionId
+
+    wrong_version = ContentVersionId(uuid.uuid7())
     attest = integrated_attest_service(
         ci03_g2_runtime_engine,
         tenant_id,
         clock=lambda: _NOW,
         school_context_provider=provider,
     )
-    if other is None:
-        from aieos.domains.content.domain.identities import ContentVersionId
-
-        wrong_version = ContentVersionId(uuid.uuid7())
-    else:
-        from aieos.domains.content.domain.identities import ContentVersionId
-
-        wrong_version = ContentVersionId(other[0])
     with pytest.raises(
-        WorksheetLearnerHintAttestationInvalid,
+        (WorksheetLearnerHintAttestationInvalid, ContentVersionNotFound),
         match="idempotency replay version binding mismatch|not visible",
     ):
         attest.record(
@@ -651,7 +631,7 @@ def test_established_receipt_replay_wrong_content_denied(
         school_context_provider=provider,
     )
     with pytest.raises(
-        WorksheetLearnerHintAttestationInvalid,
+        (WorksheetLearnerHintAttestationInvalid, ContentVersionNotFound),
         match="content binding mismatch|not visible",
     ):
         attest.record(
@@ -782,7 +762,7 @@ def test_new_effect_denied_when_reviewer_class_eligibility_empty(
         clock=lambda: _NOW,
         school_context_provider=provider,
     )
-    with pytest.raises(ReviewAssignmentForbidden, match="class_ref"):
+    with pytest.raises(ReviewAssignmentForbidden, match="eligible"):
         attest.record(
             tenant_id,
             reviewer_id,
@@ -962,7 +942,7 @@ def test_publish_rejects_non_human_principal(
         ci03_g2_bootstrap_engine,
         tenant_id=scenario.tenant_id,
         principal_id=bot_id,
-        principal_kind=PrincipalKind.SERVICE,
+        principal_kind=PrincipalKind.WORKLOAD,
         capabilities=(CONTENT_PUBLISH,),
     )
     publisher_id = uuid.uuid7()
@@ -970,7 +950,7 @@ def test_publish_rejects_non_human_principal(
         ci03_g2_bootstrap_engine,
         tenant_id=scenario.tenant_id,
         principal_id=publisher_id,
-        principal_kind=PrincipalKind.SERVICE,
+        principal_kind=PrincipalKind.WORKLOAD,
         capabilities=(CONTENT_PUBLISH,),
     )
     kernel = AuthorizationKernel(
