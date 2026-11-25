@@ -337,24 +337,24 @@ class TestGuardedAppendPostgres:
 class TestReviewPublishInterlockServices:
     def test_review_approve_service_blocks_hint_version(
         self,
-        ci03_g2_runtime_engine,
-        ci03_g2_bootstrap_engine,
+        hint_governed_runtime_engine,
+        hint_governed_bootstrap_engine,
         ci03_hint_governed_substrate,
     ) -> None:
         tenant_id = uuid.uuid7()
         principal_id = uuid.uuid7()
         content_id = _seed_worksheet_content(
-            ci03_g2_bootstrap_engine,
+            hint_governed_bootstrap_engine,
             tenant_id=tenant_id,
             owner_principal_id=principal_id,
         )
         _, rev_after_v1 = _append_v1(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=tenant_id,
             principal_id=principal_id,
             content_id=content_id,
         )
-        service = _guarded_service(ci03_g2_runtime_engine)
+        service = _guarded_service(hint_governed_runtime_engine)
         version_read, revision = service.append(
             tenant_id,
             principal_id,
@@ -373,7 +373,7 @@ class TestReviewPublishInterlockServices:
         )
 
         unbound_review = ReviewCommandService(
-            SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine),
+            SqlAlchemyContentUnitOfWorkFactory(hint_governed_runtime_engine),
             AllowReviewAuthorization(),
             AllowReviewCommentPolicy(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
@@ -381,7 +381,7 @@ class TestReviewPublishInterlockServices:
         )
         reviewer_id = uuid.uuid7()
         seed_principal(
-            ci03_g2_bootstrap_engine,
+            hint_governed_bootstrap_engine,
             reviewer_id,
             principal_kind=PrincipalKind.HUMAN,
         )
@@ -397,8 +397,8 @@ class TestReviewPublishInterlockServices:
             now=FIXED_NOW,
         )
         provider = issue_governed_review_assignment(
-            ci03_g2_bootstrap_engine,
-            ci03_g2_runtime_engine,
+            hint_governed_bootstrap_engine,
+            hint_governed_runtime_engine,
             tenant_id=tenant_id,
             owner_id=principal_id,
             reviewer_id=reviewer_id,
@@ -408,7 +408,7 @@ class TestReviewPublishInterlockServices:
             now=FIXED_NOW,
         )
         review = integrated_review_service(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id,
             clock=lambda: FIXED_NOW,
             school_context_provider=provider,

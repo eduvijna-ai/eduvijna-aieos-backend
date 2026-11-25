@@ -73,9 +73,9 @@ _FORBIDDEN = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _t1b_cleanup(ci03_g2_bootstrap_engine: Engine) -> Iterator[None]:
+def _t1b_cleanup(hint_governed_bootstrap_engine: Engine) -> Iterator[None]:
     yield
-    clear_t1b_side_effects(ci03_g2_bootstrap_engine)
+    clear_t1b_side_effects(hint_governed_bootstrap_engine)
 
 
 def _nested_keys(value: object) -> set[str]:
@@ -128,26 +128,26 @@ def _assignment_reads_safe(client, prepared, *, hint_text: str) -> None:
 
 class TestGovernedWorksheetV2StudentHttp:
     def test_t1b_r1_governed_publish_path_evidence(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         assert postgres18["server_version"].startswith("18.")
         publication = publish_worksheet_v2_three_human(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         assert len({publication.author_id, publication.reviewer_id, publication.publisher_id}) == 3
 
     def test_t1b_assignment_states_no_hint_leak(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         assert postgres18["server_version"].startswith("18.")
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
-        client = student_client(ci03_g2_runtime_engine, prepared)
+        client = student_client(hint_governed_runtime_engine, prepared)
         hint_snippets = ("Consider the denominator.", "Compare to one half.")
 
         _assignment_reads_safe(client, prepared, hint_text=hint_snippets[0])
@@ -193,7 +193,7 @@ class TestGovernedWorksheetV2StudentHttp:
         _assert_no_leak(attempt_after.json(), hint_text=hint_snippets[0])
 
         persisted = fetch_responses(
-            ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id, attempt_id=attempt_id
+            hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id, attempt_id=attempt_id
         )
         assert len(persisted) == 3
         _assert_no_leak(persisted, hint_text=hint_snippets[0])
@@ -201,20 +201,20 @@ class TestGovernedWorksheetV2StudentHttp:
 
 class TestGovernedWorksheetV2Negatives:
     def test_t1b_wrong_learner_and_question_validation(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
         )
         other = build_student_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             STUDENT_B_PRINCIPAL_ID,
             learner_membership_reader=prepared.membership,
         )
         assert start_attempt(other, prepared).status_code == 404
 
-        client = student_client(ci03_g2_runtime_engine, prepared)
+        client = student_client(hint_governed_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         match = started.headers["ETag"]
@@ -243,12 +243,12 @@ class TestGovernedWorksheetV2Negatives:
         assert "learner_hint" not in denied.text.lower()
 
     def test_t1b_post_submit_and_membership_denials(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
         )
-        client = student_client(ci03_g2_runtime_engine, prepared)
+        client = student_client(hint_governed_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         match = started.headers["ETag"]
@@ -263,7 +263,7 @@ class TestGovernedWorksheetV2Negatives:
         assert post_save.status_code == 409
 
         unavailable = build_student_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             prepared.student_id,
             learner_membership_reader=RaisingMembershipReader(RuntimeError("erp")),
@@ -271,17 +271,17 @@ class TestGovernedWorksheetV2Negatives:
         assert start_attempt(unavailable, prepared).status_code == 503
 
     def test_t1b_disabled_human_denied(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, payload=_hinted_worksheet_v2_payload()
         )
         inactive = uuid.uuid7()
         seed_principal(
-            ci03_g2_bootstrap_engine, inactive, principal_kind=PrincipalKind.HUMAN, status=PrincipalStatus.DISABLED
+            hint_governed_bootstrap_engine, inactive, principal_kind=PrincipalKind.HUMAN, status=PrincipalStatus.DISABLED
         )
         client = build_student_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             inactive,
             learner_membership_reader=prepared.membership,
@@ -291,14 +291,14 @@ class TestGovernedWorksheetV2Negatives:
 
 class TestGovernedExactVersionPin:
     def test_t1b_v1_assignment_unchanged_after_v2_publish(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         pinned = prepare_exact_pin_v1_then_v2_assignments(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             v2_payload=_hinted_worksheet_v2_payload(),
         )
-        client = student_client(ci03_g2_runtime_engine, pinned.v1_assignment)
+        client = student_client(hint_governed_runtime_engine, pinned.v1_assignment)
         v1_detail = client.get(
             f"{ASSIGNMENTS_PATH}/{pinned.v1_assignment.assignment_id}",
             headers=headers(pinned.v1_assignment.tenant_id),
@@ -308,7 +308,7 @@ class TestGovernedExactVersionPin:
         _assert_no_leak(v1_detail.json(), hint_text=FIXED_T1B_HINT)
         assert pinned.v1_assignment.content_version_id == pinned.v1_content_version_id
 
-        client_v2 = student_client(ci03_g2_runtime_engine, pinned.v2_assignment)
+        client_v2 = student_client(hint_governed_runtime_engine, pinned.v2_assignment)
         v2_detail = client_v2.get(
             f"{ASSIGNMENTS_PATH}/{pinned.v2_assignment.assignment_id}",
             headers=headers(pinned.v2_assignment.tenant_id),
@@ -320,7 +320,7 @@ class TestGovernedExactVersionPin:
 
 class TestGovernedContentGate:
     def test_t1b_approve_without_attestation_denied(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         from tests.domains.learning.helpers_aieos_v1_hint_t1b import _review_service
 
@@ -328,15 +328,15 @@ class TestGovernedContentGate:
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
         content_id = _seed_worksheet_content(
-            ci03_g2_bootstrap_engine, tenant_id=tenant_id, owner_principal_id=author_id
+            hint_governed_bootstrap_engine, tenant_id=tenant_id, owner_principal_id=author_id
         )
         _, rev_after_v1 = _append_v1(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=tenant_id,
             principal_id=author_id,
             content_id=content_id,
         )
-        version_read, revision = _guarded_service(ci03_g2_runtime_engine).append(
+        version_read, revision = _guarded_service(hint_governed_runtime_engine).append(
             tenant_id,
             author_id,
             content_id=content_id,
@@ -348,7 +348,7 @@ class TestGovernedContentGate:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        submitted = _review_service(ci03_g2_runtime_engine).submit(
+        submitted = _review_service(hint_governed_runtime_engine).submit(
             tenant_id,
             author_id,
             content_id=content_id,
@@ -360,8 +360,8 @@ class TestGovernedContentGate:
             now=FIXED_NOW,
         )
         provider = issue_governed_review_assignment(
-            ci03_g2_bootstrap_engine,
-            ci03_g2_runtime_engine,
+            hint_governed_bootstrap_engine,
+            hint_governed_runtime_engine,
             tenant_id=tenant_id,
             owner_id=author_id,
             reviewer_id=reviewer_id,
@@ -371,7 +371,7 @@ class TestGovernedContentGate:
             now=FIXED_NOW,
         )
         bound_review = integrated_review_service(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id,
             clock=lambda: FIXED_NOW,
             school_context_provider=provider,
@@ -392,14 +392,14 @@ class TestGovernedContentGate:
             )
 
     def test_t1b_hint_free_v2_governed_consumable(
-        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
+        self, hint_governed_runtime_engine, hint_governed_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hint_free_v2_payload(),
         )
-        client = student_client(ci03_g2_runtime_engine, prepared)
+        client = student_client(hint_governed_runtime_engine, prepared)
         detail = client.get(
             f"{ASSIGNMENTS_PATH}/{prepared.assignment_id}",
             headers=headers(prepared.tenant_id),

@@ -76,9 +76,9 @@ _FORBIDDEN = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _t1c_cleanup(ci03_g2_bootstrap_engine: Engine) -> Iterator[None]:
+def _t1c_cleanup(hint_governed_bootstrap_engine: Engine) -> Iterator[None]:
     yield
-    clear_t1b_side_effects(ci03_g2_bootstrap_engine)
+    clear_t1b_side_effects(hint_governed_bootstrap_engine)
 
 
 def _nested_keys(value: object) -> set[str]:
@@ -108,13 +108,13 @@ def _hinted_worksheet_v2_payload() -> dict:
 
 
 def _evaluation_questions(
-    ci03_g2_runtime_engine: Engine,
+    hint_governed_runtime_engine: Engine,
     *,
     tenant_id: UUID,
     content_id: UUID,
     content_version_id: UUID,
 ):
-    with ci03_g2_runtime_engine.connect() as conn:
+    with hint_governed_runtime_engine.connect() as conn:
         set_tenant(conn, tenant_id)
         adapter = SqlAlchemyAssessmentExactContentAdapter(conn, tenant_id)
         return adapter.load_evaluation_questions(
@@ -124,11 +124,11 @@ def _evaluation_questions(
 
 
 def _submit_mixed_via_student_http(
-    ci03_g2_runtime_engine: Engine,
-    ci03_g2_bootstrap_engine: Engine,
+    hint_governed_runtime_engine: Engine,
+    hint_governed_bootstrap_engine: Engine,
     prepared,
 ) -> UUID:
-    client = student_client(ci03_g2_runtime_engine, prepared)
+    client = student_client(hint_governed_runtime_engine, prepared)
     started = start_attempt(client, prepared)
     assert started.status_code == 201, started.text
     attempt_id = uuid.UUID(started.json()["attempt_id"])
@@ -145,7 +145,7 @@ def _submit_mixed_via_student_http(
     submitted = submit_attempt(client, prepared, attempt_id, if_match=match)
     assert submitted.status_code == 200, submitted.text
     rows = fetch_submissions(
-        ci03_g2_bootstrap_engine,
+        hint_governed_bootstrap_engine,
         tenant_id=prepared.tenant_id,
         attempt_id=attempt_id,
     )
@@ -156,13 +156,13 @@ def _submit_mixed_via_student_http(
 
 
 def _corrupt_version_payload(
-    ci03_g2_bootstrap_engine: Engine,
+    hint_governed_bootstrap_engine: Engine,
     *,
     version_id: UUID,
     payload: dict,
 ) -> None:
     typed = ContentPayload.from_mapping(payload)
-    with ci03_g2_bootstrap_engine.begin() as conn:
+    with hint_governed_bootstrap_engine.begin() as conn:
         conn.execute(
             text(
                 "ALTER TABLE content.content_versions DISABLE TRIGGER "
@@ -194,22 +194,22 @@ def _corrupt_version_payload(
 
 class TestWorksheetV2ExactEvaluationMapper:
     def test_t1c_v2_maps_same_private_facts_as_v1(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         assert postgres18["server_version"].startswith("18.")
         pinned = prepare_exact_pin_v1_then_v2_assignments(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             v2_payload=_hinted_worksheet_v2_payload(),
         )
         v1_questions = _evaluation_questions(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=pinned.v1_assignment.tenant_id,
             content_id=pinned.v1_assignment.content_id,
             content_version_id=pinned.v1_content_version_id,
         )
         v2_questions = _evaluation_questions(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=pinned.v2_assignment.tenant_id,
             content_id=pinned.v2_assignment.content_id,
             content_version_id=pinned.v2_content_version_id,
@@ -224,15 +224,15 @@ class TestWorksheetV2ExactEvaluationMapper:
         assert all("learner_hint" not in asdict(q) for q in v2_questions)
 
     def test_t1c_hint_free_v2_supported(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hint_free_v2_payload(),
         )
         questions = _evaluation_questions(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=prepared.tenant_id,
             content_id=prepared.content_id,
             content_version_id=prepared.content_version_id,
@@ -240,10 +240,10 @@ class TestWorksheetV2ExactEvaluationMapper:
         assert len(questions) == 6
 
     def test_t1c_schema_v3_unsupported(
-        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+        self, hint_governed_bootstrap_engine: Engine, hint_governed_runtime_engine: Engine
     ) -> None:
-        world = seed_world(ci03_g2_bootstrap_engine, ci03_g2_runtime_engine)
-        with ci03_g2_bootstrap_engine.begin() as conn:
+        world = seed_world(hint_governed_bootstrap_engine, hint_governed_runtime_engine)
+        with hint_governed_bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
                     "ALTER TABLE content.content_versions DISABLE TRIGGER "
@@ -268,7 +268,7 @@ class TestWorksheetV2ExactEvaluationMapper:
             )
         with pytest.raises(EvaluationContentUnsupported):
             _evaluation_questions(
-                ci03_g2_runtime_engine,
+                hint_governed_runtime_engine,
                 tenant_id=world.tenant_id,
                 content_id=world.content_id,
                 content_version_id=world.content_version_id,
@@ -285,21 +285,21 @@ class TestWorksheetV2ExactEvaluationMapper:
     )
     def test_t1c_malformed_v2_fail_closed(
         self,
-        ci03_g2_bootstrap_engine: Engine,
-        ci03_g2_runtime_engine: Engine,
+        hint_governed_bootstrap_engine: Engine,
+        hint_governed_runtime_engine: Engine,
         mutator,
     ) -> None:
-        world = seed_world(ci03_g2_bootstrap_engine, ci03_g2_runtime_engine)
+        world = seed_world(hint_governed_bootstrap_engine, hint_governed_runtime_engine)
         payload = _worksheet_v2_payload(hint=FIXED_T1B_HINT)
         mutator(payload)
         with pytest.raises((EvaluationContentUnsupported, ValueError)):
             WorksheetV2.model_validate(payload)
         _corrupt_version_payload(
-            ci03_g2_bootstrap_engine,
+            hint_governed_bootstrap_engine,
             version_id=world.content_version_id,
             payload=payload,
         )
-        with ci03_g2_bootstrap_engine.begin() as conn:
+        with hint_governed_bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
                     "ALTER TABLE content.content_versions DISABLE TRIGGER "
@@ -328,18 +328,18 @@ class TestWorksheetV2ExactEvaluationMapper:
             )
         with pytest.raises(EvaluationContentUnsupported):
             _evaluation_questions(
-                ci03_g2_runtime_engine,
+                hint_governed_runtime_engine,
                 tenant_id=world.tenant_id,
                 content_id=world.content_id,
                 content_version_id=world.content_version_id,
             )
 
     def test_t1c_lesson_plan_tuple_still_unsupported(
-        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+        self, hint_governed_bootstrap_engine: Engine, hint_governed_runtime_engine: Engine
     ) -> None:
         """Preserves TestSingleEnsure.test_14_unsupported_schema invariant."""
-        world = seed_world(ci03_g2_bootstrap_engine, ci03_g2_runtime_engine)
-        with ci03_g2_bootstrap_engine.begin() as conn:
+        world = seed_world(hint_governed_bootstrap_engine, hint_governed_runtime_engine)
+        with hint_governed_bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
                     "ALTER TABLE content.content_versions DISABLE TRIGGER "
@@ -362,7 +362,7 @@ class TestWorksheetV2ExactEvaluationMapper:
                     "content_versions_immutable_update"
                 )
             )
-        client = build_client(ci03_g2_runtime_engine, world.tenant_id, world.teacher_id)
+        client = build_client(hint_governed_runtime_engine, world.tenant_id, world.teacher_id)
         response = client.post(
             SINGLE_PATH.format(submission_id=world.submission_id),
             headers=headers(world.tenant_id, idempotency_key="t1c-lesson-plan"),
@@ -373,18 +373,18 @@ class TestWorksheetV2ExactEvaluationMapper:
 
 class TestGovernedWorksheetV2AssessmentHttp:
     def test_t1c_governed_submit_then_teacher_evaluate(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         assert postgres18["server_version"].startswith("18.")
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         submission_id = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, prepared
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, prepared
         )
-        teacher = build_client(ci03_g2_runtime_engine, prepared.tenant_id, prepared.teacher_id)
+        teacher = build_client(hint_governed_runtime_engine, prepared.tenant_id, prepared.teacher_id)
         response = teacher.post(
             SINGLE_PATH.format(submission_id=submission_id),
             headers=headers(prepared.tenant_id, idempotency_key="t1c-eval-1"),
@@ -400,30 +400,30 @@ class TestGovernedWorksheetV2AssessmentHttp:
         assert outcomes["q-2"] == "OPEN_RESPONSE_UNEVALUATED"
         assert outcomes["q-3"] == "CORRECT"
         _assert_teacher_eval_safe(body, hint_text=FIXED_T1B_HINT)
-        assert count_evaluations(ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
-        assert count_eval_audits(ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
-        audit = fetch_eval_audit(ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id)
+        assert count_evaluations(hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
+        assert count_eval_audits(hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
+        audit = fetch_eval_audit(hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id)
         assert audit["action"] == EVAL_ACTION
 
     def test_t1c_hint_does_not_affect_scoring(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         hinted = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         hint_free = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hint_free_v2_payload(),
         )
         for prepared in (hinted, hint_free):
             submission_id = _submit_mixed_via_student_http(
-                ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, prepared
+                hint_governed_runtime_engine, hint_governed_bootstrap_engine, prepared
             )
             teacher = build_client(
-                ci03_g2_runtime_engine, prepared.tenant_id, prepared.teacher_id
+                hint_governed_runtime_engine, prepared.tenant_id, prepared.teacher_id
             )
             response = teacher.post(
                 SINGLE_PATH.format(submission_id=submission_id),
@@ -438,23 +438,23 @@ class TestGovernedWorksheetV2AssessmentHttp:
 
 class TestExactPinAssessmentEvaluation:
     def test_t1c_pinned_v1_answers_unchanged_after_v2_publish(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         v2_payload = _hinted_worksheet_v2_payload()
         v2_payload["questions"][0]["answer"] = "1/3"
         pinned = prepare_exact_pin_v1_then_v2_assignments(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             v2_payload=v2_payload,
         )
         v1_submission = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, pinned.v1_assignment
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, pinned.v1_assignment
         )
         v2_submission = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, pinned.v2_assignment
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, pinned.v2_assignment
         )
         teacher = build_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             pinned.v1_assignment.tenant_id,
             pinned.v1_assignment.teacher_id,
         )
@@ -491,18 +491,18 @@ class TestExactPinAssessmentEvaluation:
 
 class TestWorksheetV2AssessmentSecurity:
     def test_t1c_student_cannot_evaluate(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         submission_id = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, prepared
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, prepared
         )
         student = build_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             prepared.student_id,
             assessment_authorization=AllowClassroomAssessmentAuthorization(allow=False),
@@ -514,19 +514,19 @@ class TestWorksheetV2AssessmentSecurity:
         assert response.status_code == 403
 
     def test_t1c_capability_and_school_context_denied(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         """Mirrors TestSingleEnsure.test_01 and test_03_04 boundaries."""
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         submission_id = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, prepared
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, prepared
         )
         denied_cap = build_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             prepared.teacher_id,
             assessment_authorization=AllowClassroomAssessmentAuthorization(allow=False),
@@ -544,7 +544,7 @@ class TestWorksheetV2AssessmentSecurity:
             class_refs=(),
         )
         denied_class = build_client(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             prepared.tenant_id,
             prepared.teacher_id,
             school_context_reader=reader,
@@ -558,17 +558,17 @@ class TestWorksheetV2AssessmentSecurity:
         )
 
     def test_t1c_idempotent_replay_single_audit(
-        self, ci03_g2_runtime_engine: Engine, ci03_g2_bootstrap_engine: Engine, postgres18
+        self, hint_governed_runtime_engine: Engine, hint_governed_bootstrap_engine: Engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            ci03_g2_runtime_engine,
-            ci03_g2_bootstrap_engine,
+            hint_governed_runtime_engine,
+            hint_governed_bootstrap_engine,
             payload=_hinted_worksheet_v2_payload(),
         )
         submission_id = _submit_mixed_via_student_http(
-            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, prepared
+            hint_governed_runtime_engine, hint_governed_bootstrap_engine, prepared
         )
-        teacher = build_client(ci03_g2_runtime_engine, prepared.tenant_id, prepared.teacher_id)
+        teacher = build_client(hint_governed_runtime_engine, prepared.tenant_id, prepared.teacher_id)
         key = "t1c-idem"
         first = teacher.post(
             SINGLE_PATH.format(submission_id=submission_id),
@@ -581,15 +581,15 @@ class TestWorksheetV2AssessmentSecurity:
         assert first.status_code == 200
         assert second.status_code == 200
         assert first.json()["evaluation_id"] == second.json()["evaluation_id"]
-        assert count_evaluations(ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
-        assert count_eval_audits(ci03_g2_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
+        assert count_evaluations(hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
+        assert count_eval_audits(hint_governed_bootstrap_engine, tenant_id=prepared.tenant_id) == 1
 
     def test_t1c_v1_worksheet_regression_unchanged(
-        self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine
+        self, hint_governed_bootstrap_engine: Engine, hint_governed_runtime_engine: Engine
     ) -> None:
         """Worksheet@1 path unchanged (TestSingleEnsure.test_17_22_23_24_25)."""
-        world = seed_world(ci03_g2_bootstrap_engine, ci03_g2_runtime_engine)
-        client = build_client(ci03_g2_runtime_engine, world.tenant_id, world.teacher_id)
+        world = seed_world(hint_governed_bootstrap_engine, hint_governed_runtime_engine)
+        client = build_client(hint_governed_runtime_engine, world.tenant_id, world.teacher_id)
         response = client.post(
             SINGLE_PATH.format(submission_id=world.submission_id),
             headers=headers(world.tenant_id, idempotency_key="t1c-v1-reg"),
@@ -597,7 +597,7 @@ class TestWorksheetV2AssessmentSecurity:
         assert response.status_code == 200, response.text
         parsed_v1 = WorksheetV1.model_validate(valid_worksheet_payload())
         questions = _evaluation_questions(
-            ci03_g2_runtime_engine,
+            hint_governed_runtime_engine,
             tenant_id=world.tenant_id,
             content_id=world.content_id,
             content_version_id=world.content_version_id,
