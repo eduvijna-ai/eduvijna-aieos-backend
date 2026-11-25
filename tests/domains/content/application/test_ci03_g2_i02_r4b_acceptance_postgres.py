@@ -644,7 +644,7 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
         "status": "EXECUTED",
         "tests": (
             "r4tc03r1 submit revoke reissue-after-attest, malformed eligibility, "
-            "hint_free HTTP v2 + governed provenance approve, historical publish; "
+            "hint_free HTTP v2 approve without assignment/attest, historical publish; "
             "PRIOR tc01/tc03 authority"
         ),
     },
