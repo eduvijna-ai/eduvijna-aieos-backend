@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
@@ -18,7 +19,6 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
     integrated_attest_service,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
-    assert_latest_denial_matches,
     capture_durable_snapshot,
 )
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
@@ -98,15 +98,27 @@ def test_issuer_assign_revoked_denies_attest_as_bound_reviewer(
         reviewer_principal_id=reviewer_id,
     )
     assert after.slot_active_assignment == before.slot_active_assignment
-    assert after.mutation_denials == before.mutation_denials + 1
-    assert_latest_denial_matches(
-        ci03_g2_runtime_engine,
-        tenant_id=tenant_id,
-        principal_id=owner_id,
-        content_id=content_id,
-        version_id=version_id,
-        correlation_id=event.correlation_id,
-    )
+    assert after.attestations == before.attestations
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        revoke_denial = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.authorization_denial_records
+                    WHERE tenant_id = :tid
+                      AND principal_id = :pid
+                      AND correlation_id = :cid
+                      AND action = 'content.review.revoke.denied'
+                    """
+                ),
+                {
+                    "tid": tenant_id,
+                    "pid": owner_id,
+                    "cid": event.correlation_id,
+                },
+            ).scalar_one()
+        )
+    assert revoke_denial == 1
     attest = integrated_attest_service(
         ci03_g2_runtime_engine,
         tenant_id,

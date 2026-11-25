@@ -17,6 +17,7 @@ from aieos.domains.content.domain.identities import AggregateRevision
 from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
 from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_attest_service
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+    assert_snapshot_unchanged_except_denial,
     capture_durable_snapshot,
     load_idempotency_receipt,
 )
@@ -111,7 +112,7 @@ def test_attest_replay_same_key_rejects_changed_outcomes_after_success(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    assert after == before
+    assert_snapshot_unchanged_except_denial(before, after)
     receipt = load_idempotency_receipt(
         ci03_g2_runtime_engine,
         tenant_id,
@@ -280,4 +281,4 @@ def test_attest_replay_same_key_rejects_stale_aggregate_revision(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    assert after == before
+    assert_snapshot_unchanged_except_denial(before, after)

@@ -88,7 +88,7 @@ def test_terminal_receipt_replay_after_terminal_decision_preserves_durable_state
         clock=lambda: _NOW,
         school_context_provider=scenario.provider,
     )
-    replay_revision = AggregateRevision(receipt_before.result_aggregate_revision)
+    replay_revision = scenario.effect_call_revision
     if operation == CONTENT_REVIEW_REJECT_V1:
         review.reject(
             scenario.tenant_id,

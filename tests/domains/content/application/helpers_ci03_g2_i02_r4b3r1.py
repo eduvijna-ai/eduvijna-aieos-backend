@@ -163,6 +163,7 @@ class TerminalRejectedScenario:
     content_id: ContentId
     version_id: ContentVersionId
     revision: AggregateRevision
+    effect_call_revision: AggregateRevision
     provider: object
     reject_idem: str
     outcomes: list[dict[str, object]]
@@ -176,6 +177,7 @@ class TerminalRequestChangesScenario:
     content_id: ContentId
     version_id: ContentVersionId
     revision: AggregateRevision
+    effect_call_revision: AggregateRevision
     provider: object
     request_changes_idem: str
     outcomes: list[dict[str, object]]
@@ -204,6 +206,7 @@ def build_terminal_rejected_scenario(
         school_context_provider=provider,
     )
     reject_idem = f"bf-term-reject-{uuid.uuid7()}"
+    effect_call_revision = revision
     decision = review.reject(
         tenant_id,
         reviewer_id,
@@ -237,6 +240,7 @@ def build_terminal_rejected_scenario(
         content_id=content_id,
         version_id=version_id,
         revision=revision,
+        effect_call_revision=effect_call_revision,
         provider=provider,
         reject_idem=reject_idem,
         outcomes=outcomes,
@@ -266,6 +270,7 @@ def build_terminal_request_changes_scenario(
         school_context_provider=provider,
     )
     rc_idem = f"bf-term-rc-{uuid.uuid7()}"
+    effect_call_revision = revision
     decision = review.request_changes(
         tenant_id,
         reviewer_id,
@@ -299,6 +304,7 @@ def build_terminal_request_changes_scenario(
         content_id=content_id,
         version_id=version_id,
         revision=revision,
+        effect_call_revision=effect_call_revision,
         provider=provider,
         request_changes_idem=rc_idem,
         outcomes=outcomes,
