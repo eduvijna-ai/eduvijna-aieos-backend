@@ -378,6 +378,7 @@ def test_success_mutation_command_identity_representative(
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
     )
+    approve_revision = revision
     if effect in ("approve",):
         integrated_attest_service(
             ci03_g2_runtime_engine,
@@ -403,15 +404,16 @@ def test_success_mutation_command_identity_representative(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
             )
-            head_revision = int(
-                conn.execute(
-                    text(
-                        "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
-                    ),
-                    {"cid": content_id.value},
-                ).scalar_one()
+            approve_revision = AggregateRevision(
+                int(
+                    conn.execute(
+                        text(
+                            "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
+                        ),
+                        {"cid": content_id.value},
+                    ).scalar_one()
+                )
             )
-        revision = AggregateRevision(head_revision)
     event = _correlated_event(reviewer_id)
     idem_key = f"tc02-id-{effect}-{uuid.uuid7()}"
     review = integrated_review_service(
@@ -446,7 +448,7 @@ def test_success_mutation_command_identity_representative(
             reviewer_id,
             content_id=content_id,
             version_id=version_id,
-            expected_aggregate_revision=AggregateRevision(revision),
+            expected_aggregate_revision=approve_revision,
             reason_code=None,
             comment=None,
             idempotency_key=idem_key,
