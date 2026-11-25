@@ -82,3 +82,4 @@ class IdempotencyOutcome:
     result_aggregate_revision: int
     created_at: datetime
     expires_at: datetime
+    result_worksheet_hint_attestation_id: UUID | None = None

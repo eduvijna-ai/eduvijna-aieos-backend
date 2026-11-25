@@ -24,6 +24,7 @@ from aieos.domains.content.application.errors import (
     ReviewSubmitNotAllowed,
     ReviewVersionNotCurrent,
     WorkflowCoordinationFailed,
+    WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.models import (
     ReviewDecisionResult,
@@ -42,6 +43,7 @@ from aieos.domains.content.domain.identities import (
     AggregateRevision,
     ContentId,
     ContentVersionId,
+    ReviewAssignmentId,
     ReviewDecisionId,
 )
 from aieos.domains.content.domain.review import (
@@ -82,6 +84,19 @@ from aieos.platform.workflows.identities import (
     WorkflowStartIntentId,
 )
 from aieos.platform.workflows.models import WorkflowCommandIntent, WorkflowStartIntent
+from aieos.domains.content.application.review_assignment_bound_mutations import (
+    AssignmentBoundMutationDependencies,
+    _MUTATION_DENIED_EXCEPTIONS,
+    assert_approve_attestation_assignment_match,
+    assignment_bound_deps_configured,
+    fingerprint_assignment_id,
+    hint_mutation_replay_is_terminal,
+    raise_assignment_unavailable,
+    record_mutation_denial,
+    require_assignment_authority_for_new_effect,
+    requires_hint_assignment,
+    validate_bound_assignment_replay,
+)
 from aieos.domains.content.application.worksheet_hint_interlock import (
     enforce_worksheet_hint_review_interlock,
 )
@@ -117,6 +132,7 @@ def _review_fingerprint(
     reason_code: str | None = None,
     comment: str | None = None,
     include_comment: bool,
+    review_assignment_id: ReviewAssignmentId | None = None,
 ) -> str:
     material: dict[str, object] = {
         "content_id": str(content_id),
@@ -126,6 +142,8 @@ def _review_fingerprint(
     if include_comment:
         material["reason_code"] = reason_code
         material["comment"] = comment
+    if review_assignment_id is not None:
+        material["review_assignment_id"] = str(review_assignment_id)
     return fingerprint_material(material)
 
 
@@ -174,6 +192,7 @@ class ReviewCommandService:
         *,
         idempotency_retention: timedelta,
         principal_classification: CurrentPrincipalClassificationAuthority | None = None,
+        assignment_bound: AssignmentBoundMutationDependencies | None = None,
     ) -> None:
         if idempotency_retention.total_seconds() <= 0:
             raise ValueError("idempotency_retention must be a positive duration")
@@ -182,6 +201,7 @@ class ReviewCommandService:
         self._comment_policy = comment_policy
         self._idempotency_retention = idempotency_retention
         self._principal_classification = principal_classification
+        self._assignment_bound = assignment_bound
 
     def submit(
         self,
@@ -406,26 +426,10 @@ class ReviewCommandService:
         audit_provenance: MutationAuditProvenance,
         now: datetime | None,
     ) -> ReviewDecisionResult:
-        self._authorization.authorize(
-            tenant_id=execution_tenant_id,
-            principal_id=principal_id,
-            content_id=content_id,
-            version_id=version_id,
-            capability=CONTENT_REVIEW_DECIDE,
-        )
         code, text = _parse_review_text(
             reason_code=reason_code,
             comment=comment,
             require_comment=require_comment,
-        )
-        decided_at = _now(now)
-        fingerprint = _review_fingerprint(
-            content_id=content_id,
-            version_id=version_id,
-            expected_aggregate_revision=expected_aggregate_revision,
-            reason_code=code,
-            comment=text,
-            include_comment=True,
         )
         scope = IdempotencyScope(
             tenant_id=execution_tenant_id,
@@ -433,69 +437,183 @@ class ReviewCommandService:
             operation=operation,
             key_sha256=hash_idempotency_key(idempotency_key),
         )
-        with self._uow_factory(execution_tenant_id) as uow:
-            uow.idempotency.acquire_scope(scope)
-            existing = uow.idempotency.get(scope)
-            if existing is not None:
-                if existing.request_fingerprint_sha256 != fingerprint:
-                    raise IdempotencyKeyReused("idempotency key already bound")
-                if decision is ReviewDecisionCode.APPROVE:
-                    version_row = _require_visible_version(uow, content_id, version_id)
-                    enforce_worksheet_hint_review_interlock(
-                        uow,
-                        version_row,
-                        reviewer_principal_id=principal_id,
-                        principal_classification=self._principal_classification,
-                        effective_actor_id=event_context.effective_actor_id,
-                    )
-                return self._replay_decision(uow, existing, frozen_state)
-            self._comment_policy.evaluate(text)
-            stored, revision = self._decide_new(
-                uow,
-                execution_tenant_id,
+        try:
+            self._authorization.authorize(
+                tenant_id=execution_tenant_id,
                 principal_id=principal_id,
                 content_id=content_id,
                 version_id=version_id,
-                expected_aggregate_revision=expected_aggregate_revision,
-                decision=decision,
-                reason_code=code,
-                comment=text,
-                target_state=target_state,
-                event_context=event_context,
-                decided_at=decided_at,
+                capability=CONTENT_REVIEW_DECIDE,
             )
-            insert_required_content_audit(
-                uow,
-                tenant_id=execution_tenant_id,
-                action=_decision_audit_action(decision),
-                content_id=content_id.value,
-                resource_revision_before=int(expected_aggregate_revision),
-                resource_revision_after=int(revision),
-                related_resource_refs=(
-                    content_version_ref(version_id.value),
-                    review_decision_ref(stored.review_decision_id.value),
-                ),
-                mutation_event_context=event_context,
-                audit_provenance=audit_provenance,
-                occurred_at=decided_at,
-            )
-            uow.idempotency.insert(
-                IdempotencyOutcome(
-                    tenant_id=scope.tenant_id,
-                    principal_id=scope.principal_id,
-                    operation=scope.operation,
-                    key_sha256=scope.key_sha256,
-                    request_fingerprint_sha256=fingerprint,
-                    result_content_id=content_id.value,
-                    result_version_id=version_id.value,
-                    result_review_decision_id=stored.review_decision_id.value,
-                    result_publication_id=None,
-                    result_aggregate_revision=int(revision),
-                    created_at=decided_at,
-                    expires_at=decided_at + self._idempotency_retention,
+            with self._uow_factory(execution_tenant_id) as uow:
+                uow.idempotency.acquire_scope(scope)
+                uow.contents.get_head_for_update(content_id)
+                existing = uow.idempotency.get(scope)
+                version_row = _require_visible_version(uow, content_id, version_id)
+                hint_bound = requires_hint_assignment(version_row)
+                if hint_bound and not assignment_bound_deps_configured(self._assignment_bound):
+                    raise_assignment_unavailable()
+                assignment_id_for_fp: ReviewAssignmentId | None = None
+                replay_assignment_id: ReviewAssignmentId | None = None
+                if existing is not None and hint_bound:
+                    prior = uow.reviews.get_for_version(content_id, version_id)
+                    if prior is None:
+                        raise PersistenceInvariantViolation(
+                            "idempotent review receipt missing decision row"
+                        )
+                    if (
+                        existing.result_review_decision_id is None
+                        or prior.review_decision_id.value != existing.result_review_decision_id
+                    ):
+                        raise PersistenceInvariantViolation(
+                            "idempotent review receipt identity mismatch"
+                        )
+                    if prior.reviewer_principal_id != principal_id:
+                        raise WorksheetLearnerHintAttestationInvalid(
+                            "idempotent review reviewer mismatch"
+                        )
+                    replay_assignment_id = prior.review_assignment_id
+                assignment_fp = fingerprint_assignment_id(
+                    assignment_id_for_fp=assignment_id_for_fp,
+                    replay_assignment_id=replay_assignment_id,
                 )
-            )
-            uow.commit()
+                fingerprint = _review_fingerprint(
+                    content_id=content_id,
+                    version_id=version_id,
+                    expected_aggregate_revision=expected_aggregate_revision,
+                    reason_code=code,
+                    comment=text,
+                    include_comment=True,
+                    review_assignment_id=assignment_id_for_fp
+                    if assignment_id_for_fp
+                    else replay_assignment_id,
+                )
+                if existing is not None:
+                    if existing.request_fingerprint_sha256 != fingerprint:
+                        raise IdempotencyKeyReused("idempotency key already bound")
+                    version_row = _require_visible_version(uow, content_id, version_id)
+                    if hint_bound:
+                        assert self._assignment_bound is not None
+                        if replay_assignment_id is None:
+                            raise WorksheetLearnerHintAttestationInvalid(
+                                "idempotency replay requires assignment binding"
+                            )
+                        terminal = hint_mutation_replay_is_terminal(
+                            uow, content_id=content_id, version_id=version_id
+                        )
+                        validate_bound_assignment_replay(
+                            uow,
+                            self._assignment_bound,
+                            execution_tenant_id=execution_tenant_id,
+                            principal_id=principal_id,
+                            effective_actor_id=event_context.effective_actor_id,
+                            content_id=content_id,
+                            version_id=version_id,
+                            bound_assignment_id=replay_assignment_id,
+                            fingerprint_assignment_id=assignment_fp,
+                            terminal_outcome=terminal,
+                        )
+                    if decision is ReviewDecisionCode.APPROVE:
+                        enforce_worksheet_hint_review_interlock(
+                            uow,
+                            version_row,
+                            reviewer_principal_id=principal_id,
+                            principal_classification=self._principal_classification,
+                            effective_actor_id=event_context.effective_actor_id,
+                        )
+                    return self._replay_decision(
+                        uow,
+                        existing,
+                        frozen_state,
+                        expected_principal_id=principal_id,
+                    )
+                self._comment_policy.evaluate(text)
+                effect_assignment_id = assignment_id_for_fp
+                decided_at = _now(now)
+                if hint_bound:
+                    assert self._assignment_bound is not None
+                    active, decided_at = require_assignment_authority_for_new_effect(
+                        uow,
+                        self._assignment_bound,
+                        execution_tenant_id=execution_tenant_id,
+                        principal_id=principal_id,
+                        effective_actor_id=event_context.effective_actor_id,
+                        content_id=content_id,
+                        version_id=version_id,
+                    )
+                    effect_assignment_id = active.assignment_id
+                    assignment_fp = fingerprint_assignment_id(
+                        assignment_id_for_fp=effect_assignment_id,
+                        replay_assignment_id=None,
+                    )
+                    fingerprint = _review_fingerprint(
+                        content_id=content_id,
+                        version_id=version_id,
+                        expected_aggregate_revision=expected_aggregate_revision,
+                        reason_code=code,
+                        comment=text,
+                        include_comment=True,
+                        review_assignment_id=effect_assignment_id,
+                    )
+                stored, revision = self._decide_new(
+                    uow,
+                    execution_tenant_id,
+                    principal_id=principal_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    expected_aggregate_revision=expected_aggregate_revision,
+                    decision=decision,
+                    reason_code=code,
+                    comment=text,
+                    target_state=target_state,
+                    event_context=event_context,
+                    decided_at=decided_at,
+                    review_assignment_id=effect_assignment_id,
+                )
+                insert_required_content_audit(
+                    uow,
+                    tenant_id=execution_tenant_id,
+                    action=_decision_audit_action(decision),
+                    content_id=content_id.value,
+                    resource_revision_before=int(expected_aggregate_revision),
+                    resource_revision_after=int(revision),
+                    related_resource_refs=(
+                        content_version_ref(version_id.value),
+                        review_decision_ref(stored.review_decision_id.value),
+                    ),
+                    mutation_event_context=event_context,
+                    audit_provenance=audit_provenance,
+                    occurred_at=decided_at,
+                )
+                uow.idempotency.insert(
+                    IdempotencyOutcome(
+                        tenant_id=scope.tenant_id,
+                        principal_id=scope.principal_id,
+                        operation=scope.operation,
+                        key_sha256=scope.key_sha256,
+                        request_fingerprint_sha256=fingerprint,
+                        result_content_id=content_id.value,
+                        result_version_id=version_id.value,
+                        result_review_decision_id=stored.review_decision_id.value,
+                        result_publication_id=None,
+                        result_aggregate_revision=int(revision),
+                        created_at=decided_at,
+                        expires_at=decided_at + self._idempotency_retention,
+                    )
+                )
+                uow.commit()
+        except _MUTATION_DENIED_EXCEPTIONS as exc:
+            if self._assignment_bound is not None:
+                record_mutation_denial(
+                    self._assignment_bound,
+                    tenant_id=execution_tenant_id,
+                    principal_id=principal_id,
+                    correlation_id=event_context.correlation_id,
+                    content_id=content_id,
+                    version_id=version_id,
+                    exc=exc,
+                )
+            raise
         return ReviewDecisionResult(
             review_decision_id=stored.review_decision_id,
             content_id=stored.content_id,
@@ -545,6 +663,7 @@ class ReviewCommandService:
         target_state: str,
         event_context: MutationEventContext,
         decided_at: datetime,
+        review_assignment_id: ReviewAssignmentId | None = None,
     ) -> tuple[ReviewDecision, AggregateRevision]:
         head = uow.contents.get_head_for_update(content_id)
         if head is None or head.tenant_id != execution_tenant_id:
@@ -563,6 +682,21 @@ class ReviewCommandService:
                 principal_classification=self._principal_classification,
                 effective_actor_id=event_context.effective_actor_id,
             )
+            if review_assignment_id is not None:
+                from aieos.domains.content.application.worksheet_hint_attestation_gate import (
+                    load_valid_attestation,
+                )
+
+                attestation = load_valid_attestation(
+                    uow.worksheet_hint_attestations, version_row
+                )
+                assert_approve_attestation_assignment_match(
+                    attestation.review_assignment_id,
+                    review_assignment_id,
+                )
+        if requires_hint_assignment(version_row):
+            if review_assignment_id is None:
+                raise_assignment_unavailable()
         if head.stewardship_state != StewardshipState.IN_REVIEW.value:
             raise ReviewDecisionNotAllowed(
                 "review decision is not allowed in the current stewardship state"
@@ -595,6 +729,7 @@ class ReviewCommandService:
             delegation_id=None,
             decided_at=decided_at,
             correlation_id=event_context.correlation_id,
+            review_assignment_id=review_assignment_id,
         )
         uow.reviews.insert(stored)
         resulting = uow.contents.transition_stewardship(
@@ -661,6 +796,8 @@ class ReviewCommandService:
         uow: ContentUnitOfWork,
         existing: IdempotencyOutcome,
         frozen_state: str,
+        *,
+        expected_principal_id: UUID | None = None,
     ) -> ReviewDecisionResult:
         if existing.result_review_decision_id is None:
             raise PersistenceInvariantViolation(
@@ -670,6 +807,13 @@ class ReviewCommandService:
         if stored is None:
             raise PersistenceInvariantViolation(
                 "idempotent review outcome is not visible"
+            )
+        if (
+            expected_principal_id is not None
+            and stored.reviewer_principal_id != expected_principal_id
+        ):
+            raise WorksheetLearnerHintAttestationInvalid(
+                "idempotent review reviewer mismatch"
             )
         return ReviewDecisionResult(
             review_decision_id=stored.review_decision_id,

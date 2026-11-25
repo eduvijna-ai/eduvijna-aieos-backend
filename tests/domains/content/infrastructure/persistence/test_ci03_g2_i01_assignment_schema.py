@@ -35,7 +35,7 @@ def test_head_and_tables(ci03_g2_bootstrap_engine: Engine) -> None:
     with ci03_g2_bootstrap_engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "ci03g020001"
+            == "ci03g020002"
         )
     insp = inspect(ci03_g2_bootstrap_engine)
     names = set(insp.get_table_names(schema="content"))
@@ -44,6 +44,11 @@ def test_head_and_tables(ci03_g2_bootstrap_engine: Engine) -> None:
     assert "review_current_assignments" in names
     security_names = set(insp.get_table_names(schema="security"))
     assert "authorization_denial_records" in security_names
+    api_cols = {
+        c["name"]
+        for c in insp.get_columns("idempotency_records", schema="api")
+    }
+    assert "result_worksheet_hint_attestation_id" in api_cols
 
 
 def test_runtime_rejects_cross_version_slot_binding(
@@ -285,7 +290,7 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert head == "ci03g020001"
+        assert head == "ci03g020002"
         rows = conn.execute(
             text(
                 "SELECT count(*) FROM content.review_assignment_issuances "
@@ -294,3 +299,190 @@ def test_downgrade_refuses_nonempty_assignment_evidence(
             {"tid": tenant_id, "cid": content_id.value},
         ).scalar_one()
         assert int(rows) == 1
+
+
+def test_bound_attestation_fk_requires_matching_reviewer_principal(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+) -> None:
+    """Five-column assignment FK must match issuance reviewer, not only assignment id."""
+    from aieos.development.coherent_school_context import (
+        development_coherent_school_context_provider,
+    )
+    from aieos.development.reviewer_eligibility import development_reviewer_eligibility_reader
+    from aieos.domains.content.application.review_assignment_issue import (
+        IssueReviewAssignmentService,
+    )
+    from aieos.domains.content.application.school_context_reviewer_eligibility import (
+        SchoolContextReviewerEligibilityService,
+    )
+    from aieos.domains.content.infrastructure.persistence.uow import (
+        SqlAlchemyContentUnitOfWorkFactory,
+    )
+    from aieos.domains.education.worksheet_hint_qa import WORKSHEET_HINT_QA_POLICY_VERSION
+    from aieos.domains.teaching.application.school_context import (
+        SchoolContextClassAuthorityService,
+    )
+    from aieos.platform.events.models import MutationEventContext
+    from aieos.platform.security.authorization import (
+        AuthorizationKernel,
+        CurrentPrincipalClassificationAuthority,
+        KernelReviewAssignmentAuthorization,
+        KernelReviewAuthorization,
+    )
+    from aieos.platform.security.authorization.content_adapters import (
+        AIEOS_CONTENT_CAPABILITIES,
+    )
+    from aieos.platform.security.audit.persistence.authorization_denial_records import (
+        SqlAlchemyAuthorizationDenialRecords,
+    )
+    from aieos.domains.content.application.audit import api_mutation_audit_provenance
+    from datetime import timedelta
+    from sqlalchemy.exc import IntegrityError
+
+    from aieos.domains.education.worksheet_hint_digest import (
+        worksheet_hint_attestation_digest_from_version_payload,
+    )
+    from aieos.domains.content.infrastructure.persistence.uow import (
+        SqlAlchemyContentUnitOfWorkFactory,
+    )
+    from tests.domains.education.test_aieos_v1_hint_t2 import (
+        _hinted_ids_from_version,
+        _positive_outcomes,
+    )
+
+    provision_runtime_grants(ci03_g2_bootstrap_engine)
+    tenant_id = uuid.uuid7()
+    owner_id = uuid.uuid7()
+    reviewer_id = uuid.uuid7()
+    wrong_reviewer = uuid.uuid7()
+    seed_active_authority(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=owner_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+    )
+    seed_active_authority(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=reviewer_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_DECIDE,),
+    )
+    provider = development_coherent_school_context_provider(tenant_id=tenant_id)
+    provider.set_teacher_class_authority(owner_id, (_CLASS_REF,))
+    provider.set_reviewer_class_eligibility(reviewer_id, (_CLASS_REF,))
+    content_id, version_id = seed_worksheet_in_review_governed(
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        owner_id=owner_id,
+        class_ref=_CLASS_REF,
+        now=_NOW,
+    )
+    kernel = AuthorizationKernel(
+        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
+    )
+    issue = IssueReviewAssignmentService(
+        SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine),
+        KernelReviewAssignmentAuthorization(kernel),
+        KernelReviewAuthorization(kernel),
+        CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
+        SchoolContextClassAuthorityService(provider),
+        SchoolContextReviewerEligibilityService(
+            development_reviewer_eligibility_reader(provider)
+        ),
+        SqlAlchemyAuthorizationDenialRecords(ci03_g2_runtime_engine),
+        idempotency_retention=timedelta(hours=24),
+        clock=lambda: _NOW,
+    )
+    ctx = MutationEventContext(
+        correlation_id=uuid.uuid7(),
+        causation_id=uuid.uuid7(),
+        actor_principal_id=owner_id,
+        effective_actor_id=owner_id,
+    )
+    assignment_id = issue.issue(
+        tenant_id,
+        owner_id,
+        content_id=content_id,
+        version_id=version_id,
+        reviewer_principal_id=reviewer_id,
+        idempotency_key="fk-proof-issue",
+        event_context=ctx,
+        audit_provenance=api_mutation_audit_provenance(owner_id),
+    )
+    with SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine)(tenant_id) as uow:
+        version = uow.versions.get(version_id)
+        assert version is not None
+        payload_body = dict(version.payload.body)
+        author_id = version.created_by_principal_id
+        digest = worksheet_hint_attestation_digest_from_version_payload(payload_body)
+    question_ids = _hinted_ids_from_version(
+        ci03_g2_runtime_engine, tenant_id, version_id
+    )
+    outcomes_json = json.dumps(_positive_outcomes(question_ids))
+    att_row = {
+        "att_id": uuid.uuid7(),
+        "tid": tenant_id,
+        "cid": content_id.value,
+        "vid": version_id.value,
+        "digest": digest,
+        "qa": WORKSHEET_HINT_QA_POLICY_VERSION,
+        "owner": author_id,
+        "reviewer": reviewer_id,
+        "now": _NOW,
+        "corr": uuid.uuid7(),
+        "aid": assignment_id.value,
+        "outcomes": outcomes_json,
+    }
+    fk_sql = text(
+        """
+        INSERT INTO content.worksheet_learner_hint_version_attestations (
+            attestation_id, tenant_id, content_id, version_id,
+            payload_digest, qa_policy_version, author_principal_id,
+            reviewer_principal_id, per_question_outcomes, attested_at,
+            correlation_id, review_assignment_id
+        ) VALUES (
+            :att_id, :tid, :cid, :vid,
+            :digest, :qa, :owner, :reviewer,
+            CAST(:outcomes AS jsonb), :now, :corr, :aid
+        )
+        """
+    )
+    with ci03_g2_runtime_engine.connect() as conn:
+        with conn.begin():
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            positive_sp = conn.begin_nested()
+            conn.execute(fk_sql, att_row)
+            positive_sp.rollback()
+            remaining = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE tenant_id = :tid AND version_id = :vid
+                    """
+                ),
+                {"tid": tenant_id, "vid": version_id.value},
+            ).scalar_one()
+            assert int(remaining) == 0
+            with pytest.raises(IntegrityError) as exc_info:
+                with conn.begin_nested():
+                    conn.execute(
+                        fk_sql,
+                        {
+                            **att_row,
+                            "att_id": uuid.uuid7(),
+                            "reviewer": wrong_reviewer,
+                        },
+                    )
+            conn.rollback()
+    assert exc_info.value.orig.sqlstate == "23503"  # type: ignore[union-attr]
+    assert (
+        exc_info.value.orig.diag.constraint_name  # type: ignore[union-attr]
+        == "fk_worksheet_hint_attestations_assignment"
+    )

@@ -23,6 +23,7 @@ _EXPECTED_MIGRATIONS = [
         "a360s010005_worksheet_learner_hint_attestations.py",
     "adra045001_dispatcher_candidate_authority.py",
         "ci03g020001_reviewer_assignment_authority.py",
+        "ci03g020002_assignment_bound_mutations.py",
     "gcii020001_content_schema.py",
     "gcii050001_api_idempotency.py",
     "gcii060001_review_decisions.py",

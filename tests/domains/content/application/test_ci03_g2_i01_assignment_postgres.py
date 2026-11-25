@@ -132,12 +132,40 @@ def test_ci03_g2_substrate_isolated_from_shared_gci_session(
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-    assert head == "ci03g020001"
+    assert head == "ci03g020002"
     with bootstrap_engine.connect() as conn:
         issuances = conn.execute(
             text("SELECT count(*) FROM content.review_assignment_issuances")
         ).scalar_one()
     assert int(issuances) == 0
+
+
+def test_ci03g020002_single_step_downgrade_upgrade_on_clean_substrate(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_postgres18: dict[str, str],
+) -> None:
+    """BF-10 / TC03R1-01: clean-substrate roundtrip restores full schema fingerprint."""
+    from alembic import command
+    from tests.conftest import alembic_config
+    from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+        schema_fingerprint_ci03g020002,
+    )
+
+    cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
+    before_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+    assert before_fp.alembic_head == "ci03g020002"
+    try:
+        command.downgrade(cfg, "ci03g020001")
+        mid_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+        assert mid_fp.alembic_head == "ci03g020001"
+        assert mid_fp.attest_bound_column == 0
+        assert mid_fp.receipt_attest_result_column == 0
+        assert mid_fp.fk_attest_assignment == 0
+        assert mid_fp.uq_issuance_resource_reviewer == 0
+    finally:
+        command.upgrade(cfg, "ci03g020002")
+    after_fp = schema_fingerprint_ci03g020002(ci03_g2_bootstrap_engine)
+    assert after_fp == before_fp
 
 
 def _seed_worksheet_in_review(
@@ -621,7 +649,7 @@ class TestCi03G2I01AssignmentPostgres:
             assignment_id=assignment_id,
         )
         with uow_factory(tenant_id) as uow:
-            active = enforce_reviewer_use_guard(uow, ctx=guard_ctx_ok, deps=deps)
+            active, _ = enforce_reviewer_use_guard(uow, ctx=guard_ctx_ok, deps=deps)
             assert active.assignment_id == assignment_id
         revoke.revoke(
             tenant_id,
@@ -917,8 +945,10 @@ class TestCi03G2I01AcceptanceMatrix:
 
     def test_attestation_blocks_reassignment(
         self, ci03_g2_bootstrap_engine: Engine, ci03_g2_runtime_engine: Engine    ) -> None:
+        from tests.domains.content.application.helpers_ci03_g2_i01 import (
+            integrated_attest_service,
+        )
         from tests.domains.education.test_aieos_v1_hint_t2 import (
-            _attest_service,
             _hinted_ids_from_version,
             _positive_outcomes,
         )
@@ -973,7 +1003,12 @@ class TestCi03G2I01AcceptanceMatrix:
                 ),
                 {"cid": content_id.value},
             ).scalar_one()
-        attest = _attest_service(ci03_g2_runtime_engine)
+        attest = integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        )
         attest.record(
             tenant_id,
             reviewer_id,

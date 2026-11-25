@@ -103,6 +103,11 @@ class SqlAlchemyWorksheetHintAttestationRepository:
                     per_question_outcomes=json.loads(json.dumps(outcomes_json)),
                     attested_at=attestation.attested_at,
                     correlation_id=attestation.correlation_id,
+                    review_assignment_id=(
+                        None
+                        if attestation.review_assignment_id is None
+                        else attestation.review_assignment_id.value
+                    ),
                 )
             )
         except Exception as exc:
@@ -568,6 +573,11 @@ class SqlAlchemyReviewDecisionRepository:
                     delegation_id=decision.delegation_id,
                     decided_at=decision.decided_at,
                     correlation_id=decision.correlation_id,
+                    review_assignment_id=(
+                        None
+                        if decision.review_assignment_id is None
+                        else decision.review_assignment_id.value
+                    ),
                 )
             )
         except Exception as exc:

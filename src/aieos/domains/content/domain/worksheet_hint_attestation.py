@@ -11,6 +11,7 @@ from aieos.domains.content.domain.errors import InvalidContentIdentityError
 from aieos.domains.content.domain.identities import (
     ContentId,
     ContentVersionId,
+    ReviewAssignmentId,
     WorksheetLearnerHintAttestationId,
     require_foreign_uuid,
 )
@@ -53,6 +54,7 @@ class WorksheetLearnerHintVersionAttestationV1:
     per_question_outcomes: tuple[HintQuestionAttestationOutcome, ...]
     attested_at: datetime
     correlation_id: UUID
+    review_assignment_id: ReviewAssignmentId | None = None
 
     def __post_init__(self) -> None:
         require_foreign_uuid(self.tenant_id, label="tenant_id")

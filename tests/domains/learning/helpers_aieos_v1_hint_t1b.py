@@ -53,6 +53,11 @@ from tests.fakes import (
 )
 from tests.platform.security.authorization.helpers import seed_principal
 from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.domains.content.application.helpers_ci03_g2_i01 import (
+    integrated_attest_service,
+    integrated_review_service,
+    issue_governed_review_assignment,
+)
 from aieos.domains.education.schema import WORKSHEET_SCHEMA_VERSION
 
 FIXED_T1B_HINT = "Consider the denominator."
@@ -244,7 +249,6 @@ def _complete_v2_publish(
     class_ref: str,
     require_attestation: bool,
 ) -> ContentVersionId:
-    _ = class_ref
     review = _review_service(runtime_engine)
     submitted = review.submit(
         tenant_id,
@@ -257,35 +261,74 @@ def _complete_v2_publish(
         audit_provenance=api_mutation_audit_provenance(author_id),
         now=FIXED_NOW,
     )
+    effect_revision = submitted.aggregate_revision
     if require_attestation:
+        provider = issue_governed_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            class_ref=class_ref,
+            now=FIXED_NOW,
+        )
+        bound_attest = integrated_attest_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
+        bound_review = integrated_review_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
         hinted_ids = _hinted_question_ids(
             runtime_engine, tenant_id, version_read.version_id
         )
-        _attest_service(runtime_engine).record(
+        bound_attest.record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
             version_id=version_read.version_id,
-            expected_aggregate_revision=submitted.aggregate_revision,
+            expected_aggregate_revision=effect_revision,
             per_question_outcomes=_positive_outcomes(hinted_ids),
             idempotency_key=f"t1b-v2-attest-{uuid.uuid7()}",
             event_context=_event_context(reviewer_id),
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=FIXED_NOW,
         )
-    approved = review.approve(
-        tenant_id,
-        reviewer_id,
-        content_id=content_id,
-        version_id=version_read.version_id,
-        expected_aggregate_revision=submitted.aggregate_revision,
-        reason_code=None,
-        comment=None,
-        idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
-        event_context=_event_context(reviewer_id),
-        audit_provenance=api_mutation_audit_provenance(reviewer_id),
-        now=FIXED_NOW,
-    )
+        approved = bound_review.approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=effect_revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
+            event_context=_event_context(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=FIXED_NOW,
+        )
+    else:
+        review = _review_service(runtime_engine)
+        approved = review.approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=effect_revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
+            event_context=_event_context(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=FIXED_NOW,
+        )
     assert approved.decision == "APPROVE"
     published = _publish_service(runtime_engine).publish(
         tenant_id,

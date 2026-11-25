@@ -106,9 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"
-          collect_line="$(uv run pytest -m ci03_g2_i01 --collect-only -q 2>&1 | tail -1)"
+          collect_line="$(uv run pytest -m 'ci03_g2_i01 or ci03_g2_i02' --collect-only -q 2>&1 | tail -1)"
           set +e
-          uv run pytest -m ci03_g2_i01 --tb=short -q 2>&1 | tee ci03_g2_i01_pytest.log
+          uv run pytest -m 'ci03_g2_i01 or ci03_g2_i02' --tb=short -q 2>&1 | tee ci03_g2_i01_pytest.log
           rc=$?
           set -e
           result_line="$(tail -1 ci03_g2_i01_pytest.log)"

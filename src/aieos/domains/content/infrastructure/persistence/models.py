@@ -204,6 +204,7 @@ worksheet_hint_attestations_table = Table(
     Column("per_question_outcomes", JSONB, nullable=False),
     Column("attested_at", DateTime(timezone=True), nullable=False),
     Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("review_assignment_id", UUID(as_uuid=True), nullable=True),
     PrimaryKeyConstraint("attestation_id", name="pk_worksheet_hint_attestations"),
     UniqueConstraint(
         "tenant_id",
@@ -228,6 +229,24 @@ worksheet_hint_attestations_table = Table(
         name="fk_worksheet_hint_attestations_version",
         ondelete="RESTRICT",
     ),
+    ForeignKeyConstraint(
+        [
+            "tenant_id",
+            "content_id",
+            "version_id",
+            "review_assignment_id",
+            "reviewer_principal_id",
+        ],
+        [
+            "content.review_assignment_issuances.tenant_id",
+            "content.review_assignment_issuances.content_id",
+            "content.review_assignment_issuances.version_id",
+            "content.review_assignment_issuances.assignment_id",
+            "content.review_assignment_issuances.reviewer_principal_id",
+        ],
+        name="fk_worksheet_hint_attestations_assignment",
+        ondelete="RESTRICT",
+    ),
     Index("ix_worksheet_hint_attestations_tenant_id", "tenant_id"),
     schema="content",
 )
@@ -247,6 +266,7 @@ review_decisions_table = Table(
     Column("delegation_id", UUID(as_uuid=True), nullable=True),
     Column("decided_at", DateTime(timezone=True), nullable=False),
     Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("review_assignment_id", UUID(as_uuid=True), nullable=True),
     PrimaryKeyConstraint("review_decision_id", name="pk_review_decisions"),
     UniqueConstraint(
         "tenant_id",
@@ -277,6 +297,24 @@ review_decisions_table = Table(
             "content.content_versions.version_id",
         ],
         name="fk_review_decisions_version",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        [
+            "tenant_id",
+            "content_id",
+            "version_id",
+            "review_assignment_id",
+            "reviewer_principal_id",
+        ],
+        [
+            "content.review_assignment_issuances.tenant_id",
+            "content.review_assignment_issuances.content_id",
+            "content.review_assignment_issuances.version_id",
+            "content.review_assignment_issuances.assignment_id",
+            "content.review_assignment_issuances.reviewer_principal_id",
+        ],
+        name="fk_review_decisions_assignment",
         ondelete="RESTRICT",
     ),
     Index("ix_review_decisions_tenant_id", "tenant_id"),

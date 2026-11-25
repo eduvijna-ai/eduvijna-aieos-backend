@@ -123,6 +123,11 @@ def review_decision_from_row(row: Any) -> ReviewDecision:
         delegation_id=_row_value(row, "delegation_id"),
         decided_at=_row_value(row, "decided_at"),
         correlation_id=_row_value(row, "correlation_id"),
+        review_assignment_id=(
+            None
+            if _row_value(row, "review_assignment_id") is None
+            else ReviewAssignmentId(_row_value(row, "review_assignment_id"))
+        ),
     )
 
 
@@ -165,6 +170,11 @@ def worksheet_hint_attestation_from_row(row: Any) -> WorksheetLearnerHintVersion
         per_question_outcomes=outcomes,
         attested_at=_row_value(row, "attested_at"),
         correlation_id=_row_value(row, "correlation_id"),
+        review_assignment_id=(
+            None
+            if _row_value(row, "review_assignment_id") is None
+            else ReviewAssignmentId(_row_value(row, "review_assignment_id"))
+        ),
     )
 
 

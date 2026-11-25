@@ -991,7 +991,9 @@ class TestTenantNonDisclosure:
         hidden_approve = _decide(
             client_b, "approve", tenant_b, in_id, in_version, etag=in_etag
         )
-        _assert_problem(hidden_approve, status=404, code="content_not_found")
+        _assert_problem(
+            hidden_approve, status=404, code="content_version_not_found"
+        )
         assert str(tenant_a) not in hidden_approve.text
 
 
