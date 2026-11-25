@@ -577,6 +577,39 @@ def load_success_mutation_audit(
     return str(row[0]), row[1], row[2], int(row[3])
 
 
+def outbox_correlation_match_count(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    correlation_id: uuid.UUID,
+    event_type: str | None = None,
+    content_id: uuid.UUID | None = None,
+    aggregate_revision: int | None = None,
+) -> int:
+    with bootstrap_engine.connect() as conn:
+        clauses = [
+            "tenant_id = :tid",
+            "envelope->>'correlationid' = :cid",
+        ]
+        params: dict[str, object] = {"tid": tenant_id, "cid": str(correlation_id)}
+        if event_type is not None:
+            clauses.append("event_type = :etype")
+            params["etype"] = event_type
+        if content_id is not None:
+            clauses.append("aggregate_id = :cid2")
+            params["cid2"] = content_id
+        if aggregate_revision is not None:
+            clauses.append("aggregate_revision = :rev")
+            params["rev"] = aggregate_revision
+        where = " AND ".join(clauses)
+        return int(
+            conn.execute(
+                text(f"SELECT count(*) FROM integration.outbox_messages WHERE {where}"),
+                params,
+            ).scalar_one()
+        )
+
+
 def load_outbox_for_correlation(
     bootstrap_engine: Engine,
     *,
@@ -586,30 +619,47 @@ def load_outbox_for_correlation(
     aggregate_revision: int,
     correlation_id: uuid.UUID,
 ) -> bool:
-    with bootstrap_engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT envelope
-                FROM integration.outbox_messages
-                WHERE tenant_id = :tid
-                  AND event_type = :etype
-                  AND aggregate_id = :cid
-                  AND aggregate_revision = :rev
-                """
-            ),
-            {
-                "tid": tenant_id,
-                "etype": event_type,
-                "cid": content_id,
-                "rev": aggregate_revision,
-            },
-        ).fetchall()
-    for (envelope,) in rows:
-        ext = envelope.get("correlationid") or envelope.get("correlationId")
-        if ext is not None and uuid.UUID(str(ext)) == correlation_id:
-            return True
-    return False
+    return (
+        outbox_correlation_match_count(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            event_type=event_type,
+            content_id=content_id,
+            aggregate_revision=aggregate_revision,
+        )
+        == 1
+    )
+
+
+def assert_outbox_command_correlation(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    correlation_id: uuid.UUID,
+    event_type: str | None,
+    content_id: uuid.UUID | None = None,
+    aggregate_revision: int | None = None,
+) -> None:
+    """Exactly one outbox row for this command correlation, or zero when contract omits outbox."""
+    count = outbox_correlation_match_count(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        event_type=event_type,
+        content_id=content_id,
+        aggregate_revision=aggregate_revision,
+    )
+    if event_type is None:
+        assert count == 0
+    else:
+        assert count == 1
+    total_for_correlation = outbox_correlation_match_count(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+    )
+    assert total_for_correlation == count
 
 
 def assert_success_mutation_command_evidence(
@@ -662,29 +712,16 @@ def assert_success_mutation_command_evidence(
 
     assert audit_count_for_correlation(bootstrap_engine, tenant_id, correlation_id) == 1
 
-    if spec.outbox_event_type is None:
-        with bootstrap_engine.connect() as conn:
-            stray = conn.execute(
-                text(
-                    """
-                    SELECT count(*) FROM integration.outbox_messages
-                    WHERE tenant_id = :tid
-                      AND envelope->>'correlationid' = :cid
-                    """
-                ),
-                {"tid": tenant_id, "cid": str(correlation_id)},
-            ).scalar_one()
-        assert int(stray) == 0
-    else:
-        assert receipt.result_aggregate_revision is not None
-        assert load_outbox_for_correlation(
-            bootstrap_engine,
-            tenant_id=tenant_id,
-            event_type=spec.outbox_event_type,
-            content_id=content_id.value,
-            aggregate_revision=receipt.result_aggregate_revision,
-            correlation_id=correlation_id,
-        )
+    assert_outbox_command_correlation(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        event_type=spec.outbox_event_type,
+        content_id=content_id.value if spec.outbox_event_type else None,
+        aggregate_revision=(
+            receipt.result_aggregate_revision if spec.outbox_event_type else None
+        ),
+    )
 
 
 def assert_denial_command_no_receipt(
@@ -708,8 +745,23 @@ def assert_denial_command_no_receipt(
     )
 
 
-def schema_fingerprint_ci03g020002(bootstrap_engine: Engine) -> tuple[str, int, int, int]:
-    """Alembic head plus bound-column and evidence anchors for migration refusal proofs."""
+@dataclass(frozen=True, slots=True)
+class MigrationSchemaFingerprint:
+    alembic_head: str
+    attest_bound_column: int
+    decision_bound_column: int
+    receipt_attest_result_column: int
+    fk_attest_assignment: int
+    fk_decision_assignment: int
+    uq_issuance_resource_reviewer: int
+    attest_rls_forced: bool | None
+    decision_rls_forced: bool | None
+
+
+def schema_fingerprint_ci03g020002(
+    bootstrap_engine: Engine,
+) -> MigrationSchemaFingerprint:
+    """Alembic head, bound columns, FK anchors, and forced RLS for migration proofs."""
     with bootstrap_engine.connect() as conn:
         head = str(
             conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
@@ -750,4 +802,69 @@ def schema_fingerprint_ci03g020002(bootstrap_engine: Engine) -> tuple[str, int, 
                 )
             ).scalar_one()
         )
-    return head, bound_attest, bound_decision, receipt_col
+        fk_attest = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.table_constraints
+                    WHERE constraint_schema = 'content'
+                      AND constraint_name = 'fk_worksheet_hint_attestations_assignment'
+                    """
+                )
+            ).scalar_one()
+        )
+        fk_decision = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.table_constraints
+                    WHERE constraint_schema = 'content'
+                      AND constraint_name = 'fk_review_decisions_assignment'
+                    """
+                )
+            ).scalar_one()
+        )
+        uq_issue = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.table_constraints
+                    WHERE constraint_schema = 'content'
+                      AND constraint_name = 'uq_review_assignment_issuances_resource_reviewer'
+                    """
+                )
+            ).scalar_one()
+        )
+        rls_attest = conn.execute(
+            text(
+                """
+                SELECT c.relforcerowsecurity
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'content'
+                  AND c.relname = 'worksheet_learner_hint_version_attestations'
+                """
+            )
+        ).scalar_one_or_none()
+        rls_decision = conn.execute(
+            text(
+                """
+                SELECT c.relforcerowsecurity
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'content'
+                  AND c.relname = 'review_decisions'
+                """
+            )
+        ).scalar_one_or_none()
+    return MigrationSchemaFingerprint(
+        alembic_head=head,
+        attest_bound_column=bound_attest,
+        decision_bound_column=bound_decision,
+        receipt_attest_result_column=receipt_col,
+        fk_attest_assignment=fk_attest,
+        fk_decision_assignment=fk_decision,
+        uq_issuance_resource_reviewer=uq_issue,
+        attest_rls_forced=bool(rls_attest) if rls_attest is not None else None,
+        decision_rls_forced=bool(rls_decision) if rls_decision is not None else None,
+    )

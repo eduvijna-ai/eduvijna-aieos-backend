@@ -206,6 +206,7 @@ def passive_head_slot_blocker(
     locks_acquired: threading.Event,
     release: threading.Event,
     blocker_pid: list[int | None],
+    while_holding: Callable[[], None] | None = None,
 ) -> None:
     """Independent transaction: content head then slot FOR UPDATE, no business mutation."""
     uow = SqlAlchemyContentUnitOfWork(engine, tenant_id)
@@ -217,6 +218,8 @@ def passive_head_slot_blocker(
         assert connection is not None
         blocker_pid[0] = connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
         locks_acquired.set()
+        if while_holding is not None:
+            while_holding()
         if not release.wait(timeout=_DEFAULT_HOLD_TIMEOUT):
             raise TimeoutError("passive blocker release timed out")
     finally:

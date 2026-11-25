@@ -543,6 +543,82 @@ I02_TC02_CASE_MAP: tuple[dict[str, str], ...] = (
     },
 )
 
+# TC03 — final Stage B acceptance residuals (Chief TC03 scope).
+I02_TC03_REQUIREMENT_MAP: tuple[dict[str, str], ...] = (
+    {
+        "id": "TC03-01",
+        "invariant": "wrong assignment receipt replay binding",
+        "test": (
+            "r4tc03 corrupt fp + immutability boundary; PRIOR r4b1 fingerprint mismatch; "
+            "G2-I01 stale revoke/reissue; B3 reissue-after-attest block"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-02",
+        "invariant": "issuer/reviewer authority losses",
+        "test": (
+            "r4tc03 submit revoke on bound attest + malformed eligibility; "
+            "PRIOR TC01 D/BF issuer-assign/membership/decide/class/unavailable"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-03",
+        "invariant": "integrated APPROVE digest/assignment interlock",
+        "test": (
+            "r4tc03 integrated non-assignee approve; PRIOR r4tc01 interlock unit + "
+            "b3r1 cross-reviewer + immutable row boundary"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-04",
+        "invariant": "historical + hint-free compatibility",
+        "test": (
+            "PRIOR r4bf/tc01 historical publish + publisher separation; "
+            "hint-free legacy path N/A (no governed hint-free fixture in #80 scope)"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-05",
+        "invariant": "exact durable evidence",
+        "test": (
+            "helpers assert_outbox_command_correlation + TC02 representative; "
+            "PARTIAL: full 24-case audit/outbox identity grid → TC02 residual"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-06",
+        "invariant": "exceptional cleanup under held lock",
+        "test": "r4tc03 passive blocker while_holding fault; PRIOR contention early-holder",
+        "stage": "B",
+    },
+    {
+        "id": "TC03-07",
+        "invariant": "migration refusal preservation",
+        "test": (
+            "r4tc03 fingerprint FK/RLS + conditional clean roundtrip; "
+            "PRIOR g2_i01/BF downgrade refusal + TC02 schema fingerprint"
+        ),
+        "stage": "B",
+    },
+    {
+        "id": "TC03-08",
+        "invariant": "runtime privilege / cross-tenant",
+        "test": "r4tc03 forced RLS catalog + cross-tenant issuance; PRIOR r4tc02/BF runtime grid",
+        "stage": "B",
+    },
+    {
+        "id": "TC03-09",
+        "invariant": "normative traceability",
+        "test": "I02_TC03_REQUIREMENT_MAP (this table)",
+        "stage": "B",
+    },
+)
+
 
 def _idem_attest_result_id(
     runtime_engine: Engine,

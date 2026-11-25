@@ -72,25 +72,29 @@ def _corrupt_idempotency_fingerprint(
     tenant_id: uuid.UUID,
     principal_id: uuid.UUID,
     operation: str,
+    *,
+    idempotency_key: str | None = None,
 ) -> None:
+    from aieos.platform.idempotency.hashing import hash_idempotency_key
+
     with bootstrap_engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                UPDATE api.idempotency_records
-                SET request_fingerprint_sha256 = :bad
-                WHERE tenant_id = :tid
-                  AND actor_principal_id = :pid
-                  AND operation = :op
-                """
-            ),
-            {
-                "bad": "f" * 64,
-                "tid": tenant_id,
-                "pid": principal_id,
-                "op": operation,
-            },
-        )
+        params: dict[str, object] = {
+            "bad": "f" * 64,
+            "tid": tenant_id,
+            "pid": principal_id,
+            "op": operation,
+        }
+        sql = """
+            UPDATE api.idempotency_records
+            SET request_fingerprint_sha256 = :bad
+            WHERE tenant_id = :tid
+              AND actor_principal_id = :pid
+              AND operation = :op
+        """
+        if idempotency_key is not None:
+            sql += " AND idempotency_key_sha256 = :key"
+            params["key"] = hash_idempotency_key(idempotency_key)
+        conn.execute(text(sql), params)
 
 
 def _corrupt_idempotency_attest_result_id(
