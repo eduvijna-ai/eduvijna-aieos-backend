@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import threading
 import uuid
 from datetime import timedelta
@@ -20,9 +19,6 @@ from aieos.domains.content.application.errors import (
 )
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
-from aieos.domains.content.application.worksheet_hint_append import (
-    worksheet_learner_hint_version_provenance,
-)
 from aieos.domains.content.application.publish import PublishContentService
 import aieos.domains.content.application.worksheet_hint_attestation_record as attest_record_module
 import aieos.domains.content.application.worksheet_hint_attestation_gate as attestation_gate
@@ -426,11 +422,7 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-03: hint-free / legacy path not affected by assignment-bound attestation gate.
-
-    HTTP v2 append leaves provenance null; bootstrap-only provenance attach matches T1c
-  trigger gate pattern so issue can bind class_ref without mutating payload.
-    """
+    """TC03R1-03: hint-free IN_REVIEW approve does not require assignment-bound attestation."""
     from tests.conftest import provision_runtime_grants
     from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
         _seed_reviewers,
@@ -465,39 +457,11 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
         audit_provenance=api_mutation_audit_provenance(owner_id),
         now=_NOW,
     )
-    provenance = worksheet_learner_hint_version_provenance(
-        authoring_class_ref=CLASS_REF, principal_id=owner_id
-    )
-    with ci03_g2_bootstrap_engine.begin() as conn:
-        conn.execute(
-            text(
-                "ALTER TABLE content.content_versions DISABLE TRIGGER "
-                "content_versions_immutable_update"
-            )
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE content.content_versions
-                SET provenance = CAST(:prov AS jsonb)
-                WHERE tenant_id = :tid AND version_id = :vid
-                """
-            ),
-            {
-                "prov": json.dumps(provenance),
-                "tid": tenant_id,
-                "vid": version_read.version_id.value,
-            },
-        )
-        conn.execute(
-            text(
-                "ALTER TABLE content.content_versions ENABLE TRIGGER "
-                "content_versions_immutable_update"
-            )
-        )
     from tests.domains.education.test_aieos_v1_hint_t2 import _review_service
 
-    _review_service(ci03_g2_runtime_engine).submit(
+    _, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
+    provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
+    submitted = _review_service(ci03_g2_runtime_engine).submit(
         tenant_id,
         owner_id,
         content_id=content_id,
@@ -507,19 +471,6 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
         event_context=_event_context(owner_id),
         audit_provenance=api_mutation_audit_provenance(owner_id),
         now=_NOW,
-    )
-    issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
-    provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
-    provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
-    issue.issue(
-        tenant_id,
-        owner_id,
-        content_id=content_id,
-        version_id=version_read.version_id,
-        reviewer_principal_id=reviewer_id,
-        idempotency_key=f"tc03r1-issue-{uuid.uuid7()}",
-        event_context=_event(owner_id),
-        audit_provenance=api_mutation_audit_provenance(owner_id),
     )
     review = integrated_review_service(
         ci03_g2_runtime_engine,
@@ -532,7 +483,7 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
         reviewer_id,
         content_id=content_id,
         version_id=version_read.version_id,
-        expected_aggregate_revision=revision,
+        expected_aggregate_revision=submitted.aggregate_revision,
         reason_code=None,
         comment=None,
         idempotency_key=f"tc03r1-hf-apr-{uuid.uuid7()}",
