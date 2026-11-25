@@ -518,6 +518,7 @@ class TestCi03G2I02R4B2Concurrency:
         returned = holder_result.get("returned")
         assert returned is not None
         if effect == "attest":
+            attestation_id = returned.value
             with ci03_g2_bootstrap_engine.connect() as conn:
                 stored = conn.execute(
                     text(
@@ -527,11 +528,11 @@ class TestCi03G2I02R4B2Concurrency:
                         WHERE attestation_id = :aid
                         """
                     ),
-                    {"aid": returned},
+                    {"aid": attestation_id},
                 ).scalar_one()
-            assert stored == returned
+            assert stored == attestation_id
         else:
-            assert returned.review_decision_id is not None
+            decision_id = returned.review_decision_id.value
             with ci03_g2_bootstrap_engine.connect() as conn:
                 stored = conn.execute(
                     text(
@@ -541,9 +542,9 @@ class TestCi03G2I02R4B2Concurrency:
                         WHERE review_decision_id = :did
                         """
                     ),
-                    {"did": returned.review_decision_id},
+                    {"did": decision_id},
                 ).scalar_one()
-            assert stored == returned.review_decision_id
+            assert stored == decision_id
 
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario

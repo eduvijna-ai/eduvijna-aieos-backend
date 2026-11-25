@@ -775,7 +775,6 @@ def _publish_historical_hinted_null_binding(
                 text(
                     """
                     SELECT attestation_id, tenant_id, content_id, version_id,
-                           reviewer_principal_id, effective_actor_id,
                            payload_digest, qa_policy_version, attested_at,
                            correlation_id, review_assignment_id
                     FROM content.worksheet_learner_hint_version_attestations
@@ -850,7 +849,6 @@ def _publish_historical_hinted_null_binding(
                 text(
                     """
                     SELECT attestation_id, tenant_id, content_id, version_id,
-                           reviewer_principal_id, effective_actor_id,
                            payload_digest, qa_policy_version, attested_at,
                            correlation_id, review_assignment_id
                     FROM content.worksheet_learner_hint_version_attestations
