@@ -140,6 +140,133 @@ def set_tenant(conn, tenant_id: uuid.UUID) -> None:
     )
 
 
+def _clear_ci03_assignment_bound_mutation_evidence(conn) -> None:
+    """TEST-ONLY: unblock ci03g020002 downgrade on the session-scoped PostgreSQL."""
+    bound_column = conn.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'content'
+                  AND table_name = 'review_decisions'
+                  AND column_name = 'review_assignment_id'
+            )
+            """
+        )
+    ).scalar()
+    if not bound_column:
+        return
+    conn.execute(
+        text(
+            "ALTER TABLE content.review_decisions "
+            "DISABLE TRIGGER review_decisions_immutable_delete"
+        )
+    )
+    conn.execute(
+        text("ALTER TABLE content.review_decisions DISABLE ROW LEVEL SECURITY")
+    )
+    conn.execute(
+        text(
+            "DELETE FROM content.review_decisions "
+            "WHERE review_assignment_id IS NOT NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE content.review_decisions "
+            "ENABLE TRIGGER review_decisions_immutable_delete"
+        )
+    )
+    conn.execute(
+        text("ALTER TABLE content.review_decisions ENABLE ROW LEVEL SECURITY")
+    )
+    conn.execute(text("ALTER TABLE content.review_decisions FORCE ROW LEVEL SECURITY"))
+    if authorization_denial_records_table_exists(conn):
+        conn.execute(
+            text(
+                "ALTER TABLE security.authorization_denial_records "
+                "DISABLE TRIGGER authorization_denial_records_immutable_delete"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE security.authorization_denial_records "
+                "DISABLE ROW LEVEL SECURITY"
+            )
+        )
+        conn.execute(
+            text(
+                "DELETE FROM security.authorization_denial_records "
+                "WHERE action = 'content.review.mutation.denied'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE security.authorization_denial_records "
+                "ENABLE TRIGGER authorization_denial_records_immutable_delete"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE security.authorization_denial_records "
+                "ENABLE ROW LEVEL SECURITY"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE security.authorization_denial_records "
+                "FORCE ROW LEVEL SECURITY"
+            )
+        )
+    if not review_assignment_authority_tables_exist(conn):
+        return
+    for table, delete_trigger, update_trigger in (
+        (
+            "review_assignment_revocations",
+            "review_assignment_revocations_immutable_delete",
+            "review_assignment_revocations_immutable_update",
+        ),
+        (
+            "review_current_assignments",
+            None,
+            None,
+        ),
+        (
+            "review_assignment_issuances",
+            "review_assignment_issuances_immutable_delete",
+            "review_assignment_issuances_immutable_update",
+        ),
+    ):
+        conn.execute(
+            text(f"ALTER TABLE content.{table} DISABLE ROW LEVEL SECURITY")
+        )
+        if delete_trigger:
+            conn.execute(
+                text(f"ALTER TABLE content.{table} DISABLE TRIGGER {delete_trigger}")
+            )
+        if update_trigger:
+            conn.execute(
+                text(f"ALTER TABLE content.{table} DISABLE TRIGGER {update_trigger}")
+            )
+        conn.execute(text(f"DELETE FROM content.{table}"))
+        if update_trigger:
+            conn.execute(
+                text(f"ALTER TABLE content.{table} ENABLE TRIGGER {update_trigger}")
+            )
+        if delete_trigger:
+            conn.execute(
+                text(f"ALTER TABLE content.{table} ENABLE TRIGGER {delete_trigger}")
+            )
+        conn.execute(text(f"ALTER TABLE content.{table} ENABLE ROW LEVEL SECURITY"))
+        conn.execute(text(f"ALTER TABLE content.{table} FORCE ROW LEVEL SECURITY"))
+
+
+def clear_ci03_assignment_bound_mutation_evidence_for_schema_downgrade(engine) -> None:
+    """Remove CI03-G2-I02 downgrade blockers from the shared pytest database."""
+    with engine.begin() as conn:
+        _clear_ci03_assignment_bound_mutation_evidence(conn)
+
+
 def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
     """TEST-ONLY isolation for historical Alembic cycle tests.
 
@@ -425,6 +552,7 @@ def clear_asset_audit_rows_for_schema_downgrade(engine) -> None:
                     "FORCE ROW LEVEL SECURITY"
                 )
             )
+        _clear_ci03_assignment_bound_mutation_evidence(conn)
         if learning_exists:
             for table, disable_triggers in (
                 (

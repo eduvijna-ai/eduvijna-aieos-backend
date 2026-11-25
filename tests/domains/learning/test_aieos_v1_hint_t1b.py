@@ -39,6 +39,10 @@ from tests.domains.learning.helpers_aieos360_s01_i03 import (
     valid_short_write,
     valid_tf_write,
 )
+from tests.domains.content.application.helpers_ci03_g2_i01 import (
+    integrated_review_service,
+    issue_governed_review_assignment,
+)
 from tests.domains.learning.helpers_aieos_v1_hint_t1b import (
     FIXED_T1B_HINT,
     clear_t1b_side_effects,
@@ -352,8 +356,25 @@ class TestGovernedContentGate:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
+        provider = issue_governed_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            class_ref="class-5a",
+            now=FIXED_NOW,
+        )
+        bound_review = integrated_review_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
         with pytest.raises(WorksheetLearnerHintAttestationRequired):
-            _review_service(runtime_engine).approve(
+            bound_review.approve(
                 tenant_id,
                 reviewer_id,
                 content_id=content_id,

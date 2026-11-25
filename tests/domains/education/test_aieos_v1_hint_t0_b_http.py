@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from uuid import UUID
 
 import pytest
@@ -36,7 +37,10 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
     issue_governed_review_assignment,
 )
 from aieos.platform.security.authorization.decisions import PrincipalKind
-from tests.dbutil import set_tenant
+from tests.dbutil import (
+    clear_ci03_assignment_bound_mutation_evidence_for_schema_downgrade,
+    set_tenant,
+)
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     FIXED_NOW,
     _event_context,
@@ -68,6 +72,13 @@ from tests.fakes import (
 )
 
 pytestmark = pytest.mark.aieos_v1_hint_t1
+
+
+@pytest.fixture(autouse=True)
+def _hint_t0b_shared_substrate_cleanup(bootstrap_engine: Engine) -> Iterator[None]:
+    yield
+    clear_ci03_assignment_bound_mutation_evidence_for_schema_downgrade(bootstrap_engine)
+
 
 CURSOR_KEY = b"hint-t0-b-http-cursor-key"
 
@@ -340,7 +351,7 @@ class TestHintAttestationRecordHttp:
             audit_provenance=api_mutation_audit_provenance(author_id),
             now=FIXED_NOW,
         )
-        version_id = version_read.version_id.value
+        version_uuid = version_read.version_id.value
         _hint_t2_review(runtime_engine).submit(
             tenant_id,
             author_id,
@@ -371,7 +382,7 @@ class TestHintAttestationRecordHttp:
             author_id,
             reviewer_id,
             UUID(content_id_str),
-            UUID(version_id),
+            version_uuid,
             etag,
             provider,
         )
