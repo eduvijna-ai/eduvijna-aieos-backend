@@ -355,6 +355,119 @@ I02_BF_CLOSURE_MATRIX: tuple[dict[str, str], ...] = (
 )
 
 
+# TC01 — authority/receipt case map (Chief TCA; credits existing nodes).
+I02_TC01_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "group": "TC01-A",
+        "case": "terminal_replay_original_result",
+        "test": "test_ci03_g2_i02_r4tc01::test_terminal_receipt_replay_returns_original_result",
+        "evidence": "NEW; extends r4b3r1/r4bf terminal replay",
+    },
+    {
+        "group": "TC01-A",
+        "case": "terminal_replay_durable",
+        "test": "r4b3r1_terminal_replay + r4bf_terminal_replay",
+        "evidence": "PRIOR credited",
+    },
+    {
+        "group": "TC01-B",
+        "case": "established_expiry_denied",
+        "test": "test_established_receipt_expiry_denied",
+        "evidence": "NEW active_attest + terminal_reject",
+    },
+    {
+        "group": "TC01-B",
+        "case": "terminal_authority_lost_replay",
+        "test": "test_terminal_receipt_current_authority_lost_still_replays",
+        "evidence": "NEW",
+    },
+    {
+        "group": "TC01-B",
+        "case": "terminal_revoked_replay_denied",
+        "test": "test_terminal_receipt_revoked_denied",
+        "evidence": "NEW",
+    },
+    {
+        "group": "TC01-B",
+        "case": "stale_revoke_supersession",
+        "test": "test_ci03_g2_i01_assignment_postgres::test_stale_revoke_leaves_current_slot",
+        "evidence": "PRIOR G2-I01",
+    },
+    {
+        "group": "TC01-B",
+        "case": "reissue_after_attest",
+        "test": "r4b3::test_reissue_blocked_when_attestation_immutable",
+        "evidence": "PRIOR lifecycle prohibition",
+    },
+    {
+        "group": "TC01-C",
+        "case": "changed_payload_fingerprint_stale",
+        "test": "r4bf_replay_established + r4b3r1 grid",
+        "evidence": "PRIOR credited",
+    },
+    {
+        "group": "TC01-C",
+        "case": "wrong_version_content_replay",
+        "test": "test_established_receipt_replay_wrong_version_denied + wrong_content",
+        "evidence": "NEW",
+    },
+    {
+        "group": "TC01-C",
+        "case": "operation_scope_not_global",
+        "test": "test_same_idempotency_key_different_operation_scope_not_global_conflict",
+        "evidence": "NEW positive",
+    },
+    {
+        "group": "TC01-D",
+        "case": "issuer_assign_lock",
+        "test": "r4bf_authority::test_issuer_assign_revoked_denies_revoke_and_bound_attest",
+        "evidence": "PRIOR",
+    },
+    {
+        "group": "TC01-D",
+        "case": "membership_decide_revoke",
+        "test": "r4b3r1_authority_sink + r4b3 decide revoked",
+        "evidence": "PRIOR",
+    },
+    {
+        "group": "TC01-D",
+        "case": "class_eligibility_unavailable",
+        "test": "test_new_effect_denied_when_reviewer_class_eligibility_empty + school_context_unavailable",
+        "evidence": "NEW",
+    },
+    {
+        "group": "TC01-D",
+        "case": "issuer_submit_revoked",
+        "test": "test_issuer_submit_revoked_denies_reissue_new_effect",
+        "evidence": "NEW (reissue path)",
+    },
+    {
+        "group": "TC01-E",
+        "case": "null_assignment_interlock",
+        "test": "test_approve_interlock_rejects_null_attestation_assignment",
+        "evidence": "NEW application interlock",
+    },
+    {
+        "group": "TC01-E",
+        "case": "assignment_mismatch_interlock",
+        "test": "test_approve_interlock_rejects_mismatched_attestation_assignment",
+        "evidence": "NEW + PRIOR cross-reviewer/b3r1 immutable",
+    },
+    {
+        "group": "TC01-F",
+        "case": "historical_publish_expiry",
+        "test": "r4b1::test_publish_kernel_authorization_after_assignment_expired",
+        "evidence": "PRIOR",
+    },
+    {
+        "group": "TC01-F",
+        "case": "publisher_distinctness_non_human",
+        "test": "test_publish_rejects_reviewer_as_publisher + test_publish_rejects_non_human_principal",
+        "evidence": "NEW; PRIOR no-grant kernel",
+    },
+)
+
+
 def _idem_attest_result_id(
     runtime_engine: Engine,
     tenant_id: uuid.UUID,
