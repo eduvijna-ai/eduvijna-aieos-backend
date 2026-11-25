@@ -27,9 +27,15 @@ from aieos.domains.education.schema import (
 from aieos.domains.teaching.infrastructure.persistence.uow import (
     SqlAlchemyTeachingUnitOfWorkFactory,
 )
-from aieos.domains.content.domain.identities import ContentId
+from aieos.development.coherent_school_context import DevelopmentCoherentSchoolContextProvider
+from aieos.domains.content.domain.identities import ContentId, ContentVersionId
 from aieos.platform.api.app import create_app
 from aieos.platform.api.etag import encode_revision_etag
+from tests.domains.content.application.helpers_ci03_g2_i01 import (
+    assignment_bound_deps,
+    issue_governed_review_assignment,
+)
+from tests.domains.education.test_aieos_v1_hint_t1_persistence import FIXED_NOW
 from tests.domains.assessment.helpers_dev08_i02 import MutableSchoolContextClassReader
 from tests.domains.education.test_aieos_v1_hint_t1 import (
     StubHumanClassification,
@@ -72,7 +78,16 @@ def _client(
     school_context_reader: MutableSchoolContextClassReader | None,
     version_create_auth: AllowAIGenerationAuthorization | None = None,
     review_auth: AllowReviewAuthorization | None = None,
+    school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
 ) -> TestClient:
+    assignment_bound = None
+    if school_context_provider is not None:
+        assignment_bound = assignment_bound_deps(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=school_context_provider,
+        )
     return TestClient(
         create_app(
             uow_factory=SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
@@ -95,9 +110,26 @@ def _client(
             or AllowAIGenerationAuthorization(),
             school_context_class_reader=school_context_reader,
             principal_classification_authority=StubHumanClassification(),
+            assignment_bound=assignment_bound,
         ),
         raise_server_exceptions=False,
     )
+
+
+def _head_revision_etag(
+    runtime_engine: Engine, *, tenant_id: UUID, content_id: UUID
+) -> str:
+    with runtime_engine.connect() as conn:
+        rev = conn.execute(
+            text(
+                """
+                SELECT aggregate_revision FROM content.contents
+                WHERE tenant_id = :tid AND content_id = :cid
+                """
+            ),
+            {"tid": tenant_id, "cid": content_id},
+        ).scalar_one()
+    return encode_revision_etag(int(rev))
 
 
 def _create_worksheet(client: TestClient, tenant_id: UUID) -> tuple[str, str]:
@@ -304,13 +336,28 @@ class TestHintAttestationRecordHttp:
             ),
         )
         assert submit.status_code == 200, submit.text
+        provider = issue_governed_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=cid,
+            version_id=ContentVersionId(UUID(version_id)),
+            class_ref="class-5a",
+            now=FIXED_NOW,
+        )
+        etag = _head_revision_etag(
+            runtime_engine, tenant_id=tenant_id, content_id=cid
+        )
         return (
             tenant_id,
             author_id,
             reviewer_id,
             UUID(content_id_str),
             UUID(version_id),
-            submit.headers["ETag"],
+            etag,
+            provider,
         )
 
     def test_positive_attestation_record(
@@ -323,6 +370,7 @@ class TestHintAttestationRecordHttp:
             content_id,
             version_id,
             etag,
+            provider,
         ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
         reviewer_client = _client(
             runtime_engine,
@@ -331,6 +379,7 @@ class TestHintAttestationRecordHttp:
             school_context_reader=MutableSchoolContextClassReader(
                 tenant_id=tenant_id, teacher_principal_id=reviewer_id
             ),
+            school_context_provider=provider,
         )
         outcomes = [
             {
@@ -360,6 +409,7 @@ class TestHintAttestationRecordHttp:
             content_id,
             version_id,
             etag,
+            provider,
         ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
         author_client = _client(
             runtime_engine,
@@ -368,6 +418,7 @@ class TestHintAttestationRecordHttp:
             school_context_reader=MutableSchoolContextClassReader(
                 tenant_id=tenant_id, teacher_principal_id=author_id
             ),
+            school_context_provider=provider,
         )
         response = author_client.post(
             f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
@@ -395,6 +446,7 @@ class TestHintAttestationRecordHttp:
             content_id,
             version_id,
             etag,
+            provider,
         ) = self._hinted_version_in_review(runtime_engine, bootstrap_engine)
         reviewer_client = _client(
             runtime_engine,
@@ -404,6 +456,7 @@ class TestHintAttestationRecordHttp:
                 tenant_id=tenant_id, teacher_principal_id=reviewer_id
             ),
             review_auth=AllowReviewAuthorization(allow_decide=False),
+            school_context_provider=provider,
         )
         response = reviewer_client.post(
             f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
@@ -545,6 +598,7 @@ class TestHintReviewPublishProblemTaxonomy:
             content_id,
             version_id,
             etag,
+            provider,
         ) = TestHintAttestationRecordHttp()._hinted_version_in_review(
             runtime_engine, bootstrap_engine
         )
@@ -555,6 +609,7 @@ class TestHintReviewPublishProblemTaxonomy:
             school_context_reader=MutableSchoolContextClassReader(
                 tenant_id=tenant_id, teacher_principal_id=reviewer_id
             ),
+            school_context_provider=provider,
         )
         attest = reviewer_client.post(
             f"/api/v1/contents/{content_id}/versions/{version_id}/actions/record-worksheet-hint-attestation",
@@ -596,6 +651,7 @@ class TestHintReviewPublishProblemTaxonomy:
             content_id,
             version_id,
             etag,
+            provider,
         ) = TestHintAttestationRecordHttp()._hinted_version_in_review(
             runtime_engine, bootstrap_engine
         )
@@ -607,6 +663,7 @@ class TestHintReviewPublishProblemTaxonomy:
             school_context_reader=MutableSchoolContextClassReader(
                 tenant_id=tenant_id, teacher_principal_id=reviewer_id
             ),
+            school_context_provider=provider,
         )
         response = reviewer_client.post(
             f"/api/v1/contents/{content_id}/versions/{version_id}/actions/approve",

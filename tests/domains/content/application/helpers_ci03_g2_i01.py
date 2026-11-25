@@ -60,6 +60,63 @@ from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
 )
 from tests.domains.education.test_aieos_v1_hint_t2 import _review_service
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
+from aieos.domains.content.application.ports import (
+    CONTENT_REVIEW_ASSIGN,
+    CONTENT_REVIEW_DECIDE,
+    CONTENT_REVIEW_SUBMIT,
+)
+from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.platform.security.authorization.helpers import seed_active_authority
+
+
+def issue_governed_review_assignment(
+    bootstrap_engine: Engine,
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    class_ref: str,
+    now: datetime | None = None,
+) -> DevelopmentCoherentSchoolContextProvider:
+    """Seed grants and issue governed review assignment; return school-context provider."""
+    from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
+        _services,
+    )
+
+    effective_now = now or datetime.now(UTC)
+    seed_active_authority(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=owner_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_ASSIGN, CONTENT_REVIEW_SUBMIT),
+    )
+    seed_active_authority(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=reviewer_id,
+        principal_kind=PrincipalKind.HUMAN,
+        capabilities=(CONTENT_REVIEW_DECIDE,),
+    )
+    issue, _, provider, *_ = _services(
+        runtime_engine, tenant_id, clock=lambda: effective_now
+    )
+    provider.set_teacher_class_authority(owner_id, (class_ref,))
+    provider.set_reviewer_class_eligibility(reviewer_id, (class_ref,))
+    issue.issue(
+        tenant_id,
+        owner_id,
+        content_id=content_id,
+        version_id=version_id,
+        reviewer_principal_id=reviewer_id,
+        idempotency_key=f"governed-assign-{uuid.uuid7()}",
+        event_context=_event_context(owner_id),
+        audit_provenance=api_mutation_audit_provenance(owner_id),
+    )
+    return provider
 
 
 def seed_worksheet_in_review_governed(

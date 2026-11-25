@@ -46,6 +46,7 @@ from aieos.domains.education.schema import (
 from aieos.domains.teaching.application.school_context import AssignableClassRef
 from aieos.platform.events.models import MutationEventContext
 from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.platform.security.authorization.helpers import seed_principal
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
@@ -361,25 +362,60 @@ class TestReviewPublishInterlockServices:
             audit_provenance=api_mutation_audit_provenance(principal_id),
             now=FIXED_NOW,
         )
-        review = ReviewCommandService(
+        from tests.domains.content.application.helpers_ci03_g2_i01 import (
+            integrated_review_service,
+            issue_governed_review_assignment,
+        )
+
+        unbound_review = ReviewCommandService(
             SqlAlchemyContentUnitOfWorkFactory(runtime_engine),
             AllowReviewAuthorization(),
             AllowReviewCommentPolicy(),
             idempotency_retention=IDEMPOTENCY_RETENTION,
             principal_classification=StubHumanClassification(),
         )
+        reviewer_id = uuid.uuid7()
+        seed_principal(bootstrap_engine, reviewer_id, principal_kind=PrincipalKind.HUMAN)
+        submitted = unbound_review.submit(
+            tenant_id,
+            principal_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=revision,
+            idempotency_key=f"decide-submit-{uuid.uuid7()}",
+            event_context=_event_context(principal_id),
+            audit_provenance=api_mutation_audit_provenance(principal_id),
+            now=FIXED_NOW,
+        )
+        provider = issue_governed_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=principal_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            class_ref="class-5a",
+            now=FIXED_NOW,
+        )
+        review = integrated_review_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
         with pytest.raises(WorksheetLearnerHintAttestationRequired):
             review.approve(
                 tenant_id,
-                principal_id,
+                reviewer_id,
                 content_id=content_id,
                 version_id=version_read.version_id,
-                expected_aggregate_revision=revision,
+                expected_aggregate_revision=submitted.aggregate_revision,
                 reason_code=None,
                 comment=None,
                 idempotency_key=f"decide-{uuid.uuid7()}",
-                event_context=_event_context(principal_id),
-                audit_provenance=api_mutation_audit_provenance(principal_id),
+                event_context=_event_context(reviewer_id),
+                audit_provenance=api_mutation_audit_provenance(reviewer_id),
                 now=FIXED_NOW,
             )
 

@@ -769,6 +769,41 @@ def _publish_historical_hinted_null_binding(
     assert attest_bind is None
     assert decision_bind is None
     before_decision = scenario.review_decision_id
+    with bootstrap.connect() as conn:
+        attest_row_before = (
+            conn.execute(
+                text(
+                    """
+                    SELECT attestation_id, tenant_id, content_id, version_id,
+                           reviewer_principal_id, effective_actor_id,
+                           payload_digest, qa_policy_version, attested_at,
+                           correlation_id, review_assignment_id
+                    FROM content.worksheet_learner_hint_version_attestations
+                    WHERE attestation_id = :aid
+                    """
+                ),
+                {"aid": scenario.attestation_id},
+            )
+            .mappings()
+            .one()
+        )
+        decision_row_before = (
+            conn.execute(
+                text(
+                    """
+                    SELECT review_decision_id, tenant_id, content_id, version_id,
+                           decision, reason_code, comment, reviewer_principal_id,
+                           effective_actor_id, delegation_id, decided_at,
+                           correlation_id, review_assignment_id
+                    FROM content.review_decisions
+                    WHERE review_decision_id = :did
+                    """
+                ),
+                {"did": scenario.review_decision_id},
+            )
+            .mappings()
+            .one()
+        )
     assert len(digest_row[0]) == 64
     from aieos.domains.education.worksheet_hint_qa import WORKSHEET_HINT_QA_POLICY_VERSION
 
@@ -797,7 +832,7 @@ def _publish_historical_hinted_null_binding(
                 {"cid": scenario.content_id.value},
             ).scalar_one()
         )
-    publish.publish(
+    published = publish.publish(
         scenario.tenant_id,
         publisher,
         content_id=scenario.content_id,
@@ -808,6 +843,44 @@ def _publish_historical_hinted_null_binding(
         audit_provenance=api_mutation_audit_provenance(publisher),
         now=_NOW,
     )
+    assert published.version_id == scenario.version_id
+    with bootstrap.connect() as conn:
+        attest_row_after = (
+            conn.execute(
+                text(
+                    """
+                    SELECT attestation_id, tenant_id, content_id, version_id,
+                           reviewer_principal_id, effective_actor_id,
+                           payload_digest, qa_policy_version, attested_at,
+                           correlation_id, review_assignment_id
+                    FROM content.worksheet_learner_hint_version_attestations
+                    WHERE attestation_id = :aid
+                    """
+                ),
+                {"aid": scenario.attestation_id},
+            )
+            .mappings()
+            .one()
+        )
+        decision_row_after = (
+            conn.execute(
+                text(
+                    """
+                    SELECT review_decision_id, tenant_id, content_id, version_id,
+                           decision, reason_code, comment, reviewer_principal_id,
+                           effective_actor_id, delegation_id, decided_at,
+                           correlation_id, review_assignment_id
+                    FROM content.review_decisions
+                    WHERE review_decision_id = :did
+                    """
+                ),
+                {"did": scenario.review_decision_id},
+            )
+            .mappings()
+            .one()
+        )
+    assert dict(attest_row_before) == dict(attest_row_after)
+    assert dict(decision_row_before) == dict(decision_row_after)
     with bootstrap.connect() as conn:
         bind_after, did_after = conn.execute(
             text(

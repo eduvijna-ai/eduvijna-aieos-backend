@@ -144,7 +144,7 @@ def _invoke_attest(
     idem_key: str,
     now: datetime | None = None,
     event_context: MutationEventContext | None = None,
-) -> None:
+):
     service = integrated_attest_service(
         runtime,
         scenario.tenant_id,
@@ -152,7 +152,7 @@ def _invoke_attest(
         school_context_provider=scenario.provider,
         uow_factory=uow_factory,
     )
-    service.record(
+    return service.record(
         scenario.tenant_id,
         scenario.reviewer_id,
         content_id=scenario.content_id,
@@ -178,7 +178,7 @@ def _invoke_decision(
     idem_key: str,
     now: datetime | None = None,
     event_context: MutationEventContext | None = None,
-) -> None:
+):
     review = integrated_review_service(
         runtime,
         scenario.tenant_id,
@@ -198,13 +198,12 @@ def _invoke_decision(
         now=now or clock(),
     )
     if effect == "approve":
-        review.approve(**kwargs, reason_code=None, comment=None)
-    elif effect == "reject":
-        review.reject(**kwargs, reason_code="governed", comment="deny")
-    elif effect == "request_changes":
-        review.request_changes(**kwargs, reason_code="governed", comment="changes")
-    else:
-        raise ValueError(effect)
+        return review.approve(**kwargs, reason_code=None, comment=None)
+    if effect == "reject":
+        return review.reject(**kwargs, reason_code="governed", comment="deny")
+    if effect == "request_changes":
+        return review.request_changes(**kwargs, reason_code="governed", comment="changes")
+    raise ValueError(effect)
 
 
 def _outcomes_for(runtime: Engine, scenario: _Scenario) -> list[dict[str, object]]:
@@ -467,26 +466,16 @@ class TestCi03G2I02R4B2Concurrency:
         def holder() -> None:
             try:
                 if effect == "attest":
-                    _invoke_attest(
+                    holder_result["returned"] = _invoke_attest(
                         ci03_g2_runtime_engine,
                         scenario,
-                        clock=clock,
-                        uow_factory=hold_factory,
-                        idem_key=holder_idem,
-                        event_context=holder_event,
-                    )
-                elif effect == "approve":
-                    _invoke_decision(
-                        ci03_g2_runtime_engine,
-                        scenario,
-                        effect=effect,
                         clock=clock,
                         uow_factory=hold_factory,
                         idem_key=holder_idem,
                         event_context=holder_event,
                     )
                 else:
-                    _invoke_decision(
+                    holder_result["returned"] = _invoke_decision(
                         ci03_g2_runtime_engine,
                         scenario,
                         effect=effect,
@@ -526,6 +515,35 @@ class TestCi03G2I02R4B2Concurrency:
 
         assert holder_result.get("ok") is True, holder_result.get("error")
         assert waiter_result.get("ok") is True, waiter_result.get("error")
+        returned = holder_result.get("returned")
+        assert returned is not None
+        if effect == "attest":
+            with ci03_g2_bootstrap_engine.connect() as conn:
+                stored = conn.execute(
+                    text(
+                        """
+                        SELECT attestation_id
+                        FROM content.worksheet_learner_hint_version_attestations
+                        WHERE attestation_id = :aid
+                        """
+                    ),
+                    {"aid": returned},
+                ).scalar_one()
+            assert stored == returned
+        else:
+            assert returned.review_decision_id is not None
+            with ci03_g2_bootstrap_engine.connect() as conn:
+                stored = conn.execute(
+                    text(
+                        """
+                        SELECT review_decision_id
+                        FROM content.review_decisions
+                        WHERE review_decision_id = :did
+                        """
+                    ),
+                    {"did": returned.review_decision_id},
+                ).scalar_one()
+            assert stored == returned.review_decision_id
 
         snap_after = _capture_snapshot(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario

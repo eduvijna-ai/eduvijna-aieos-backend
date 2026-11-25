@@ -36,6 +36,7 @@ REVIEW_COLUMNS = {
     "delegation_id",
     "decided_at",
     "correlation_id",
+    "review_assignment_id",
 }
 
 
