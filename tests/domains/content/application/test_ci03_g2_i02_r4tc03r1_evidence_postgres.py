@@ -16,6 +16,7 @@ from aieos.domains.content.application.audit import api_mutation_audit_provenanc
 from aieos.domains.content.application.errors import (
     ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
+)
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
 from aieos.domains.content.application.publish import PublishContentService
@@ -625,10 +626,6 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     ci03_g2_runtime_engine: Engine,
 ) -> None:
     """TC03R1-03: hint-free IN_REVIEW approve does not require assignment-bound attestation."""
-    from tests.conftest import provision_runtime_grants
-from aieos.domains.content.infrastructure.persistence.repositories import (
-    SqlAlchemyWorksheetHintAttestationRepository,
-)
     from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
         _seed_reviewers,
     )
