@@ -655,10 +655,3 @@ def assert_v1_publication_evidence(
 def clear_t1b_side_effects(bootstrap_engine: Engine) -> None:
     """Learning-side cleanup only; immutable Content publication rows are left intact."""
     clear_i03_side_effects(bootstrap_engine)
-    with bootstrap_engine.begin() as conn:
-        for statement in (
-            "DELETE FROM content.review_assignment_revocations",
-            "DELETE FROM content.review_current_assignments",
-            "DELETE FROM content.review_assignment_issuances",
-        ):
-            conn.execute(text(statement))

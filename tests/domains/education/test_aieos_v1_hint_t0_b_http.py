@@ -35,11 +35,14 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
     assignment_bound_deps,
     issue_governed_review_assignment,
 )
+from aieos.platform.security.authorization.decisions import PrincipalKind
+from tests.dbutil import set_tenant
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     FIXED_NOW,
     _event_context,
     _guarded_service,
 )
+from tests.platform.security.authorization.helpers import seed_principal
 from tests.domains.education.test_aieos_v1_hint_t2 import _review_service as _hint_t2_review
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from tests.domains.assessment.helpers_dev08_i02 import MutableSchoolContextClassReader
@@ -126,6 +129,7 @@ def _head_revision_etag(
     runtime_engine: Engine, *, tenant_id: UUID, content_id: UUID
 ) -> str:
     with runtime_engine.connect() as conn:
+        set_tenant(conn, tenant_id)
         rev = conn.execute(
             text(
                 """
@@ -304,6 +308,8 @@ class TestHintAttestationRecordHttp:
         tenant_id = uuid.uuid7()
         author_id = uuid.uuid7()
         reviewer_id = uuid.uuid7()
+        seed_principal(bootstrap_engine, author_id, principal_kind=PrincipalKind.HUMAN)
+        seed_principal(bootstrap_engine, reviewer_id, principal_kind=PrincipalKind.HUMAN)
         reader = MutableSchoolContextClassReader(
             tenant_id=tenant_id,
             teacher_principal_id=author_id,
