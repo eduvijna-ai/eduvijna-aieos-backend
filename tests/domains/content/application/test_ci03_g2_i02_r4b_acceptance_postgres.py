@@ -140,9 +140,8 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     },
     {
         "id": "migration_receipt_column_downgrade_guard",
-        "test": "ci03g020002 downgrade() receipt count refusal",
-        "status": "PARTIAL",
-        "notes": "SOURCE_ONLY until owned disposable upgrade/downgrade roundtrip proof (B6)",
+        "test": "test_downgrade_refuses_when_hint_attestation_receipt_ids_exist",
+        "status": "EXECUTED",
     },
     {
         "id": "outbox_exact_counts",
@@ -264,8 +263,94 @@ I02_B3R1_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     {
         "obligation": "B4/B6",
         "test": "disposable ci03g020002 roundtrip + runtime privilege",
-        "status": "BLOCKED",
-        "notes": "mandatory next gate; not in B3R1 packet",
+        "status": "PARTIAL",
+        "notes": "superseded by BF-10/BF-11 file targets",
+    },
+)
+
+
+# BF — Stage B final closure matrix (Chief review; no aggregate PASS for open cells).
+I02_BF_CLOSURE_MATRIX: tuple[dict[str, str], ...] = (
+    {
+        "id": "BF-01",
+        "obligation": "closure_matrix",
+        "test": "I02_BF_CLOSURE_MATRIX",
+        "status": "EXECUTED",
+    },
+    {
+        "id": "BF-02",
+        "obligation": "terminal_reject_rc_receipt_replay",
+        "test": "test_ci03_g2_i02_r4bf_terminal_replay_postgres",
+        "status": "EXECUTED",
+        "notes": "post-APPROVE attest/approve retained in r4b3r1",
+    },
+    {
+        "id": "BF-03",
+        "obligation": "establish_then_replay_deny",
+        "test": "test_ci03_g2_i02_r4bf_replay_established_postgres",
+        "status": "PARTIAL",
+        "notes": "changed payload, fingerprint, stale revision; supersession grid N/A/ADR",
+    },
+    {
+        "id": "BF-04",
+        "obligation": "issuer_reviewer_authority_loss",
+        "test": "r4b3r1 + r4bf_authority + grid",
+        "status": "PARTIAL",
+        "notes": "issuer assign revoke + membership/decide; class/unavailable gaps",
+    },
+    {
+        "id": "BF-05",
+        "obligation": "sink_and_success_rollback",
+        "test": "test_ci03_g2_i02_r4bf_sink_rollback_postgres",
+        "status": "PARTIAL",
+        "notes": "deny sink attest+reject; approve outbox rollback; audit-only inject open",
+    },
+    {
+        "id": "BF-06",
+        "obligation": "wrong_attestation_binding",
+        "test": "r4b3r1 immutable + cross-reviewer",
+        "status": "EXECUTED",
+    },
+    {
+        "id": "BF-07",
+        "obligation": "per_command_audit_outbox_24",
+        "test": "helpers_ci03_g2_i02_snapshot + r4b2",
+        "status": "PARTIAL",
+        "notes": "aggregate deltas wired; exact event identity all 24 cells open",
+    },
+    {
+        "id": "BF-08",
+        "obligation": "publisher_negatives",
+        "test": "r4b1 + r4bf_publisher + r4b3r1 kernel",
+        "status": "PARTIAL",
+        "notes": "hint-free legacy row-level N/A until ADR fixture",
+    },
+    {
+        "id": "BF-09",
+        "obligation": "contention_cleanup",
+        "test": "test_ci03_g2_i02_contention_cleanup_postgres",
+        "status": "PARTIAL",
+        "notes": "holder early-fail; passive blocker propagation via r4b2 pg_blocking",
+    },
+    {
+        "id": "BF-10",
+        "obligation": "migration_roundtrip_refusal",
+        "test": "test_ci03g020002_single_step_downgrade_upgrade + downgrade_refuses_receipt",
+        "status": "EXECUTED",
+    },
+    {
+        "id": "BF-11",
+        "obligation": "runtime_privilege",
+        "test": "test_ci03_g2_substrate + test_runtime_role_cannot_update_immutable_attestation_row",
+        "status": "PARTIAL",
+        "notes": "RLS/runtime rolsuper/bypass + immutability; DELETE/DDL grid partial",
+    },
+    {
+        "id": "BF-12",
+        "obligation": "ci_g1_g2_inventory",
+        "test": "CI03 G2 targeted matrix",
+        "status": "PENDING",
+        "notes": "filled at BF handback from actual CI run",
     },
 )
 

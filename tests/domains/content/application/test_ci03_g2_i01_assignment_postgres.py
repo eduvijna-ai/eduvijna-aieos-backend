@@ -140,6 +140,42 @@ def test_ci03_g2_substrate_isolated_from_shared_gci_session(
     assert int(issuances) == 0
 
 
+def test_ci03g020002_single_step_downgrade_upgrade_on_clean_substrate(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_postgres18: dict[str, str],
+) -> None:
+    """BF-10: one-step ci03g020002↔ci03g020001 roundtrip before assignment evidence accumulates."""
+    from alembic import command
+    from tests.conftest import alembic_config
+
+    cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
+    try:
+        command.downgrade(cfg, "ci03g020001")
+        with ci03_g2_bootstrap_engine.connect() as conn:
+            head = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+            assert head == "ci03g020001"
+            insp_col = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_schema = 'api'
+                      AND table_name = 'idempotency_records'
+                      AND column_name = 'result_worksheet_hint_attestation_id'
+                    """
+                )
+            ).scalar_one()
+            assert int(insp_col) == 0
+    finally:
+        command.upgrade(cfg, "ci03g020002")
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        head = conn.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert head == "ci03g020002"
+
+
 def _seed_worksheet_in_review(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
