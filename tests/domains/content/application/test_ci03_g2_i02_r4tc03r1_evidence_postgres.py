@@ -18,12 +18,15 @@ from aieos.domains.content.application.errors import (
     WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
+from aieos.domains.content.application.http_append import HttpAppendContentVersionService
 from aieos.domains.content.application.publish import PublishContentService
+import aieos.domains.content.application.worksheet_hint_attestation_record as attest_record_module
 import aieos.domains.content.application.worksheet_hint_attestation_gate as attestation_gate
 from aieos.domains.content.domain.identities import AggregateRevision, ReviewAssignmentId
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
+from aieos.domains.education.schema import WORKSHEET_SCHEMA_ID, WORKSHEET_SCHEMA_VERSION_V2
 from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
 from aieos.platform.security.authorization.content_adapters import AIEOS_CONTENT_CAPABILITIES
@@ -70,10 +73,14 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _append_v1,
     _event_context,
-    _guarded_service,
     _seed_worksheet_content,
 )
-from tests.fakes import AllowAssetCurrentGovernance, AllowPublicationGovernance, IDEMPOTENCY_RETENTION
+from tests.fakes import (
+    AllowAssetCurrentGovernance,
+    AllowAssetReferenceValidation,
+    AllowPublicationGovernance,
+    IDEMPOTENCY_RETENTION,
+)
 from tests.platform.security.authorization.helpers import (
     revoke_grant,
     seed_active_authority,
@@ -214,7 +221,7 @@ def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
         now=_NOW,
     )
     wrong_assignment = ReviewAssignmentId(uuid.uuid7())
-    original_load = attestation_gate.load_valid_attestation
+    original_load = attest_record_module.load_valid_attestation
 
     def _patched_load_valid(repo, version):  # noqa: ANN001
         attestation = original_load(repo, version)
@@ -223,7 +230,7 @@ def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
         )
 
     monkeypatch.setattr(
-        attestation_gate, "load_valid_attestation", _patched_load_valid
+        attest_record_module, "load_valid_attestation", _patched_load_valid
     )
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
@@ -432,14 +439,33 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     _, rev_v1 = _append_v1(
         ci03_g2_runtime_engine, tenant_id=tenant_id, principal_id=owner_id, content_id=content_id
     )
-    version_read, revision = _guarded_service(ci03_g2_runtime_engine).append(
+    version_read, revision = HttpAppendContentVersionService(
+        SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine),
+        build_preparation_content_schema_registry(),
+        AllowAssetReferenceValidation(),
+        idempotency_retention=IDEMPOTENCY_RETENTION,
+    ).append(
         tenant_id,
         owner_id,
         content_id=content_id,
         expected_aggregate_revision=rev_v1,
+        schema_id=WORKSHEET_SCHEMA_ID,
+        schema_version=WORKSHEET_SCHEMA_VERSION_V2,
         payload=_hint_free_v2_payload(),
-        authoring_class_ref=CLASS_REF,
         idempotency_key=f"tc03r1-hf-{uuid.uuid7()}",
+        event_context=_event_context(owner_id),
+        audit_provenance=api_mutation_audit_provenance(owner_id),
+        now=_NOW,
+    )
+    from tests.domains.education.test_aieos_v1_hint_t2 import _review_service
+
+    _review_service(ci03_g2_runtime_engine).submit(
+        tenant_id,
+        owner_id,
+        content_id=content_id,
+        version_id=version_read.version_id,
+        expected_aggregate_revision=revision,
+        idempotency_key=f"tc03r1-hf-submit-{uuid.uuid7()}",
         event_context=_event_context(owner_id),
         audit_provenance=api_mutation_audit_provenance(owner_id),
         now=_NOW,
