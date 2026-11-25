@@ -634,17 +634,18 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
         "item": "actual interlock",
         "status": "EXECUTED",
         "tests": (
-            "r4tc03r1 approve/replay load_valid_attestation dataclasses.replace; "
-            "PRIOR immutability UPDATE boundary in r4tc03"
+            "r4tc03r1 approve/replay via attest_record.load_valid_attestation "
+            "dataclasses.replace; PRIOR immutability UPDATE boundary in r4tc03"
         ),
     },
     {
         "id": "R1-03",
         "item": "authority/legacy",
-        "status": "PARTIAL",
+        "status": "EXECUTED",
         "tests": (
-            "r4tc03r1 submit revoke reissue-after-attest, malformed eligibility; "
-            "hint_free approve + historical publish; PRIOR tc01/tc03 authority"
+            "r4tc03r1 submit revoke reissue-after-attest, malformed eligibility, "
+            "hint_free HTTP v2 + governed provenance approve, historical publish; "
+            "PRIOR tc01/tc03 authority"
         ),
     },
     {

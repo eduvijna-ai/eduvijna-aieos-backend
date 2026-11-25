@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import threading
 import uuid
 from datetime import timedelta
@@ -19,6 +20,9 @@ from aieos.domains.content.application.errors import (
 )
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
+from aieos.domains.content.application.worksheet_hint_append import (
+    worksheet_learner_hint_version_provenance,
+)
 from aieos.domains.content.application.publish import PublishContentService
 import aieos.domains.content.application.worksheet_hint_attestation_record as attest_record_module
 import aieos.domains.content.application.worksheet_hint_attestation_gate as attestation_gate
@@ -457,6 +461,24 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
         audit_provenance=api_mutation_audit_provenance(owner_id),
         now=_NOW,
     )
+    provenance = worksheet_learner_hint_version_provenance(
+        authoring_class_ref=CLASS_REF, principal_id=owner_id
+    )
+    with ci03_g2_bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE content.content_versions
+                SET provenance = CAST(:prov AS jsonb)
+                WHERE tenant_id = :tid AND version_id = :vid
+                """
+            ),
+            {
+                "prov": json.dumps(provenance),
+                "tid": tenant_id,
+                "vid": version_read.version_id.value,
+            },
+        )
     from tests.domains.education.test_aieos_v1_hint_t2 import _review_service
 
     _review_service(ci03_g2_runtime_engine).submit(
