@@ -77,8 +77,6 @@ from tests.fakes import AllowAssetCurrentGovernance, AllowPublicationGovernance,
 from tests.platform.security.authorization.helpers import (
     revoke_grant,
     seed_active_authority,
-    seed_membership,
-    seed_tenant,
 )
 
 pytestmark = pytest.mark.ci03_g2_i02
@@ -215,22 +213,18 @@ def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
         audit_provenance=api_mutation_audit_provenance(reviewer_id),
         now=_NOW,
     )
-    wrong_fp = str(uuid.uuid7())
-    import aieos.domains.content.application.worksheet_hint_attestation_record as attest_record
-    from aieos.domains.content.application.review_assignment_bound_mutations import (
-        validate_bound_assignment_replay as _real_validate_replay,
+    wrong_assignment = ReviewAssignmentId(uuid.uuid7())
+    original_load = attestation_gate.load_valid_attestation
+
+    def _patched_load_valid(repo, version):  # noqa: ANN001
+        attestation = original_load(repo, version)
+        return dataclasses.replace(
+            attestation, review_assignment_id=wrong_assignment
+        )
+
+    monkeypatch.setattr(
+        attestation_gate, "load_valid_attestation", _patched_load_valid
     )
-
-    _replay_calls = {"n": 0}
-
-    def _inject_fp_mismatch(uow, deps, **kwargs):  # noqa: ANN001
-        _replay_calls["n"] += 1
-        if _replay_calls["n"] >= 2:
-            kwargs = dict(kwargs)
-            kwargs["fingerprint_assignment_id"] = wrong_fp
-        return _real_validate_replay(uow, deps, **kwargs)
-
-    monkeypatch.setattr(attest_record, "validate_bound_assignment_replay", _inject_fp_mismatch)
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -422,29 +416,16 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     ci03_g2_runtime_engine: Engine,
 ) -> None:
     """TC03R1-03: hint-free / legacy path not affected by assignment-bound attestation gate."""
-    tenant_id = uuid.uuid7()
-    owner_id = uuid.uuid7()
-    reviewer_id = uuid.uuid7()
-    seed_tenant(ci03_g2_bootstrap_engine, tenant_id=tenant_id)
-    seed_membership(
-        ci03_g2_bootstrap_engine,
-        tenant_id=tenant_id,
-        principal_id=owner_id,
-    )
-    seed_membership(
-        ci03_g2_bootstrap_engine,
-        tenant_id=tenant_id,
-        principal_id=reviewer_id,
-    )
-    kernel = AuthorizationKernel(
-        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
-    )
     from tests.conftest import provision_runtime_grants
     from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
         _seed_reviewers,
     )
 
+    tenant_id = uuid.uuid7()
+    owner_id = uuid.uuid7()
+    reviewer_id = uuid.uuid7()
     provision_runtime_grants(ci03_g2_bootstrap_engine)
+    _seed_reviewers(ci03_g2_bootstrap_engine, tenant_id, owner_id, reviewer_id)
     content_id = _seed_worksheet_content(
         ci03_g2_bootstrap_engine, tenant_id=tenant_id, owner_principal_id=owner_id
     )
@@ -466,7 +447,6 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     issue, _, provider, *_ = _services(ci03_g2_runtime_engine, tenant_id)
     provider.set_teacher_class_authority(owner_id, (CLASS_REF,))
     provider.set_reviewer_class_eligibility(reviewer_id, (CLASS_REF,))
-    _seed_reviewers(ci03_g2_bootstrap_engine, tenant_id, owner_id, reviewer_id)
     issue.issue(
         tenant_id,
         owner_id,
