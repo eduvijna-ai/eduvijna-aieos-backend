@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import text
@@ -490,6 +491,36 @@ def outbox_count_for_event_type(
         )
 
 
+def mutation_denial_count_for_correlation(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    correlation_id: uuid.UUID,
+) -> int:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.authorization_denial_records
+                    WHERE tenant_id = :tid
+                      AND correlation_id = :cid
+                      AND action = :action
+                    """
+                ),
+                {
+                    "tid": tenant_id,
+                    "cid": correlation_id,
+                    "action": CONTENT_REVIEW_MUTATION_DENIED,
+                },
+            ).scalar_one()
+        )
+
+
 def audit_count_for_correlation(
     bootstrap_engine: Engine, tenant_id: uuid.UUID, correlation_id: uuid.UUID
 ) -> int:
@@ -662,6 +693,88 @@ def assert_outbox_command_correlation(
     assert total_for_correlation == count
 
 
+def _assert_canonical_fingerprint(stored: str) -> None:
+    assert len(stored) == 64
+    assert stored == stored.lower()
+    assert all(ch in "0123456789abcdef" for ch in stored)
+
+
+def assert_persisted_mutation_effect_identity(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    effect: str,
+    receipt: IdempotencyReceiptView,
+    assignment_id: ReviewAssignmentId | None,
+    effect_clock: datetime | None,
+) -> None:
+    _assert_canonical_fingerprint(receipt.request_fingerprint_sha256)
+    if effect == "attest":
+        assert receipt.result_worksheet_hint_attestation_id is not None
+        with runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            row = conn.execute(
+                text(
+                    """
+                    SELECT attested_at, review_assignment_id
+                    FROM content.worksheet_learner_hint_version_attestations
+                    WHERE attestation_id = :aid
+                    """
+                ),
+                {"aid": receipt.result_worksheet_hint_attestation_id},
+            ).one()
+        if assignment_id is not None:
+            assert row[1] == assignment_id.value
+        if effect_clock is not None:
+            assert row[0] == effect_clock
+    elif effect in ("approve", "reject", "request_changes"):
+        assert receipt.result_review_decision_id is not None
+        with runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            row = conn.execute(
+                text(
+                    """
+                    SELECT decided_at, review_assignment_id
+                    FROM content.review_decisions
+                    WHERE review_decision_id = :did
+                    """
+                ),
+                {"did": receipt.result_review_decision_id},
+            ).one()
+        if assignment_id is not None:
+            assert row[1] == assignment_id.value
+        if effect_clock is not None:
+            assert row[0] == effect_clock
+    elif effect == "revoke":
+        assert assignment_id is not None
+        with runtime_engine.connect() as conn:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+            row = conn.execute(
+                text(
+                    """
+                    SELECT revoked_at FROM content.review_assignment_revocations
+                    WHERE assignment_id = :aid AND tenant_id = :tid
+                    ORDER BY revoked_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"aid": assignment_id.value, "tid": tenant_id},
+            ).one()
+        if effect_clock is not None:
+            assert row[0] == effect_clock
+
+
 def assert_success_mutation_command_evidence(
     *,
     bootstrap_engine: Engine,
@@ -675,6 +788,7 @@ def assert_success_mutation_command_evidence(
     correlation_id: uuid.UUID,
     assignment_id: ReviewAssignmentId | None = None,
     expected_aggregate_revision: int | None = None,
+    effect_clock: datetime | None = None,
 ) -> None:
     spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
     receipt = load_idempotency_receipt(
@@ -722,6 +836,25 @@ def assert_success_mutation_command_evidence(
             receipt.result_aggregate_revision if spec.outbox_event_type else None
         ),
     )
+    assert_persisted_mutation_effect_identity(
+        runtime_engine,
+        tenant_id=tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+        effect=effect,
+        receipt=receipt,
+        assignment_id=assignment_id,
+        effect_clock=effect_clock,
+    )
+    rerun = load_idempotency_receipt(
+        runtime_engine,
+        tenant_id,
+        principal_id,
+        operation=spec.operation,
+        idempotency_key=idempotency_key,
+    )
+    assert rerun is not None
+    assert rerun.request_fingerprint_sha256 == receipt.request_fingerprint_sha256
 
 
 def assert_denial_command_no_receipt(
@@ -804,6 +937,15 @@ def assert_denied_protected_command_evidence(
         )
         == 0
     )
+    assert audit_count_for_correlation(bootstrap_engine, tenant_id, correlation_id) == 0
+    assert (
+        mutation_denial_count_for_correlation(
+            runtime_engine,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+        )
+        == 1
+    )
 
 
 def assert_attestation_bound_assignment(
@@ -877,7 +1019,7 @@ def assert_receipt_fingerprint_for_key(
         idempotency_key=idempotency_key,
     )
     assert receipt is not None
-    assert len(receipt.request_fingerprint_sha256) == 64
+    _assert_canonical_fingerprint(receipt.request_fingerprint_sha256)
     return receipt.request_fingerprint_sha256
 
 
@@ -1059,4 +1201,65 @@ def schema_fingerprint_ci03g020002(
         decision_fk_def=str(decision_fk_def) if decision_fk_def else None,
         attest_table_owner=str(attest_owner) if attest_owner else None,
         decision_table_owner=str(decision_owner) if decision_owner else None,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MigrationRefusalSnapshot:
+    schema_fingerprint: MigrationSchemaFingerprint
+    bound_attestation_rows: int
+    bound_decision_rows: int
+    receipt_attest_result_rows: int
+    mutation_denial_rows: int
+
+
+def capture_migration_refusal_snapshot(bootstrap_engine: Engine) -> MigrationRefusalSnapshot:
+    fp = schema_fingerprint_ci03g020002(bootstrap_engine)
+    with bootstrap_engine.connect() as conn:
+        bound_attest = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
+                    WHERE review_assignment_id IS NOT NULL
+                    """
+                )
+            ).scalar_one()
+        )
+        bound_decisions = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.review_decisions
+                    WHERE review_assignment_id IS NOT NULL
+                    """
+                )
+            ).scalar_one()
+        )
+        receipt_attest = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM api.idempotency_records
+                    WHERE result_worksheet_hint_attestation_id IS NOT NULL
+                    """
+                )
+            ).scalar_one()
+        )
+        mutation_denials = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.authorization_denial_records
+                    WHERE action = 'content.review.mutation.denied'
+                    """
+                )
+            ).scalar_one()
+        )
+    return MigrationRefusalSnapshot(
+        schema_fingerprint=fp,
+        bound_attestation_rows=bound_attest,
+        bound_decision_rows=bound_decisions,
+        receipt_attest_result_rows=receipt_attest,
+        mutation_denial_rows=mutation_denials,
     )

@@ -664,6 +664,48 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
     },
 )
 
+I02_TC03R3_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "id": "R3-01",
+        "item": "lawful null-binding historical publish",
+        "status": "EXECUTED",
+        "tests": (
+            "owned disposable ci03g020001→g020002 hint-free NULL decision + publish; "
+            "no DISABLE TRIGGER; fallback owned g020002 lawful path"
+        ),
+    },
+    {
+        "id": "R3-02",
+        "item": "cross-tenant RLS + role escalation",
+        "status": "EXECUTED",
+        "tests": (
+            "cross_tenant_insert tenant-B positive rollback + tenant-A 42501; "
+            "test_runtime_role_denied_set_role_escalation"
+        ),
+    },
+    {
+        "id": "R3-03",
+        "item": "migration refusal evidence",
+        "status": "EXECUTED",
+        "tests": "r4bf downgrade_refuses capture_migration_refusal_snapshot equality",
+    },
+    {
+        "id": "R3-04",
+        "item": "command evidence hardening",
+        "status": "EXECUTED",
+        "tests": (
+            "helpers: fingerprint/result IDs/effect_clock; denial audit+total audit=0; "
+            "r4b2 effect-first success effect_clock + r4tc03r1 issuer snapshot"
+        ),
+    },
+    {
+        "id": "R3-05",
+        "item": "traceability",
+        "status": "EXECUTED",
+        "tests": "I02_TC03R3_CASE_MAP",
+    },
+)
+
 I02_TC03R2_CASE_MAP: tuple[dict[str, str], ...] = (
     {
         "id": "R2-01",
@@ -686,8 +728,8 @@ I02_TC03R2_CASE_MAP: tuple[dict[str, str], ...] = (
     {
         "id": "R2-03",
         "item": "historical null binding publish",
-        "status": "EXECUTED",
-        "tests": "test_historical_publish_allowed_with_null_legacy_assignment_binding",
+        "status": "SUPERSEDED",
+        "tests": "R2-03 trigger-bypass test removed in TC03R3 R3-01",
     },
     {
         "id": "R2-04",

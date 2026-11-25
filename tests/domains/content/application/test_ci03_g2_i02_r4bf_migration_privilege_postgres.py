@@ -13,6 +13,9 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from tests.conftest import alembic_config, provision_runtime_grants
 from tests.domains.content.application.helpers_ci03_g2_i01 import integrated_attest_service
+from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+    capture_migration_refusal_snapshot,
+)
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
     _NOW,
     _event,
@@ -78,9 +81,15 @@ def test_downgrade_refuses_when_hint_attestation_receipt_ids_exist(
             ).scalar_one()
         )
     assert receipt_rows >= 1
+    before_refusal = capture_migration_refusal_snapshot(ci03_g2_bootstrap_engine)
+    assert before_refusal.receipt_attest_result_rows >= 1
+    assert before_refusal.bound_attestation_rows >= 1
+    assert before_refusal.schema_fingerprint.alembic_head == "ci03g020002"
     cfg = alembic_config(ci03_g2_postgres18["migrator_url"])
     with pytest.raises(Exception, match="refused"):
         command.downgrade(cfg, "ci03g020001")
+    after_refusal = capture_migration_refusal_snapshot(ci03_g2_bootstrap_engine)
+    assert after_refusal == before_refusal
     with ci03_g2_bootstrap_engine.connect() as conn:
         head = conn.execute(
             text("SELECT version_num FROM alembic_version")

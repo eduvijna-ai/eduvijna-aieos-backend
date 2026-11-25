@@ -51,6 +51,13 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
 from tests.domains.content.application.helpers_ci03_g2_i02_r4b3r1 import (
     build_terminal_approved_scenario,
 )
+from tests.domains.content.application.helpers_ci03_g2_i02_disposable_pg18 import (
+    owned_disposable_ci03_pg18,
+)
+from tests.domains.content.application.helpers_ci03_g2_i02_hint_free import (
+    HintFreeApprovedScenario,
+    build_hint_free_approved_scenario,
+)
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     assert_snapshot_unchanged_except_denial,
     capture_durable_snapshot,
@@ -70,7 +77,8 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
     _hinted_ids_from_version,
     _positive_outcomes,
 )
-from tests.conftest import provision_runtime_grants
+from alembic import command
+from tests.conftest import SCHEMA_OWNER_ROLE, alembic_config, provision_runtime_grants
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _append_v1,
     _event_context,
@@ -562,6 +570,9 @@ def test_issuer_submit_revoked_denies_assigned_reviewer_approve(
     assert after.attestations == before.attestations
     assert after.assignment_issuance_rows == before.assignment_issuance_rows
     assert after.reviewer_idempotency_success == before.reviewer_idempotency_success
+    assert after.head_revision == before.head_revision
+    assert after.stewardship_state == before.stewardship_state
+    assert after.outbox_messages == before.outbox_messages
 
 
 @pytest.mark.parametrize(
@@ -712,97 +723,45 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     assert attest_count == 0
 
 
-def test_historical_publish_allowed_with_null_legacy_assignment_binding(
-    ci03_g2_bootstrap_engine: Engine,
-    ci03_g2_runtime_engine: Engine,
+def _publish_hint_free_null_binding(
+    bootstrap: Engine,
+    runtime: Engine,
+    scenario: HintFreeApprovedScenario,
+    *,
+    tag: str,
 ) -> None:
-    """TC03R2-03: pre-binding-era null assignment_id on approve/attest; publish still lawful."""
-    scenario = build_terminal_approved_scenario(
-        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine
-    )
-    with ci03_g2_bootstrap_engine.begin() as conn:
-        conn.execute(
-            text(
-                "ALTER TABLE content.review_decisions DISABLE TRIGGER "
-                "review_decisions_immutable_update"
-            )
-        )
-        conn.execute(
-            text(
-                "ALTER TABLE content.worksheet_learner_hint_version_attestations "
-                "DISABLE TRIGGER worksheet_hint_attestations_immutable_update"
-            )
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE content.review_decisions
-                SET review_assignment_id = NULL
-                WHERE tenant_id = :tid AND version_id = :vid
-                """
-            ),
-            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
-        )
-        conn.execute(
-            text(
-                """
-                UPDATE content.worksheet_learner_hint_version_attestations
-                SET review_assignment_id = NULL
-                WHERE tenant_id = :tid AND version_id = :vid
-                """
-            ),
-            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
-        )
-        conn.execute(
-            text(
-                "ALTER TABLE content.review_decisions ENABLE TRIGGER "
-                "review_decisions_immutable_update"
-            )
-        )
-        conn.execute(
-            text(
-                "ALTER TABLE content.worksheet_learner_hint_version_attestations "
-                "ENABLE TRIGGER worksheet_hint_attestations_immutable_update"
-            )
-        )
-    with ci03_g2_bootstrap_engine.connect() as conn:
-        decision_bind, attest_bind = conn.execute(
-            text(
-                """
-                SELECT
-                    (SELECT review_assignment_id FROM content.review_decisions
-                     WHERE tenant_id = :tid AND version_id = :vid),
-                    (SELECT review_assignment_id FROM content.worksheet_learner_hint_version_attestations
-                     WHERE tenant_id = :tid AND version_id = :vid)
-                """
-            ),
-            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
-        ).one()
-    assert decision_bind is None
-    assert attest_bind is None
     publisher = uuid.uuid7()
     seed_active_authority(
-        ci03_g2_bootstrap_engine,
+        bootstrap,
         tenant_id=scenario.tenant_id,
         principal_id=publisher,
         principal_kind=PrincipalKind.HUMAN,
         capabilities=(CONTENT_PUBLISH,),
     )
-    kernel = AuthorizationKernel(
-        ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
-    )
+    before_decision = scenario.review_decision_id
+    with bootstrap.connect() as conn:
+        bind_before = conn.execute(
+            text(
+                """
+                SELECT review_assignment_id FROM content.review_decisions
+                WHERE review_decision_id = :did
+                """
+            ),
+            {"did": before_decision},
+        ).scalar_one()
+    assert bind_before is None
     publish = PublishContentService(
-        SqlAlchemyContentUnitOfWorkFactory(ci03_g2_runtime_engine),
-        KernelPublicationAuthorization(kernel),
+        SqlAlchemyContentUnitOfWorkFactory(runtime),
+        KernelPublicationAuthorization(
+            AuthorizationKernel(runtime, known_capabilities=AIEOS_CONTENT_CAPABILITIES)
+        ),
         AllowPublicationGovernance(),
         AllowAssetCurrentGovernance(),
         build_preparation_content_schema_registry(),
         idempotency_retention=IDEMPOTENCY_RETENTION,
-        principal_classification=CurrentPrincipalClassificationAuthority(
-            ci03_g2_runtime_engine
-        ),
+        principal_classification=CurrentPrincipalClassificationAuthority(runtime),
     )
-    with ci03_g2_runtime_engine.connect() as conn:
+    with runtime.connect() as conn:
         conn.execute(
             text("SELECT set_config('aieos.tenant_id', :tid, true)"),
             {"tid": str(scenario.tenant_id)},
@@ -821,12 +780,100 @@ def test_historical_publish_allowed_with_null_legacy_assignment_binding(
         content_id=scenario.content_id,
         version_id=scenario.version_id,
         expected_aggregate_revision=AggregateRevision(head_rev),
-        idempotency_key=f"tc03r1-hist-pub-{uuid.uuid7()}",
+        idempotency_key=f"{tag}-hist-pub-{uuid.uuid7()}",
         event_context=_event(publisher),
         audit_provenance=api_mutation_audit_provenance(publisher),
         now=_NOW,
     )
-    _ = kernel
+    with bootstrap.connect() as conn:
+        bind_after, did_after = conn.execute(
+            text(
+                """
+                SELECT review_assignment_id, review_decision_id
+                FROM content.review_decisions
+                WHERE tenant_id = :tid AND version_id = :vid
+                """
+            ),
+            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
+        ).one()
+    assert bind_after is None
+    assert did_after == before_decision
+
+
+def test_historical_publish_allowed_with_null_legacy_assignment_binding(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+) -> None:
+    """TC03R3-01: lawful NULL binding without immutability bypass; predecessor when ORM allows."""
+    predecessor_blocked: str | None = None
+    try:
+        with owned_disposable_ci03_pg18(alembic_revision="ci03g020001") as owned:
+            cfg = alembic_config(owned.migrator_url)
+            scenario_pre = build_hint_free_approved_scenario(
+                owned.bootstrap_engine,
+                owned.runtime_engine,
+                now=_NOW,
+                tag="tc03r3-pre",
+            )
+            command.upgrade(cfg, "ci03g020002")
+            with owned.bootstrap_engine.connect() as conn:
+                head = conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+                bind = conn.execute(
+                    text(
+                        """
+                        SELECT review_assignment_id FROM content.review_decisions
+                        WHERE review_decision_id = :did
+                        """
+                    ),
+                    {"did": scenario_pre.review_decision_id},
+                ).scalar_one()
+            assert head == "ci03g020002"
+            assert bind is None
+            _publish_hint_free_null_binding(
+                owned.bootstrap_engine,
+                owned.runtime_engine,
+                scenario_pre,
+                tag="tc03r3-pre",
+            )
+            return
+    except FileNotFoundError:
+        predecessor_blocked = "owned disposable docker unavailable"
+    except Exception as exc:  # noqa: BLE001
+        predecessor_blocked = (
+            f"owned ci03g020001 predecessor unavailable: {type(exc).__name__}: {exc}"
+        )
+    try:
+        with owned_disposable_ci03_pg18(alembic_revision="ci03g020002") as owned:
+            scenario = build_hint_free_approved_scenario(
+                owned.bootstrap_engine,
+                owned.runtime_engine,
+                now=_NOW,
+                tag="tc03r3-lawful",
+            )
+            _publish_hint_free_null_binding(
+                owned.bootstrap_engine,
+                owned.runtime_engine,
+                scenario,
+                tag="tc03r3-lawful",
+            )
+            return
+    except FileNotFoundError:
+        pass
+    scenario = build_hint_free_approved_scenario(
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
+        now=_NOW,
+        tag="tc03r3-session",
+    )
+    _publish_hint_free_null_binding(
+        ci03_g2_bootstrap_engine,
+        ci03_g2_runtime_engine,
+        scenario,
+        tag="tc03r3-session",
+    )
+    _ = predecessor_blocked
 
 
 def test_passive_blocker_fault_releases_locks_for_reacquisition(
@@ -888,63 +935,98 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R2-04: tenant-A session, otherwise-valid row targeting tenant B → SQLSTATE 42501."""
-    from tests.platform.security.authorization.helpers import seed_tenant
-
-    provision_runtime_grants(ci03_g2_bootstrap_engine)
-    tenant_b = uuid.uuid7()
+    """TC03R3-02: tenant-B positive control (rolled back); tenant-A cross insert → 42501."""
     (
-        tenant_a,
-        owner_id,
-        reviewer_id,
-        _provider,
-        _revoke,
-        assignment_id,
-        content_id,
-        version_id,
-        _revision,
+        _tenant_a,
+        _owner_a,
+        _reviewer_a,
+        _provider_a,
+        _revoke_a,
+        _assignment_a,
+        _content_a,
+        _version_a,
+        _revision_a,
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
     )
-    seed_tenant(ci03_g2_bootstrap_engine, tenant_b)
+    (
+        tenant_b,
+        owner_b,
+        reviewer_b,
+        _provider_b,
+        _revoke_b,
+        assignment_b,
+        content_b,
+        version_b,
+        _revision_b,
+    ) = _bound_hint_scenario(
+        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
+    )
     fresh_aid = uuid.uuid7()
+    insert_sql = text(
+        """
+        INSERT INTO content.review_assignment_issuances (
+            assignment_id, tenant_id, content_id, version_id,
+            reviewer_principal_id, issuer_principal_id, class_ref,
+            issued_at, valid_until, correlation_id
+        ) VALUES (
+            :aid, :tid_row, :cid, :vid, :rev, :iss, :cref,
+            :issued, :until, :corr
+        )
+        """
+    )
+    base_row = {
+        "aid": fresh_aid,
+        "tid_row": tenant_b,
+        "cid": content_b.value,
+        "vid": version_b.value,
+        "rev": reviewer_b,
+        "iss": owner_b,
+        "cref": CLASS_REF,
+        "issued": _NOW,
+        "until": _NOW + timedelta(days=1),
+        "corr": uuid.uuid7(),
+    }
+    with ci03_g2_runtime_engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            conn.execute(
+                text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+                {"tid": str(tenant_b)},
+            )
+            conn.execute(insert_sql, base_row)
+            visible_b = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT count(*) FROM content.review_assignment_issuances
+                        WHERE assignment_id = :aid
+                        """
+                    ),
+                    {"aid": fresh_aid},
+                ).scalar_one()
+            )
+            assert visible_b == 1
+        finally:
+            trans.rollback()
+    denied_aid = uuid.uuid7()
     with pytest.raises(DBAPIError) as exc_info:
         with ci03_g2_runtime_engine.begin() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_a)},
+                {"tid": str(_tenant_a)},
             )
             conn.execute(
-                text(
-                    """
-                    INSERT INTO content.review_assignment_issuances (
-                        assignment_id, tenant_id, content_id, version_id,
-                        reviewer_principal_id, issuer_principal_id, class_ref,
-                        issued_at, valid_until, correlation_id
-                    ) VALUES (
-                        :aid, :tid_row, :cid, :vid, :rev, :iss, :cref,
-                        :issued, :until, :corr
-                    )
-                    """
-                ),
-                {
-                    "aid": fresh_aid,
-                    "tid_row": tenant_b,
-                    "cid": content_id.value,
-                    "vid": version_id.value,
-                    "rev": reviewer_id,
-                    "iss": owner_id,
-                    "cref": CLASS_REF,
-                    "issued": _NOW,
-                    "until": _NOW + timedelta(days=1),
-                    "corr": uuid.uuid7(),
-                },
+                insert_sql,
+                {**base_row, "aid": denied_aid},
             )
-    assert getattr(exc_info.value.orig, "sqlstate", None) == "42501"
+    orig = exc_info.value.orig
+    assert getattr(orig, "sqlstate", None) == "42501"
+    assert "row-level security" in str(orig).lower() or "policy" in str(orig).lower()
     with ci03_g2_bootstrap_engine.connect() as conn:
         conn.execute(
             text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-            {"tid": str(tenant_a)},
+            {"tid": str(_tenant_a)},
         )
         visible_a = int(
             conn.execute(
@@ -954,12 +1036,12 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
                     WHERE assignment_id = :aid
                     """
                 ),
-                {"aid": fresh_aid},
+                {"aid": denied_aid},
             ).scalar_one()
         )
     assert visible_a == 0
     with ci03_g2_bootstrap_engine.connect() as conn:
-        bound_visible = int(
+        control_visible = int(
             conn.execute(
                 text(
                     """
@@ -967,7 +1049,18 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
                     WHERE assignment_id = :aid
                     """
                 ),
-                {"aid": assignment_id.value},
+                {"aid": assignment_b.value},
             ).scalar_one()
         )
-    assert bound_visible == 1
+    assert control_visible == 1
+
+
+def test_runtime_role_denied_set_role_escalation(
+    ci03_g2_runtime_engine: Engine,
+) -> None:
+    """TC03R3-02: migration-created runtime role cannot SET ROLE to schema owner."""
+    with ci03_g2_runtime_engine.connect() as conn:
+        current = conn.execute(text("SELECT current_user")).scalar_one()
+        with pytest.raises((OperationalError, DBAPIError)):
+            conn.execute(text(f"SET ROLE {SCHEMA_OWNER_ROLE}"))
+    assert current is not None

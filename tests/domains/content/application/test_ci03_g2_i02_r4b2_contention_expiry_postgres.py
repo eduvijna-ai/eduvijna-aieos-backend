@@ -396,6 +396,7 @@ class TestCi03G2I02R4B2Concurrency:
             idempotency_key=revoke_idem,
             correlation_id=revoke_event.correlation_id,
             assignment_id=scenario.assignment_id,
+            effect_clock=_NOW,
         )
         assert_denied_protected_command_evidence(
             bootstrap_engine=ci03_g2_bootstrap_engine,
@@ -545,6 +546,8 @@ class TestCi03G2I02R4B2Concurrency:
                 effect="attest",
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+                assignment_id=scenario.assignment_id,
+                effect_clock=_NOW,
             )
             assert_receipt_fingerprint_for_key(
                 ci03_g2_runtime_engine,
@@ -575,6 +578,7 @@ class TestCi03G2I02R4B2Concurrency:
                 effect="approve",
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+                effect_clock=_NOW,
             )
             assert_receipt_fingerprint_for_key(
                 ci03_g2_runtime_engine,
@@ -605,6 +609,7 @@ class TestCi03G2I02R4B2Concurrency:
                 effect=effect,
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+                effect_clock=_NOW,
             )
             assert_receipt_fingerprint_for_key(
                 ci03_g2_runtime_engine,
@@ -630,6 +635,7 @@ class TestCi03G2I02R4B2Concurrency:
             idempotency_key=revoke_idem,
             correlation_id=revoke_event.correlation_id,
             assignment_id=scenario.assignment_id,
+            effect_clock=_NOW,
         )
 
 
