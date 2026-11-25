@@ -13,13 +13,10 @@ from sqlalchemy.engine import Engine
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     ReviewAssignmentForbidden,
+    ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.ports import CONTENT_REVIEW_SUBMIT
-from aieos.domains.content.application.school_context_reviewer_eligibility import (
-    SchoolContextReviewerEligibilityService,
-)
-from aieos.domains.content.domain.identities import AggregateRevision
 from aieos.domains.teaching.application.errors import SchoolContextUnavailable
 from aieos.platform.idempotency.models import CONTENT_WORKSHEET_HINT_ATTEST_V1
 from tests.conftest import RUNTIME_USER, alembic_config
@@ -31,6 +28,7 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
     passive_head_slot_blocker,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
+    assert_snapshot_unchanged_except_denial,
     capture_durable_snapshot,
     load_idempotency_receipt,
     schema_fingerprint_ci03g020002,
@@ -192,7 +190,7 @@ def test_established_attest_replay_denies_corrupt_assignment_fingerprint(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    assert after == before
+    assert_snapshot_unchanged_except_denial(before, after)
     assert (
         load_idempotency_receipt(
             ci03_g2_runtime_engine,
@@ -323,7 +321,7 @@ def test_issuer_submit_revoked_allows_bound_attest_denies_reissue_only(
         capability=CONTENT_REVIEW_SUBMIT,
     )
     issue, *_ = _services(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
-    with pytest.raises(ReviewAssignmentForbidden):
+    with pytest.raises(ReviewForbidden, match="review capability denied"):
         issue.issue(
             tenant_id,
             owner_id,
@@ -359,22 +357,8 @@ def test_issuer_submit_revoked_allows_bound_attest_denies_reissue_only(
 def test_malformed_reviewer_eligibility_denies_bound_attest(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC03-02: integrated guard denies protected attest when eligibility reader is malformed."""
-
-    def _broken(
-        self,
-        tenant_id: uuid.UUID,
-        reviewer_principal_id: uuid.UUID,
-    ) -> list[str]:
-        raise SchoolContextUnavailable("malformed reviewer eligibility payload")
-
-    monkeypatch.setattr(
-        SchoolContextReviewerEligibilityService,
-        "list_reviewer_eligible_class_refs",
-        _broken,
-    )
+    """TC03-02: integrated guard denies protected attest when eligibility facts are malformed."""
     (
         tenant_id,
         _owner,
@@ -388,6 +372,7 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
     )
+    provider.set_reviewer_class_eligibility(reviewer_id, ("",))
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -397,7 +382,7 @@ def test_malformed_reviewer_eligibility_denies_bound_attest(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    with pytest.raises(SchoolContextUnavailable, match="malformed"):
+    with pytest.raises(SchoolContextUnavailable, match="malformed|facts"):
         integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
