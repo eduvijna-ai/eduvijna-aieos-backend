@@ -189,7 +189,7 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
         "id": "contention_helper_cleanup",
         "test": "test_ci03_g2_i02_contention_cleanup_postgres",
         "status": "EXECUTED",
-        "notes": "holder early fail + passive blocker fail path",
+        "notes": "holder early fail before waiter start",
     },
     {
         "id": "terminal_attest_replay",
@@ -237,7 +237,7 @@ I02_B3R1_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     },
     {
         "obligation": "B3R1-06",
-        "test": "test_approve_rejects_corrupt_attestation_digest + test_cross_reviewer_approve_denied",
+        "test": "test_attestation_row_immutable_at_database_boundary + test_cross_reviewer_approve_denied",
         "status": "EXECUTED",
     },
     {

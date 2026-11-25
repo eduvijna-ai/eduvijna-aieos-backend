@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     ReviewAlreadyDecided,
+    ReviewAssignmentNotAllowed,
     ReviewDecisionNotAllowed,
 )
 from aieos.domains.content.domain.states import StewardshipState
@@ -193,7 +194,9 @@ def test_new_terminal_effect_denied_after_approve(
         audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
         now=_NOW,
     )
-    with pytest.raises((ReviewAlreadyDecided, ReviewDecisionNotAllowed)):
+    with pytest.raises(
+        (ReviewAlreadyDecided, ReviewDecisionNotAllowed, ReviewAssignmentNotAllowed)
+    ):
         if effect == "reject":
             review.reject(**kwargs, reason_code="governed", comment="deny")
         else:

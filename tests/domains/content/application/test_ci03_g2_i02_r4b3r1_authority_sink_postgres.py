@@ -8,13 +8,13 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     PublicationForbidden,
-    ReviewAssignmentConflict,
+    ReviewAssignmentForbidden,
     ReviewForbidden,
-    WorksheetLearnerHintAttestationInvalid,
 )
 from aieos.domains.content.application.ports import CONTENT_REVIEW_DECIDE
 from aieos.domains.content.application.review_assignment_denial_audit import (
@@ -230,31 +230,31 @@ class TestCi03G2I02R4B3R1AuthoritySink:
             reason_code=REASON_REVIEW_CAPABILITY,
         )
 
-    def test_approve_rejects_corrupt_attestation_digest(
+    def test_attestation_row_immutable_at_database_boundary(
         self,
         ci03_g2_bootstrap_engine: Engine,
         ci03_g2_runtime_engine: Engine,
     ) -> None:
+        """Digest/binding faults must be proven at receipt layer (r4b1), not attestation rows."""
         (
             tenant_id,
             _owner,
             reviewer_id,
             provider,
             _revoke,
-            assignment_id,
+            _assignment_id,
             content_id,
             version_id,
             revision,
         ) = _bound_hint_scenario(
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
         )
-        attest = integrated_attest_service(
+        integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
             clock=lambda: _NOW,
             school_context_provider=provider,
-        )
-        attest.record(
+        ).record(
             tenant_id,
             reviewer_id,
             content_id=content_id,
@@ -263,62 +263,23 @@ class TestCi03G2I02R4B3R1AuthoritySink:
             per_question_outcomes=_positive_outcomes(
                 _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
             ),
-            idempotency_key=f"b3r1-digest-attest-{uuid.uuid7()}",
+            idempotency_key=f"b3r1-immut-{uuid.uuid7()}",
             event_context=_event(reviewer_id),
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
-        with ci03_g2_bootstrap_engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    UPDATE content.worksheet_learner_hint_version_attestations
-                    SET payload_digest = :bad
-                    WHERE tenant_id = :tid AND version_id = :vid
-                    """
-                ),
-                {"bad": "f" * 64, "tid": tenant_id, "vid": version_id.value},
-            )
-        review = integrated_review_service(
-            ci03_g2_runtime_engine,
-            tenant_id,
-            clock=lambda: _NOW,
-            school_context_provider=provider,
-        )
-        before = capture_durable_snapshot(
-            bootstrap_engine=ci03_g2_bootstrap_engine,
-            runtime_engine=ci03_g2_runtime_engine,
-            tenant_id=tenant_id,
-            content_id=content_id,
-            version_id=version_id,
-            assignment_id=assignment_id,
-            reviewer_principal_id=reviewer_id,
-        )
-        event = _correlated_event(reviewer_id)
-        with pytest.raises(WorksheetLearnerHintAttestationInvalid):
-            review.approve(
-                tenant_id,
-                reviewer_id,
-                content_id=content_id,
-                version_id=version_id,
-                expected_aggregate_revision=revision,
-                reason_code=None,
-                comment=None,
-                idempotency_key=f"b3r1-digest-apr-{uuid.uuid7()}",
-                event_context=event,
-                audit_provenance=api_mutation_audit_provenance(reviewer_id),
-                now=_NOW,
-            )
-        after = capture_durable_snapshot(
-            bootstrap_engine=ci03_g2_bootstrap_engine,
-            runtime_engine=ci03_g2_runtime_engine,
-            tenant_id=tenant_id,
-            content_id=content_id,
-            version_id=version_id,
-            assignment_id=assignment_id,
-            reviewer_principal_id=reviewer_id,
-        )
-        assert after.decisions == before.decisions
+        with pytest.raises(OperationalError, match="immutable"):
+            with ci03_g2_bootstrap_engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE content.worksheet_learner_hint_version_attestations
+                        SET payload_digest = :bad
+                        WHERE tenant_id = :tid AND version_id = :vid
+                        """
+                    ),
+                    {"bad": "f" * 64, "tid": tenant_id, "vid": version_id.value},
+                )
 
     def test_cross_reviewer_approve_denied(
         self,
@@ -382,7 +343,7 @@ class TestCi03G2I02R4B3R1AuthoritySink:
             assignment_id=assignment_id,
             reviewer_principal_id=other,
         )
-        with pytest.raises((ReviewForbidden, ReviewAssignmentConflict)):
+        with pytest.raises(ReviewAssignmentForbidden):
             review.approve(
                 tenant_id,
                 other,

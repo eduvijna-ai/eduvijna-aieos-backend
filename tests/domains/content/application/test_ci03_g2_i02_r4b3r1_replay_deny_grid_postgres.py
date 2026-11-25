@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from aieos.domains.content.application.errors import (
     ReviewAssignmentConflict,
+    ReviewAssignmentForbidden,
     ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
 )
@@ -156,6 +157,32 @@ def test_replay_deny_grid_integrated(
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=clock
     )
+    event = _correlated_event(reviewer_id)
+    idem_key = f"b3r1-grid-{deny_case}-{effect}-{uuid.uuid7()}"
+    needs_pre_attest = effect == "approve" and deny_case in (
+        "expired",
+        "reviewer_decide_revoked",
+    )
+    if needs_pre_attest:
+        integrated_attest_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=clock,
+            school_context_provider=provider,
+        ).record(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=revision,
+            per_question_outcomes=_positive_outcomes(
+                _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+            ),
+            idempotency_key=f"b3r1-grid-pre-{deny_case}-{uuid.uuid7()}",
+            event_context=event,
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=clock(),
+        )
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -165,32 +192,8 @@ def test_replay_deny_grid_integrated(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
-    event = _correlated_event(reviewer_id)
-    idem_key = f"b3r1-grid-{deny_case}-{effect}-{uuid.uuid7()}"
 
     if deny_case == "expired":
-        if effect == "approve":
-            integrated_attest_service(
-                ci03_g2_runtime_engine,
-                tenant_id,
-                clock=clock,
-                school_context_provider=provider,
-            ).record(
-                tenant_id,
-                reviewer_id,
-                content_id=content_id,
-                version_id=version_id,
-                expected_aggregate_revision=revision,
-                per_question_outcomes=_positive_outcomes(
-                    _hinted_ids_from_version(
-                        ci03_g2_runtime_engine, tenant_id, version_id
-                    )
-                ),
-                idempotency_key=f"b3r1-grid-exp-pre-{uuid.uuid7()}",
-                event_context=event,
-                audit_provenance=api_mutation_audit_provenance(reviewer_id),
-                now=clock(),
-            )
         clock_holder["t"] = _NOW + timedelta(days=8)
         with pytest.raises(ReviewAssignmentConflict, match="revoked or expired"):
             _invoke(
@@ -227,28 +230,6 @@ def test_replay_deny_grid_integrated(
         return
 
     if deny_case == "reviewer_decide_revoked":
-        if effect == "approve":
-            integrated_attest_service(
-                ci03_g2_runtime_engine,
-                tenant_id,
-                clock=clock,
-                school_context_provider=provider,
-            ).record(
-                tenant_id,
-                reviewer_id,
-                content_id=content_id,
-                version_id=version_id,
-                expected_aggregate_revision=revision,
-                per_question_outcomes=_positive_outcomes(
-                    _hinted_ids_from_version(
-                        ci03_g2_runtime_engine, tenant_id, version_id
-                    )
-                ),
-                idempotency_key=f"b3r1-grid-cap-pre-{uuid.uuid7()}",
-                event_context=event,
-                audit_provenance=api_mutation_audit_provenance(reviewer_id),
-                now=clock(),
-            )
         revoke_grant(
             ci03_g2_bootstrap_engine,
             tenant_id=tenant_id,
@@ -341,7 +322,7 @@ def test_replay_deny_grid_integrated(
             capabilities=(CONTENT_REVIEW_DECIDE,),
         )
         provider.set_reviewer_class_eligibility(other, (CLASS_REF,))
-        with pytest.raises((ReviewForbidden, ReviewAssignmentConflict)):
+        with pytest.raises(ReviewAssignmentForbidden):
             integrated_attest_service(
                 ci03_g2_runtime_engine,
                 tenant_id,
