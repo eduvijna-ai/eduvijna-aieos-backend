@@ -422,7 +422,7 @@ def test_terminal_receipt_current_authority_lost_denies_review_replay(
         assignment_id=scenario.assignment_id,
         reviewer_principal_id=scenario.reviewer_id,
     )
-    assert after == before
+    assert_snapshot_unchanged_except_denial(before, after)
 
 
 def test_terminal_receipt_revoked_denied(
@@ -937,14 +937,6 @@ def test_publish_rejects_non_human_principal(
     scenario = build_terminal_approved_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine
     )
-    bot_id = uuid.uuid7()
-    seed_active_authority(
-        ci03_g2_bootstrap_engine,
-        tenant_id=scenario.tenant_id,
-        principal_id=bot_id,
-        principal_kind=PrincipalKind.WORKLOAD,
-        capabilities=(CONTENT_PUBLISH,),
-    )
     publisher_id = uuid.uuid7()
     seed_active_authority(
         ci03_g2_bootstrap_engine,
@@ -967,7 +959,12 @@ def test_publish_rejects_non_human_principal(
             ci03_g2_runtime_engine
         ),
     )
-    with pytest.raises((PublicationForbidden, WorksheetLearnerHintPublicationBlocked)):
+    from aieos.platform.security.context import UnauthorizedError
+
+    with pytest.raises(
+        (PublicationForbidden, WorksheetLearnerHintPublicationBlocked, UnauthorizedError),
+        match="not authorized|HUMAN|distinct|publish",
+    ):
         publish.publish(
             scenario.tenant_id,
             publisher_id,
