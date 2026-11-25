@@ -623,6 +623,7 @@ def assert_success_mutation_command_evidence(
     effect: str,
     idempotency_key: str,
     correlation_id: uuid.UUID,
+    assignment_id: ReviewAssignmentId | None = None,
     expected_aggregate_revision: int | None = None,
 ) -> None:
     spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
@@ -634,7 +635,11 @@ def assert_success_mutation_command_evidence(
         idempotency_key=idempotency_key,
     )
     assert receipt is not None, f"missing idempotency receipt for {effect}"
-    assert receipt.result_content_id == content_id.value
+    if effect == "revoke":
+        assert assignment_id is not None
+        assert receipt.result_content_id == assignment_id.value
+    else:
+        assert receipt.result_content_id == content_id.value
     assert receipt.result_version_id == version_id.value
     if expected_aggregate_revision is not None:
         assert receipt.result_aggregate_revision == expected_aggregate_revision
@@ -652,6 +657,8 @@ def assert_success_mutation_command_evidence(
     assert executing_principal_id == principal_id
     if expected_aggregate_revision is not None:
         assert revision_after == expected_aggregate_revision
+    else:
+        assert revision_after == receipt.result_aggregate_revision
 
     assert audit_count_for_correlation(bootstrap_engine, tenant_id, correlation_id) == 1
 

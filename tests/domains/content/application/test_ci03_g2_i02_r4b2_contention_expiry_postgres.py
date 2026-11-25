@@ -569,6 +569,7 @@ class TestCi03G2I02R4B2Concurrency:
             effect="revoke",
             idempotency_key=revoke_idem,
             correlation_id=revoke_event.correlation_id,
+            assignment_id=scenario.assignment_id,
         )
 
 

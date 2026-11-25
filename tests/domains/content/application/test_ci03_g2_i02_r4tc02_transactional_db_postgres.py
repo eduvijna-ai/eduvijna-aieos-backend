@@ -378,7 +378,6 @@ def test_success_mutation_command_identity_representative(
     ) = _bound_hint_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
     )
-    post_revision = revision
     if effect in ("approve",):
         integrated_attest_service(
             ci03_g2_runtime_engine,
@@ -404,7 +403,7 @@ def test_success_mutation_command_identity_representative(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
                 {"tid": str(tenant_id)},
             )
-            post_revision = int(
+            head_revision = int(
                 conn.execute(
                     text(
                         "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
@@ -412,6 +411,7 @@ def test_success_mutation_command_identity_representative(
                     {"cid": content_id.value},
                 ).scalar_one()
             )
+        revision = AggregateRevision(head_revision)
     event = _correlated_event(reviewer_id)
     idem_key = f"tc02-id-{effect}-{uuid.uuid7()}"
     review = integrated_review_service(
@@ -446,7 +446,7 @@ def test_success_mutation_command_identity_representative(
             reviewer_id,
             content_id=content_id,
             version_id=version_id,
-            expected_aggregate_revision=AggregateRevision(post_revision),
+            expected_aggregate_revision=AggregateRevision(revision),
             reason_code=None,
             comment=None,
             idempotency_key=idem_key,
@@ -492,7 +492,6 @@ def test_success_mutation_command_identity_representative(
         effect=effect,
         idempotency_key=idem_key,
         correlation_id=event.correlation_id,
-        expected_aggregate_revision=post_revision if effect == "approve" else revision,
     )
 
 
@@ -607,9 +606,10 @@ def test_downgrade_refuses_on_mutation_denial_before_receipt_guard(
                 text(
                     """
                     SELECT count(*) FROM content.worksheet_learner_hint_version_attestations
-                    WHERE review_assignment_id IS NOT NULL
+                    WHERE tenant_id = :tid AND review_assignment_id IS NOT NULL
                     """
-                )
+                ),
+                {"tid": tenant_id},
             ).scalar_one()
         )
         mutation_denials = int(
@@ -617,9 +617,11 @@ def test_downgrade_refuses_on_mutation_denial_before_receipt_guard(
                 text(
                     """
                     SELECT count(*) FROM security.authorization_denial_records
-                    WHERE action = 'content.review.mutation.denied'
+                    WHERE tenant_id = :tid
+                      AND action = 'content.review.mutation.denied'
                     """
-                )
+                ),
+                {"tid": tenant_id},
             ).scalar_one()
         )
     assert bound_rows == 0
