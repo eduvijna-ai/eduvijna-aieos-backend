@@ -785,12 +785,24 @@ def assert_denied_protected_command_evidence(
         )
         is None
     )
-    assert_outbox_command_correlation(
-        bootstrap_engine,
-        tenant_id=tenant_id,
-        correlation_id=correlation_id,
-        event_type=spec.outbox_event_type,
-        content_id=content_id.value if spec.outbox_event_type else None,
+    if spec.outbox_event_type is not None:
+        assert (
+            outbox_correlation_match_count(
+                bootstrap_engine,
+                tenant_id=tenant_id,
+                correlation_id=correlation_id,
+                event_type=spec.outbox_event_type,
+                content_id=content_id.value,
+            )
+            == 0
+        )
+    assert (
+        outbox_correlation_match_count(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+        )
+        == 0
     )
 
 
