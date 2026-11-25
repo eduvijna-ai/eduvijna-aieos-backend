@@ -664,15 +664,49 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
     },
 )
 
+I02_TC03R4_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "id": "R4-01",
+        "item": "hint-bearing historical null-binding publish",
+        "status": "EXECUTED",
+        "tests": (
+            "test_historical_publish_allowed_with_null_legacy_assignment_binding "
+            "+ insert_pre_binding_hinted_attest_and_approve; owned disposable ci03g020002; "
+            "no session fallback"
+        ),
+    },
+    {
+        "id": "R4-02",
+        "item": "migration refusal catalog + immutable row digests",
+        "status": "EXECUTED",
+        "tests": (
+            "capture_migration_refusal_snapshot row/trigger/RLS/ACL digests; "
+            "r4bf test_downgrade_refuses before/after equality"
+        ),
+    },
+    {
+        "id": "R4-03",
+        "item": "independent request fingerprint contract",
+        "status": "EXECUTED",
+        "tests": (
+            "expected_attest/review_request_fingerprint in assert_success_mutation_command_evidence; "
+            "r4b2 effect-first attest/approve/reject/request_changes/revoke"
+        ),
+    },
+    {
+        "id": "R4-04",
+        "item": "traceability",
+        "status": "EXECUTED",
+        "tests": "I02_TC03R4_CASE_MAP",
+    },
+)
+
 I02_TC03R3_CASE_MAP: tuple[dict[str, str], ...] = (
     {
         "id": "R3-01",
         "item": "lawful null-binding historical publish",
-        "status": "EXECUTED",
-        "tests": (
-            "owned disposable ci03g020001→g020002 hint-free NULL decision + publish; "
-            "no DISABLE TRIGGER; fallback owned g020002 lawful path"
-        ),
+        "status": "SUPERSEDED",
+        "tests": "TC03R4 R4-01 hint-bearing INSERT path replaces hint-free/fallback",
     },
     {
         "id": "R3-02",

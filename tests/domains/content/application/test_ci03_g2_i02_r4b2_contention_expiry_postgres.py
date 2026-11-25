@@ -36,7 +36,6 @@ from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     assert_decision_bound_assignment,
     assert_denied_protected_command_evidence,
     assert_protected_effect_denied_after_revoke,
-    assert_receipt_fingerprint_for_key,
     assert_review_assignment_conflict_denied,
     assert_review_assignment_expiry_exception,
     assert_snapshot_unchanged_except_denial,
@@ -205,6 +204,12 @@ def _invoke_decision(
         review.request_changes(**kwargs, reason_code="governed", comment="changes")
     else:
         raise ValueError(effect)
+
+
+def _outcomes_for(runtime: Engine, scenario: _Scenario) -> list[dict[str, object]]:
+    return _positive_outcomes(
+        _hinted_ids_from_version(runtime, scenario.tenant_id, scenario.version_id)
+    )
 
 
 def _capture_snapshot(
@@ -547,14 +552,9 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
                 assignment_id=scenario.assignment_id,
+                expected_aggregate_revision=int(scenario.revision),
                 effect_clock=_NOW,
-            )
-            assert_receipt_fingerprint_for_key(
-                ci03_g2_runtime_engine,
-                tenant_id=scenario.tenant_id,
-                principal_id=scenario.reviewer_id,
-                effect="attest",
-                idempotency_key=holder_idem,
+                per_question_outcomes=_outcomes_for(ci03_g2_runtime_engine, scenario),
             )
             assert_attestation_bound_assignment(
                 ci03_g2_runtime_engine,
@@ -578,14 +578,9 @@ class TestCi03G2I02R4B2Concurrency:
                 effect="approve",
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+                assignment_id=scenario.assignment_id,
+                expected_aggregate_revision=int(scenario.revision),
                 effect_clock=_NOW,
-            )
-            assert_receipt_fingerprint_for_key(
-                ci03_g2_runtime_engine,
-                tenant_id=scenario.tenant_id,
-                principal_id=scenario.reviewer_id,
-                effect="approve",
-                idempotency_key=holder_idem,
             )
             assert_decision_bound_assignment(
                 ci03_g2_runtime_engine,
@@ -609,14 +604,11 @@ class TestCi03G2I02R4B2Concurrency:
                 effect=effect,
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+                assignment_id=scenario.assignment_id,
+                expected_aggregate_revision=int(scenario.revision),
                 effect_clock=_NOW,
-            )
-            assert_receipt_fingerprint_for_key(
-                ci03_g2_runtime_engine,
-                tenant_id=scenario.tenant_id,
-                principal_id=scenario.reviewer_id,
-                effect=effect,
-                idempotency_key=holder_idem,
+                reason_code="governed",
+                comment="deny" if effect == "reject" else "changes",
             )
             assert_decision_bound_assignment(
                 ci03_g2_runtime_engine,

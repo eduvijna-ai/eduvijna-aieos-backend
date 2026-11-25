@@ -54,9 +54,9 @@ from tests.domains.content.application.helpers_ci03_g2_i02_r4b3r1 import (
 from tests.domains.content.application.helpers_ci03_g2_i02_disposable_pg18 import (
     owned_disposable_ci03_pg18,
 )
-from tests.domains.content.application.helpers_ci03_g2_i02_hint_free import (
-    HintFreeApprovedScenario,
-    build_hint_free_approved_scenario,
+from tests.domains.content.application.helpers_ci03_g2_i02_historical_hinted import (
+    HistoricalHintedApprovedScenario,
+    insert_pre_binding_hinted_attest_and_approve,
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     assert_snapshot_unchanged_except_denial,
@@ -77,8 +77,7 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
     _hinted_ids_from_version,
     _positive_outcomes,
 )
-from alembic import command
-from tests.conftest import SCHEMA_OWNER_ROLE, alembic_config, provision_runtime_grants
+from tests.conftest import SCHEMA_OWNER_ROLE, provision_runtime_grants
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _append_v1,
     _event_context,
@@ -723,10 +722,10 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     assert attest_count == 0
 
 
-def _publish_hint_free_null_binding(
+def _publish_historical_hinted_null_binding(
     bootstrap: Engine,
     runtime: Engine,
-    scenario: HintFreeApprovedScenario,
+    scenario: HistoricalHintedApprovedScenario,
     *,
     tag: str,
 ) -> None:
@@ -738,18 +737,42 @@ def _publish_hint_free_null_binding(
         principal_kind=PrincipalKind.HUMAN,
         capabilities=(CONTENT_PUBLISH,),
     )
-    before_decision = scenario.review_decision_id
     with bootstrap.connect() as conn:
-        bind_before = conn.execute(
+        attest_bind = conn.execute(
+            text(
+                """
+                SELECT review_assignment_id FROM content.worksheet_learner_hint_version_attestations
+                WHERE attestation_id = :aid
+                """
+            ),
+            {"aid": scenario.attestation_id},
+        ).scalar_one()
+        decision_bind = conn.execute(
             text(
                 """
                 SELECT review_assignment_id FROM content.review_decisions
                 WHERE review_decision_id = :did
                 """
             ),
-            {"did": before_decision},
+            {"did": scenario.review_decision_id},
         ).scalar_one()
-    assert bind_before is None
+        digest_row = conn.execute(
+            text(
+                """
+                SELECT payload_digest, qa_policy_version
+                FROM content.worksheet_learner_hint_version_attestations
+                WHERE attestation_id = :aid
+                """
+            ),
+            {"aid": scenario.attestation_id},
+        ).one()
+    assert attest_bind is None
+    assert decision_bind is None
+    before_decision = scenario.review_decision_id
+    assert len(digest_row[0]) == 64
+    from aieos.domains.education.worksheet_hint_qa import WORKSHEET_HINT_QA_POLICY_VERSION
+
+    assert digest_row[1] == WORKSHEET_HINT_QA_POLICY_VERSION
     publish = PublishContentService(
         SqlAlchemyContentUnitOfWorkFactory(runtime),
         KernelPublicationAuthorization(
@@ -798,82 +821,36 @@ def _publish_hint_free_null_binding(
         ).one()
     assert bind_after is None
     assert did_after == before_decision
+    with bootstrap.connect() as conn:
+        attest_after = conn.execute(
+            text(
+                "SELECT attestation_id FROM content.worksheet_learner_hint_version_attestations "
+                "WHERE attestation_id = :aid"
+            ),
+            {"aid": scenario.attestation_id},
+        ).scalar_one()
+    assert attest_after == scenario.attestation_id
 
 
-def test_historical_publish_allowed_with_null_legacy_assignment_binding(
-    ci03_g2_bootstrap_engine: Engine,
-    ci03_g2_runtime_engine: Engine,
-) -> None:
-    """TC03R3-01: lawful NULL binding without immutability bypass; predecessor when ORM allows."""
-    predecessor_blocked: str | None = None
-    try:
-        with owned_disposable_ci03_pg18(alembic_revision="ci03g020001") as owned:
-            cfg = alembic_config(owned.migrator_url)
-            scenario_pre = build_hint_free_approved_scenario(
-                owned.bootstrap_engine,
-                owned.runtime_engine,
-                now=_NOW,
-                tag="tc03r3-pre",
-            )
-            command.upgrade(cfg, "ci03g020002")
-            with owned.bootstrap_engine.connect() as conn:
-                head = conn.execute(
-                    text("SELECT version_num FROM alembic_version")
-                ).scalar_one()
-                bind = conn.execute(
-                    text(
-                        """
-                        SELECT review_assignment_id FROM content.review_decisions
-                        WHERE review_decision_id = :did
-                        """
-                    ),
-                    {"did": scenario_pre.review_decision_id},
-                ).scalar_one()
-            assert head == "ci03g020002"
-            assert bind is None
-            _publish_hint_free_null_binding(
-                owned.bootstrap_engine,
-                owned.runtime_engine,
-                scenario_pre,
-                tag="tc03r3-pre",
-            )
-            return
-    except FileNotFoundError:
-        predecessor_blocked = "owned disposable docker unavailable"
-    except Exception as exc:  # noqa: BLE001
-        predecessor_blocked = (
-            f"owned ci03g020001 predecessor unavailable: {type(exc).__name__}: {exc}"
+def test_historical_publish_allowed_with_null_legacy_assignment_binding() -> None:
+    """TC03R4-01: hinted worksheet@2, digest-bound attest + APPROVE, NULL assignment; publish."""
+    with owned_disposable_ci03_pg18(alembic_revision="ci03g020002") as owned:
+        scenario = insert_pre_binding_hinted_attest_and_approve(
+            owned.bootstrap_engine,
+            owned.runtime_engine,
+            now=_NOW,
+            tag="tc03r4-hist",
         )
-    try:
-        with owned_disposable_ci03_pg18(alembic_revision="ci03g020002") as owned:
-            scenario = build_hint_free_approved_scenario(
-                owned.bootstrap_engine,
-                owned.runtime_engine,
-                now=_NOW,
-                tag="tc03r3-lawful",
-            )
-            _publish_hint_free_null_binding(
-                owned.bootstrap_engine,
-                owned.runtime_engine,
-                scenario,
-                tag="tc03r3-lawful",
-            )
-            return
-    except FileNotFoundError:
-        pass
-    scenario = build_hint_free_approved_scenario(
-        ci03_g2_bootstrap_engine,
-        ci03_g2_runtime_engine,
-        now=_NOW,
-        tag="tc03r3-session",
-    )
-    _publish_hint_free_null_binding(
-        ci03_g2_bootstrap_engine,
-        ci03_g2_runtime_engine,
-        scenario,
-        tag="tc03r3-session",
-    )
-    _ = predecessor_blocked
+        hinted_ids = _hinted_ids_from_version(
+            owned.runtime_engine, scenario.tenant_id, scenario.version_id
+        )
+        assert len(hinted_ids) >= 1
+        _publish_historical_hinted_null_binding(
+            owned.bootstrap_engine,
+            owned.runtime_engine,
+            scenario,
+            tag="tc03r4-hist",
+        )
 
 
 def test_passive_blocker_fault_releases_locks_for_reacquisition(

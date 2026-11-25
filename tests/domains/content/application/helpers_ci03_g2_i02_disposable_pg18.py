@@ -51,6 +51,7 @@ def _docker_mapped_port(container_name: str) -> str:
 def owned_disposable_ci03_pg18(
     *,
     alembic_revision: str = "head",
+    full_roundtrip_bootstrap: bool = False,
 ) -> Iterator[DisposableCi03Substrate]:
     """Ephemeral PG18 container; torn down after the proof body even on failure."""
     container = f"aieos-ci03-g2-own-{uuid.uuid7().hex[:12]}"
@@ -92,10 +93,13 @@ def owned_disposable_ci03_pg18(
                 raise RuntimeError(f"PostgreSQL 18 required; got {version}")
         provision_identities(bootstrap)
         cfg = alembic_config(m_url)
-        command.upgrade(cfg, "head")
-        clear_asset_audit_rows_for_schema_downgrade(bootstrap)
-        command.downgrade(cfg, "base")
-        command.upgrade(cfg, alembic_revision)
+        if full_roundtrip_bootstrap:
+            command.upgrade(cfg, "head")
+            clear_asset_audit_rows_for_schema_downgrade(bootstrap)
+            command.downgrade(cfg, "base")
+            command.upgrade(cfg, alembic_revision)
+        else:
+            command.upgrade(cfg, alembic_revision)
         provision_runtime_grants(bootstrap)
         runtime = create_engine(r_url)
         try:

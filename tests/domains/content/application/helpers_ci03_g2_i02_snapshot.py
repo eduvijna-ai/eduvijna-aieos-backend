@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+
+from aieos.domains.content.application.review_assignment_bound_mutations import (
+    fingerprint_assignment_id,
+)
+from aieos.domains.education.worksheet_hint_qa import WORKSHEET_HINT_QA_POLICY_VERSION
+from aieos.platform.idempotency.hashing import fingerprint_material
 
 from aieos.domains.content.application.errors import ReviewAssignmentConflict
 from aieos.domains.content.application.review_assignment_bound_mutations import (
@@ -17,7 +26,12 @@ from aieos.domains.content.application.review_assignment_bound_mutations import 
 from aieos.domains.content.application.review_assignment_denial_audit import (
     REASON_ASSIGNMENT_CONFLICT,
 )
-from aieos.domains.content.domain.identities import ContentId, ContentVersionId, ReviewAssignmentId
+from aieos.domains.content.domain.identities import (
+    AggregateRevision,
+    ContentId,
+    ContentVersionId,
+    ReviewAssignmentId,
+)
 from aieos.platform.events.constants import (
     EVENT_CONTENT_REVIEW_APPROVED_V1,
     EVENT_CONTENT_REVIEW_CHANGES_REQUESTED_V1,
@@ -693,6 +707,54 @@ def assert_outbox_command_correlation(
     assert total_for_correlation == count
 
 
+def expected_attest_request_fingerprint(
+    *,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    expected_aggregate_revision: int,
+    per_question_outcomes: Sequence[Mapping[str, object]],
+    assignment_id: ReviewAssignmentId | None = None,
+) -> str:
+    assignment_fp = fingerprint_assignment_id(
+        assignment_id_for_fp=assignment_id,
+        replay_assignment_id=None,
+    )
+    material: dict[str, object] = {
+        "content_id": str(content_id),
+        "version_id": str(version_id),
+        "expected_aggregate_revision": int(expected_aggregate_revision),
+        "qa_policy_version": WORKSHEET_HINT_QA_POLICY_VERSION,
+        "per_question_outcomes": list(per_question_outcomes),
+    }
+    if assignment_fp is not None:
+        material["review_assignment_id"] = assignment_fp
+    return fingerprint_material(material)
+
+
+def expected_review_request_fingerprint(
+    *,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    expected_aggregate_revision: int,
+    effect: str,
+    assignment_id: ReviewAssignmentId | None = None,
+    reason_code: str | None = None,
+    comment: str | None = None,
+) -> str:
+    from aieos.domains.content.application.review import _review_fingerprint
+
+    include_comment = effect in ("reject", "request_changes")
+    return _review_fingerprint(
+        content_id=content_id,
+        version_id=version_id,
+        expected_aggregate_revision=AggregateRevision(expected_aggregate_revision),
+        reason_code=reason_code,
+        comment=comment,
+        include_comment=include_comment,
+        review_assignment_id=assignment_id,
+    )
+
+
 def _assert_canonical_fingerprint(stored: str) -> None:
     assert len(stored) == 64
     assert stored == stored.lower()
@@ -789,6 +851,9 @@ def assert_success_mutation_command_evidence(
     assignment_id: ReviewAssignmentId | None = None,
     expected_aggregate_revision: int | None = None,
     effect_clock: datetime | None = None,
+    per_question_outcomes: Sequence[Mapping[str, object]] | None = None,
+    reason_code: str | None = None,
+    comment: str | None = None,
 ) -> None:
     spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
     receipt = load_idempotency_receipt(
@@ -799,6 +864,31 @@ def assert_success_mutation_command_evidence(
         idempotency_key=idempotency_key,
     )
     assert receipt is not None, f"missing idempotency receipt for {effect}"
+    rev_for_fp = (
+        expected_aggregate_revision
+        if expected_aggregate_revision is not None
+        else receipt.result_aggregate_revision
+    )
+    if effect == "attest" and per_question_outcomes is not None:
+        expected_fp = expected_attest_request_fingerprint(
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=rev_for_fp,
+            per_question_outcomes=per_question_outcomes,
+            assignment_id=assignment_id,
+        )
+        assert receipt.request_fingerprint_sha256 == expected_fp
+    elif effect in ("approve", "reject", "request_changes"):
+        expected_fp = expected_review_request_fingerprint(
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=rev_for_fp,
+            effect=effect,
+            assignment_id=assignment_id,
+            reason_code=reason_code,
+            comment=comment,
+        )
+        assert receipt.request_fingerprint_sha256 == expected_fp
     if effect == "revoke":
         assert assignment_id is not None
         assert receipt.result_content_id == assignment_id.value
@@ -846,15 +936,6 @@ def assert_success_mutation_command_evidence(
         assignment_id=assignment_id,
         effect_clock=effect_clock,
     )
-    rerun = load_idempotency_receipt(
-        runtime_engine,
-        tenant_id,
-        principal_id,
-        operation=spec.operation,
-        idempotency_key=idempotency_key,
-    )
-    assert rerun is not None
-    assert rerun.request_fingerprint_sha256 == receipt.request_fingerprint_sha256
 
 
 def assert_denial_command_no_receipt(
@@ -1204,6 +1285,115 @@ def schema_fingerprint_ci03g020002(
     )
 
 
+def _canonical_tuple_digest(row: tuple[object, ...]) -> str:
+    payload = json.dumps(row, default=str, sort_keys=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _sorted_immutable_attestation_digests(conn) -> tuple[str, ...]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                attestation_id::text,
+                tenant_id::text,
+                content_id::text,
+                version_id::text,
+                payload_digest,
+                qa_policy_version,
+                review_assignment_id::text,
+                attested_at::text,
+                correlation_id::text,
+                md5(per_question_outcomes::text)
+            FROM content.worksheet_learner_hint_version_attestations
+            ORDER BY attestation_id
+            """
+        )
+    ).fetchall()
+    return tuple(_canonical_tuple_digest(tuple(r)) for r in rows)
+
+
+def _sorted_immutable_decision_digests(conn) -> tuple[str, ...]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                review_decision_id::text,
+                tenant_id::text,
+                content_id::text,
+                version_id::text,
+                decision,
+                reason_code,
+                comment,
+                review_assignment_id::text,
+                decided_at::text,
+                correlation_id::text
+            FROM content.review_decisions
+            ORDER BY review_decision_id
+            """
+        )
+    ).fetchall()
+    return tuple(_canonical_tuple_digest(tuple(r)) for r in rows)
+
+
+def _sorted_immutability_triggers(conn) -> tuple[tuple[str, str, str, str], ...]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT n.nspname, c.relname, t.tgname, t.tgenabled::text
+            FROM pg_trigger t
+            JOIN pg_class c ON c.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'content'
+              AND c.relname IN (
+                'worksheet_learner_hint_version_attestations',
+                'review_decisions'
+              )
+              AND NOT t.tgisinternal
+            ORDER BY n.nspname, c.relname, t.tgname
+            """
+        )
+    ).fetchall()
+    return tuple((str(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows)
+
+
+def _sorted_rls_policies(conn) -> tuple[tuple[str, str, str, str, str], ...]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT schemaname, tablename, policyname, permissive, cmd
+            FROM pg_policies
+            WHERE schemaname = 'content'
+              AND tablename IN (
+                'worksheet_learner_hint_version_attestations',
+                'review_decisions'
+              )
+            ORDER BY tablename, policyname
+            """
+        )
+    ).fetchall()
+    return tuple((str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])) for r in rows)
+
+
+def _table_acl_fingerprints(conn) -> tuple[tuple[str, str], ...]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT n.nspname, c.relname, pg_catalog.array_to_string(c.relacl, ',')
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'content'
+              AND c.relname IN (
+                'worksheet_learner_hint_version_attestations',
+                'review_decisions'
+              )
+            ORDER BY n.nspname, c.relname
+            """
+        )
+    ).fetchall()
+    return tuple((f"{r[0]}.{r[1]}", str(r[2] or "")) for r in rows)
+
+
 @dataclass(frozen=True, slots=True)
 class MigrationRefusalSnapshot:
     schema_fingerprint: MigrationSchemaFingerprint
@@ -1211,6 +1401,11 @@ class MigrationRefusalSnapshot:
     bound_decision_rows: int
     receipt_attest_result_rows: int
     mutation_denial_rows: int
+    immutable_attestation_digests: tuple[str, ...]
+    immutable_decision_digests: tuple[str, ...]
+    immutability_triggers: tuple[tuple[str, str, str, str], ...]
+    rls_policies: tuple[tuple[str, str, str, str, str], ...]
+    table_acl_fingerprints: tuple[tuple[str, str], ...]
 
 
 def capture_migration_refusal_snapshot(bootstrap_engine: Engine) -> MigrationRefusalSnapshot:
@@ -1256,10 +1451,20 @@ def capture_migration_refusal_snapshot(bootstrap_engine: Engine) -> MigrationRef
                 )
             ).scalar_one()
         )
+        attest_digests = _sorted_immutable_attestation_digests(conn)
+        decision_digests = _sorted_immutable_decision_digests(conn)
+        triggers = _sorted_immutability_triggers(conn)
+        rls = _sorted_rls_policies(conn)
+        acls = _table_acl_fingerprints(conn)
     return MigrationRefusalSnapshot(
         schema_fingerprint=fp,
         bound_attestation_rows=bound_attest,
         bound_decision_rows=bound_decisions,
         receipt_attest_result_rows=receipt_attest,
         mutation_denial_rows=mutation_denials,
+        immutable_attestation_digests=attest_digests,
+        immutable_decision_digests=decision_digests,
+        immutability_triggers=triggers,
+        rls_policies=rls,
+        table_acl_fingerprints=acls,
     )
