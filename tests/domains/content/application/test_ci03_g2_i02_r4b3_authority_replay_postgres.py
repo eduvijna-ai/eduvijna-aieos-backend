@@ -65,7 +65,7 @@ def _correlated_event(principal_id: uuid.UUID) -> MutationEventContext:
 
 
 class TestCi03G2I02R4B3AuthorityReplay:
-    def test_terminal_attest_replay_preserves_durable_state(
+    def test_active_attest_same_key_replay_preserves_durable_state(
         self,
         ci03_g2_bootstrap_engine: Engine,
         ci03_g2_runtime_engine: Engine,

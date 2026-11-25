@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -389,3 +390,106 @@ def assert_snapshot_unchanged_except_denial(
     assert after.slot_active_assignment == before.slot_active_assignment
     assert after.revocation_rows == before.revocation_rows
     assert after.mutation_denials == before.mutation_denials + 1
+
+
+def assert_expiry_denial_without_revoke(
+    before: DurableEffectSnapshot, after: DurableEffectSnapshot
+) -> None:
+    """Expiry path: slot still active, no revocation row added."""
+    assert_snapshot_unchanged_except_denial(before, after)
+    assert after.slot_active_assignment == before.slot_active_assignment
+    assert after.slot_active_assignment is not None
+    assert after.revocation_rows == before.revocation_rows
+    assert after.review_revoke_audits == before.review_revoke_audits
+
+
+@dataclass(frozen=True, slots=True)
+class IdempotencyReceiptView:
+    idempotency_record_id: uuid.UUID
+    request_fingerprint_sha256: str
+    result_content_id: uuid.UUID
+    result_version_id: uuid.UUID | None
+    result_worksheet_hint_attestation_id: uuid.UUID | None
+    result_review_decision_id: uuid.UUID | None
+    result_aggregate_revision: int
+
+
+def load_idempotency_receipt(
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    *,
+    operation: str,
+    idempotency_key: str,
+) -> IdempotencyReceiptView | None:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        row = conn.execute(
+            text(
+                """
+                SELECT idempotency_record_id, request_fingerprint_sha256,
+                       result_content_id, result_version_id,
+                       result_worksheet_hint_attestation_id, result_review_decision_id,
+                       result_aggregate_revision
+                FROM api.idempotency_records
+                WHERE tenant_id = :tid
+                  AND actor_principal_id = :pid
+                  AND operation = :op
+                  AND idempotency_key_sha256 = :key
+                """
+            ),
+            {
+                "tid": tenant_id,
+                "pid": principal_id,
+                "op": operation,
+                "key": hash_idempotency_key(idempotency_key),
+            },
+        ).first()
+    if row is None:
+        return None
+    return IdempotencyReceiptView(
+        idempotency_record_id=row[0],
+        request_fingerprint_sha256=str(row[1]),
+        result_content_id=row[2],
+        result_version_id=row[3],
+        result_worksheet_hint_attestation_id=row[4],
+        result_review_decision_id=row[5],
+        result_aggregate_revision=int(row[6]),
+    )
+
+
+def outbox_count_for_event_type(
+    bootstrap_engine: Engine, tenant_id: uuid.UUID, event_type: str
+) -> int:
+    with bootstrap_engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM integration.outbox_messages
+                    WHERE tenant_id = :tid AND event_type = :etype
+                    """
+                ),
+                {"tid": tenant_id, "etype": event_type},
+            ).scalar_one()
+        )
+
+
+def audit_count_for_correlation(
+    bootstrap_engine: Engine, tenant_id: uuid.UUID, correlation_id: uuid.UUID
+) -> int:
+    with bootstrap_engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM security.audit_records
+                    WHERE tenant_id = :tid AND correlation_id = :cid
+                    """
+                ),
+                {"tid": tenant_id, "cid": correlation_id},
+            ).scalar_one()
+        )

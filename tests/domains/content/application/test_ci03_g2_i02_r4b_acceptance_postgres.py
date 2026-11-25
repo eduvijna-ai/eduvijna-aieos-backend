@@ -152,21 +152,21 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     },
     {
         "id": "replay_deny_full_grid",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres",
+        "test": "test_ci03_g2_i02_r4b3r1_replay_deny_grid_postgres + r4b3 + r4b1 receipt faults",
         "status": "PARTIAL",
-        "notes": "terminal replay + post-revoke replay; full matrix still open",
+        "notes": "integrated expired/revoked/fingerprint/cross-actor; wrong version/op/result grid BLOCKED",
     },
     {
         "id": "issuer_reviewer_authority_losses",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_attest_denied_after_reviewer_decide_revoked",
+        "test": "test_ci03_g2_i02_r4b3r1_authority_sink_postgres + r4b3 decide revoke",
         "status": "PARTIAL",
-        "notes": "reviewer decide revoke; issuer/membership grid still open",
+        "notes": "membership revoke + decide revoke; issuer class loss still BLOCKED",
     },
     {
         "id": "sink_unavailable",
-        "test": "test_ci03_g2_i01_assignment_postgres (sink fail)",
+        "test": "test_ci03_g2_i02_r4b3r1_authority_sink_postgres::test_mutation_denial_sink_unavailable_fail_closed_no_durable_effect",
         "status": "PARTIAL",
-        "notes": "issue/revoke sink paths in G2 I01; bound-mutation sink still GAP",
+        "notes": "bound-mutation deny sink; success-path audit/outbox rollback still BLOCKED",
     },
     {
         "id": "stale_revoke_reissue_supersession",
@@ -175,9 +175,9 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
     },
     {
         "id": "wrong_attestation_binding_approve",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_approve_rejects_without_bound_attestation",
-        "status": "PARTIAL",
-        "notes": "missing attestation; digest/slot mismatch still open",
+        "test": "test_ci03_g2_i02_r4b3r1_authority_sink_postgres (digest corrupt + cross-reviewer)",
+        "status": "EXECUTED",
+        "notes": "missing attestation remains r4b3; wrong digest/reviewer covered in B3R1",
     },
     {
         "id": "b2r1_durable_snapshot_evidence",
@@ -189,17 +189,83 @@ I02_B_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
         "id": "contention_helper_cleanup",
         "test": "test_ci03_g2_i02_contention_cleanup_postgres",
         "status": "EXECUTED",
+        "notes": "holder early fail + passive blocker fail path",
     },
     {
         "id": "terminal_attest_replay",
-        "test": "test_ci03_g2_i02_r4b3_authority_replay_postgres::test_terminal_attest_replay_preserves_durable_state",
+        "test": "test_ci03_g2_i02_r4b3r1_terminal_replay_postgres",
         "status": "EXECUTED",
+        "notes": "post-approve terminal receipt replay; active same-key in r4b3",
     },
     {
         "id": "publisher_negatives_legacy",
-        "test": "test_ci03_g2_i02_r4b1_acceptance_postgres::test_publish_denied_without_kernel_publish_grant",
+        "test": "r4b1 publish after expiry + r4b3r1 kernel no-grant after terminal approve",
         "status": "PARTIAL",
-        "notes": "kernel publish positive after expiry + no-grant negative",
+        "notes": "hint-free/legacy row-level negatives still BLOCKED",
+    },
+)
+
+
+# B3R1 — obligation matrix (Chief directive); BLOCKED items are mandatory Stage B follow-on.
+I02_B3R1_PROOF_ENTRIES: tuple[dict[str, str], ...] = (
+    {
+        "obligation": "B3R1-01",
+        "test": "r4b3::test_active_attest_same_key_replay + r4b3r1_terminal_replay",
+        "status": "EXECUTED",
+    },
+    {
+        "obligation": "B3R1-02",
+        "test": "test_ci03_g2_i02_r4b3r1_replay_deny_grid_postgres",
+        "status": "PARTIAL",
+        "notes": "8 integrated cells + skips; stale supersession/wrong binding grid BLOCKED",
+    },
+    {
+        "obligation": "B3R1-03",
+        "test": "test_ci03_g2_i02_r4b3r1_authority_sink_postgres (membership, decide revoke via grid)",
+        "status": "PARTIAL",
+    },
+    {
+        "obligation": "B3R1-04",
+        "test": "test_mutation_denial_sink_unavailable_fail_closed_no_durable_effect",
+        "status": "PARTIAL",
+        "notes": "success txn audit/outbox rollback BLOCKED",
+    },
+    {
+        "obligation": "B3R1-05",
+        "test": "r4b3 reissue/attest-after-revoke replay",
+        "status": "EXECUTED",
+    },
+    {
+        "obligation": "B3R1-06",
+        "test": "test_approve_rejects_corrupt_attestation_digest + test_cross_reviewer_approve_denied",
+        "status": "EXECUTED",
+    },
+    {
+        "obligation": "B3R1-07",
+        "test": "helpers_ci03_g2_i02_snapshot + terminal replay outbox/receipt asserts",
+        "status": "PARTIAL",
+        "notes": "per-command audit/outbox correlation for all 24 contention cases still open",
+    },
+    {
+        "obligation": "B3R1-08",
+        "test": "test_kernel_publisher_without_grant_denied_after_terminal_approve",
+        "status": "PARTIAL",
+    },
+    {
+        "obligation": "B3R1-09",
+        "test": "test_ci03_g2_i02_contention_cleanup_postgres",
+        "status": "EXECUTED",
+    },
+    {
+        "obligation": "B3R1-10",
+        "test": "I02_B_PROOF_ENTRIES + I02_B3R1_PROOF_ENTRIES",
+        "status": "EXECUTED",
+    },
+    {
+        "obligation": "B4/B6",
+        "test": "disposable ci03g020002 roundtrip + runtime privilege",
+        "status": "BLOCKED",
+        "notes": "mandatory next gate; not in B3R1 packet",
     },
 )
 

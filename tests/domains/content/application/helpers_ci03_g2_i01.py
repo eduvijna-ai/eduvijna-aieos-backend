@@ -20,6 +20,9 @@ from aieos.domains.content.application.ports import ContentUnitOfWorkFactory
 from aieos.domains.content.application.review_assignment_bound_mutations import (
     AssignmentBoundMutationDependencies,
 )
+from aieos.domains.content.application.review_assignment_denial_audit import (
+    ReviewAssignmentDenialAuditPort,
+)
 from aieos.domains.content.application.school_context_reviewer_eligibility import (
     SchoolContextReviewerEligibilityService,
 )
@@ -111,6 +114,7 @@ def assignment_bound_deps(
     clock: Callable[[], datetime] | None = None,
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
     issuer_class_authority: Any | None = None,
+    denial_audit: ReviewAssignmentDenialAuditPort | None = None,
 ) -> AssignmentBoundMutationDependencies:
     provider = school_context_provider or development_coherent_school_context_provider(
         tenant_id=tenant_id
@@ -126,7 +130,8 @@ def assignment_bound_deps(
         ),
         issuer_class_authority=issuer_class_authority
         or SchoolContextClassAuthorityService(provider),
-        denial_audit=SqlAlchemyAuthorizationDenialRecords(runtime_engine),
+        denial_audit=denial_audit
+        or SqlAlchemyAuthorizationDenialRecords(runtime_engine),
         clock=effective_clock,
     )
 
@@ -139,6 +144,7 @@ def integrated_attest_service(
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
     uow_factory: ContentUnitOfWorkFactory | None = None,
     issuer_class_authority: Any | None = None,
+    denial_audit: ReviewAssignmentDenialAuditPort | None = None,
 ) -> RecordWorksheetLearnerHintAttestationService:
     factory = uow_factory or SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
     return RecordWorksheetLearnerHintAttestationService(
@@ -152,6 +158,7 @@ def integrated_attest_service(
             clock=clock,
             school_context_provider=school_context_provider,
             issuer_class_authority=issuer_class_authority,
+            denial_audit=denial_audit,
         ),
     )
 
@@ -164,6 +171,7 @@ def integrated_review_service(
     school_context_provider: DevelopmentCoherentSchoolContextProvider | None = None,
     uow_factory: ContentUnitOfWorkFactory | None = None,
     issuer_class_authority: Any | None = None,
+    denial_audit: ReviewAssignmentDenialAuditPort | None = None,
 ) -> ReviewCommandService:
     factory = uow_factory or SqlAlchemyContentUnitOfWorkFactory(runtime_engine)
     return ReviewCommandService(
@@ -178,6 +186,7 @@ def integrated_review_service(
             clock=clock,
             school_context_provider=school_context_provider,
             issuer_class_authority=issuer_class_authority,
+            denial_audit=denial_audit,
         ),
     )
 

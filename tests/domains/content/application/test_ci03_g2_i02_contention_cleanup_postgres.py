@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import threading
+import uuid
 
 import pytest
 from sqlalchemy.engine import Engine
 
+from aieos.domains.content.domain.identities import ContentId, ContentVersionId
 from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
+    passive_head_slot_blocker,
     run_two_party_contention,
 )
 
@@ -42,3 +45,35 @@ def test_run_two_party_contention_does_not_start_waiter_when_holder_never_locks(
         )
 
     assert not contending.is_set()
+
+
+def test_passive_blocker_failure_leaves_locks_unset_and_thread_terminates(
+    ci03_g2_runtime_engine: Engine,
+) -> None:
+    tenant_id = uuid.uuid7()
+    release = threading.Event()
+    locks_acquired = threading.Event()
+    blocker_pid: list[int | None] = [None]
+    thread_errors: list[BaseException] = []
+
+    def run_blocker() -> None:
+        try:
+            passive_head_slot_blocker(
+                ci03_g2_runtime_engine,
+                tenant_id,
+                content_id=ContentId.generate(),
+                version_id=ContentVersionId.generate(),
+                locks_acquired=locks_acquired,
+                release=release,
+                blocker_pid=blocker_pid,
+            )
+        except BaseException as exc:  # noqa: BLE001
+            thread_errors.append(exc)
+
+    thread = threading.Thread(target=run_blocker, name="ci03-passive-blocker-fail")
+    thread.start()
+    thread.join(timeout=35.0)
+    assert not thread.is_alive()
+    assert thread_errors
+    assert not locks_acquired.is_set()
+    release.set()
