@@ -35,7 +35,13 @@ from tests.domains.content.application.helpers_ci03_g2_i01 import (
     assignment_bound_deps,
     issue_governed_review_assignment,
 )
-from tests.domains.education.test_aieos_v1_hint_t1_persistence import FIXED_NOW
+from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
+    FIXED_NOW,
+    _event_context,
+    _guarded_service,
+)
+from tests.domains.education.test_aieos_v1_hint_t2 import _review_service as _hint_t2_review
+from aieos.domains.content.application.audit import api_mutation_audit_provenance
 from tests.domains.assessment.helpers_dev08_i02 import MutableSchoolContextClassReader
 from tests.domains.education.test_aieos_v1_hint_t1 import (
     StubHumanClassification,
@@ -310,32 +316,36 @@ class TestHintAttestationRecordHttp:
         )
         content_id_str, etag = _create_worksheet(client, tenant_id)
         cid = ContentId(UUID(content_id_str))
-        _append_v1(
+        _, rev_after_v1 = _append_v1(
             runtime_engine,
             tenant_id=tenant_id,
             principal_id=author_id,
             content_id=cid,
         )
-        etag = encode_revision_etag(1)
-        author_client = client
-        append = author_client.post(
-            f"/api/v1/contents/{content_id_str}/worksheet-learner-hint-versions",
-            json={
-                "authoring_class_ref": "class-5a",
-                "payload": _worksheet_v2_payload(),
-            },
-            headers=_headers(tenant_id, **{"If-Match": etag}),
+        version_read, revision = _guarded_service(runtime_engine).append(
+            tenant_id,
+            author_id,
+            content_id=cid,
+            expected_aggregate_revision=rev_after_v1,
+            payload=_worksheet_v2_payload(),
+            authoring_class_ref="class-5a",
+            idempotency_key=f"hint-t0b-setup-{uuid.uuid7()}",
+            event_context=_event_context(author_id),
+            audit_provenance=api_mutation_audit_provenance(author_id),
+            now=FIXED_NOW,
         )
-        assert append.status_code == 201, append.text
-        version_id = append.json()["version_id"]
-        submit = author_client.post(
-            f"/api/v1/contents/{content_id_str}/versions/{version_id}/actions/submit-for-review",
-            headers=_headers(
-                tenant_id,
-                **{"If-Match": append.headers["ETag"]},
-            ),
+        version_id = version_read.version_id.value
+        _hint_t2_review(runtime_engine).submit(
+            tenant_id,
+            author_id,
+            content_id=cid,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=revision,
+            idempotency_key=f"hint-t0b-submit-{uuid.uuid7()}",
+            event_context=_event_context(author_id),
+            audit_provenance=api_mutation_audit_provenance(author_id),
+            now=FIXED_NOW,
         )
-        assert submit.status_code == 200, submit.text
         provider = issue_governed_review_assignment(
             bootstrap_engine,
             runtime_engine,
@@ -343,12 +353,12 @@ class TestHintAttestationRecordHttp:
             owner_id=author_id,
             reviewer_id=reviewer_id,
             content_id=cid,
-            version_id=ContentVersionId(UUID(version_id)),
+            version_id=version_read.version_id,
             class_ref="class-5a",
             now=FIXED_NOW,
         )
         etag = _head_revision_etag(
-            runtime_engine, tenant_id=tenant_id, content_id=cid
+            runtime_engine, tenant_id=tenant_id, content_id=UUID(content_id_str)
         )
         return (
             tenant_id,

@@ -983,9 +983,7 @@ class TestTenantNonDisclosure:
         missing_submit = _submit(
             client_a, tenant_a, str(uuid.uuid7()), str(uuid.uuid7()), etag='"r1"'
         )
-        hidden_body = _assert_problem(
-            hidden_submit, status=404, code="content_version_not_found"
-        )
+        hidden_body = _assert_problem(hidden_submit, status=404, code="content_not_found")
         missing_body = _assert_problem(missing_submit, status=404, code="content_not_found")
         assert hidden_body["title"] == missing_body["title"]
         assert str(tenant_a) not in hidden_submit.text
@@ -993,7 +991,9 @@ class TestTenantNonDisclosure:
         hidden_approve = _decide(
             client_b, "approve", tenant_b, in_id, in_version, etag=in_etag
         )
-        _assert_problem(hidden_approve, status=404, code="content_not_found")
+        _assert_problem(
+            hidden_approve, status=404, code="content_version_not_found"
+        )
         assert str(tenant_a) not in hidden_approve.text
 
 

@@ -261,31 +261,31 @@ def _complete_v2_publish(
         audit_provenance=api_mutation_audit_provenance(author_id),
         now=FIXED_NOW,
     )
-    provider = issue_governed_review_assignment(
-        bootstrap_engine,
-        runtime_engine,
-        tenant_id=tenant_id,
-        owner_id=author_id,
-        reviewer_id=reviewer_id,
-        content_id=content_id,
-        version_id=version_read.version_id,
-        class_ref=class_ref,
-        now=FIXED_NOW,
-    )
-    bound_attest = integrated_attest_service(
-        runtime_engine,
-        tenant_id,
-        clock=lambda: FIXED_NOW,
-        school_context_provider=provider,
-    )
-    bound_review = integrated_review_service(
-        runtime_engine,
-        tenant_id,
-        clock=lambda: FIXED_NOW,
-        school_context_provider=provider,
-    )
     effect_revision = submitted.aggregate_revision
     if require_attestation:
+        provider = issue_governed_review_assignment(
+            bootstrap_engine,
+            runtime_engine,
+            tenant_id=tenant_id,
+            owner_id=author_id,
+            reviewer_id=reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            class_ref=class_ref,
+            now=FIXED_NOW,
+        )
+        bound_attest = integrated_attest_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
+        bound_review = integrated_review_service(
+            runtime_engine,
+            tenant_id,
+            clock=lambda: FIXED_NOW,
+            school_context_provider=provider,
+        )
         hinted_ids = _hinted_question_ids(
             runtime_engine, tenant_id, version_read.version_id
         )
@@ -301,19 +301,34 @@ def _complete_v2_publish(
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=FIXED_NOW,
         )
-    approved = bound_review.approve(
-        tenant_id,
-        reviewer_id,
-        content_id=content_id,
-        version_id=version_read.version_id,
-        expected_aggregate_revision=effect_revision,
-        reason_code=None,
-        comment=None,
-        idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
-        event_context=_event_context(reviewer_id),
-        audit_provenance=api_mutation_audit_provenance(reviewer_id),
-        now=FIXED_NOW,
-    )
+        approved = bound_review.approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=effect_revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
+            event_context=_event_context(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=FIXED_NOW,
+        )
+    else:
+        review = _review_service(runtime_engine)
+        approved = review.approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_read.version_id,
+            expected_aggregate_revision=effect_revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"t1b-v2-approve-{uuid.uuid7()}",
+            event_context=_event_context(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=FIXED_NOW,
+        )
     assert approved.decision == "APPROVE"
     published = _publish_service(runtime_engine).publish(
         tenant_id,
@@ -640,3 +655,10 @@ def assert_v1_publication_evidence(
 def clear_t1b_side_effects(bootstrap_engine: Engine) -> None:
     """Learning-side cleanup only; immutable Content publication rows are left intact."""
     clear_i03_side_effects(bootstrap_engine)
+    with bootstrap_engine.begin() as conn:
+        for statement in (
+            "DELETE FROM content.review_assignment_revocations",
+            "DELETE FROM content.review_current_assignments",
+            "DELETE FROM content.review_assignment_issuances",
+        ):
+            conn.execute(text(statement))
