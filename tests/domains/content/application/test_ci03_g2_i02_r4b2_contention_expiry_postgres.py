@@ -42,6 +42,7 @@ from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     assert_success_mutation_command_evidence,
     assignment_valid_until,
     capture_durable_snapshot,
+    expected_result_aggregate_revision,
 )
 from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import assert_genuine_lock_contention
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import (
@@ -541,6 +542,7 @@ class TestCi03G2I02R4B2Concurrency:
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
+            req_rev = int(scenario.revision)
             assert_success_mutation_command_evidence(
                 bootstrap_engine=ci03_g2_bootstrap_engine,
                 runtime_engine=ci03_g2_runtime_engine,
@@ -552,7 +554,8 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
                 assignment_id=scenario.assignment_id,
-                expected_aggregate_revision=int(scenario.revision),
+                request_aggregate_revision=req_rev,
+                expected_result_aggregate_revision=req_rev,
                 effect_clock=_NOW,
                 per_question_outcomes=_outcomes_for(ci03_g2_runtime_engine, scenario),
             )
@@ -568,6 +571,7 @@ class TestCi03G2I02R4B2Concurrency:
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
+            req_rev = int(scenario.revision)
             assert_success_mutation_command_evidence(
                 bootstrap_engine=ci03_g2_bootstrap_engine,
                 runtime_engine=ci03_g2_runtime_engine,
@@ -579,7 +583,12 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
                 assignment_id=scenario.assignment_id,
-                expected_aggregate_revision=int(scenario.revision),
+                request_aggregate_revision=req_rev,
+                expected_result_aggregate_revision=expected_result_aggregate_revision(
+                    effect="approve", request_aggregate_revision=req_rev
+                ),
+                reason_code=None,
+                comment=None,
                 effect_clock=_NOW,
             )
             assert_decision_bound_assignment(
@@ -594,6 +603,7 @@ class TestCi03G2I02R4B2Concurrency:
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
+            req_rev = int(scenario.revision)
             assert_success_mutation_command_evidence(
                 bootstrap_engine=ci03_g2_bootstrap_engine,
                 runtime_engine=ci03_g2_runtime_engine,
@@ -605,7 +615,10 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
                 assignment_id=scenario.assignment_id,
-                expected_aggregate_revision=int(scenario.revision),
+                request_aggregate_revision=req_rev,
+                expected_result_aggregate_revision=expected_result_aggregate_revision(
+                    effect=effect, request_aggregate_revision=req_rev
+                ),
                 effect_clock=_NOW,
                 reason_code="governed",
                 comment="deny" if effect == "reject" else "changes",

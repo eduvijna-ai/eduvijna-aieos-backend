@@ -484,6 +484,17 @@ def test_success_mutation_command_identity_representative(
             audit_provenance=api_mutation_audit_provenance(reviewer_id),
             now=_NOW,
         )
+    if effect == "attest":
+        request_rev = int(revision)
+    elif effect == "approve":
+        request_rev = int(approve_revision)
+    else:
+        request_rev = int(revision)
+    result_rev = (
+        request_rev + 1
+        if effect in ("approve", "reject", "request_changes")
+        else request_rev
+    )
     assert_success_mutation_command_evidence(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -494,6 +505,23 @@ def test_success_mutation_command_identity_representative(
         effect=effect,
         idempotency_key=idem_key,
         correlation_id=event.correlation_id,
+        assignment_id=assignment_id,
+        request_aggregate_revision=request_rev,
+        expected_result_aggregate_revision=result_rev,
+        per_question_outcomes=(
+            _positive_outcomes(
+                _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+            )
+            if effect == "attest"
+            else None
+        ),
+        reason_code=None if effect == "approve" else ("governed" if effect != "attest" else None),
+        comment=(
+            None
+            if effect in ("attest", "approve")
+            else ("deny" if effect == "reject" else "changes")
+        ),
+        effect_clock=_NOW,
     )
 
 

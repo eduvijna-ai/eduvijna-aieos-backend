@@ -680,7 +680,7 @@ I02_TC03R4_CASE_MAP: tuple[dict[str, str], ...] = (
         "item": "migration refusal catalog + immutable row digests",
         "status": "EXECUTED",
         "tests": (
-            "capture_migration_refusal_snapshot row/trigger/RLS/ACL digests; "
+            "capture_migration_refusal_snapshot row/trigger/RLS/ACL + receipt/denial digests; "
             "r4bf test_downgrade_refuses before/after equality"
         ),
     },
@@ -689,8 +689,17 @@ I02_TC03R4_CASE_MAP: tuple[dict[str, str], ...] = (
         "item": "independent request fingerprint contract",
         "status": "EXECUTED",
         "tests": (
-            "expected_attest/review_request_fingerprint in assert_success_mutation_command_evidence; "
-            "r4b2 effect-first attest/approve/reject/request_changes/revoke"
+            "assert_success_mutation_command_evidence: request vs result revision, "
+            "include_comment=True + normalized reason/comment; r4b2 + r4tc02 representative"
+        ),
+    },
+    {
+        "id": "R4R1-01",
+        "item": "harness fingerprint/revision fix",
+        "status": "EXECUTED",
+        "tests": (
+            "TC03R4R1: six G2 nodes (r4b2 approve/reject/request_changes, "
+            "r4tc02 representative approve/reject/request_changes)"
         ),
     },
     {
