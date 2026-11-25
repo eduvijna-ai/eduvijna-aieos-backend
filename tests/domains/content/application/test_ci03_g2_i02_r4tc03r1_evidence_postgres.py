@@ -426,7 +426,11 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-03: hint-free / legacy path not affected by assignment-bound attestation gate."""
+    """TC03R1-03: hint-free / legacy path not affected by assignment-bound attestation gate.
+
+    HTTP v2 append leaves provenance null; bootstrap-only provenance attach matches T1c
+  trigger gate pattern so issue can bind class_ref without mutating payload.
+    """
     from tests.conftest import provision_runtime_grants
     from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
         _seed_reviewers,
@@ -467,6 +471,12 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     with ci03_g2_bootstrap_engine.begin() as conn:
         conn.execute(
             text(
+                "ALTER TABLE content.content_versions DISABLE TRIGGER "
+                "content_versions_immutable_update"
+            )
+        )
+        conn.execute(
+            text(
                 """
                 UPDATE content.content_versions
                 SET provenance = CAST(:prov AS jsonb)
@@ -478,6 +488,12 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
                 "tid": tenant_id,
                 "vid": version_read.version_id.value,
             },
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE content.content_versions ENABLE TRIGGER "
+                "content_versions_immutable_update"
+            )
         )
     from tests.domains.education.test_aieos_v1_hint_t2 import _review_service
 
