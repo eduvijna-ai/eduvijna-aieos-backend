@@ -745,6 +745,130 @@ def assert_denial_command_no_receipt(
     )
 
 
+def assert_denied_protected_command_evidence(
+    *,
+    bootstrap_engine: Engine,
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    effect: str,
+    idempotency_key: str,
+    correlation_id: uuid.UUID,
+    reason_code: str = REASON_ASSIGNMENT_CONFLICT,
+) -> None:
+    """Denied bound mutation: no success receipt, no business audit/outbox, exact denial row."""
+    spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
+    assert_denial_command_no_receipt(
+        runtime_engine,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        effect=effect,
+        idempotency_key=idempotency_key,
+    )
+    assert_latest_denial_matches(
+        runtime_engine,
+        tenant_id=tenant_id,
+        principal_id=principal_id,
+        content_id=content_id,
+        version_id=version_id,
+        correlation_id=correlation_id,
+        reason_code=reason_code,
+    )
+    assert (
+        load_success_mutation_audit(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            audit_action=spec.audit_action,
+        )
+        is None
+    )
+    assert_outbox_command_correlation(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        event_type=spec.outbox_event_type,
+        content_id=content_id.value if spec.outbox_event_type else None,
+    )
+
+
+def assert_attestation_bound_assignment(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    version_id: ContentVersionId,
+    assignment_id: ReviewAssignmentId,
+) -> None:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        bound = conn.execute(
+            text(
+                """
+                SELECT review_assignment_id
+                FROM content.worksheet_learner_hint_version_attestations
+                WHERE tenant_id = :tid AND version_id = :vid
+                ORDER BY attested_at DESC
+                LIMIT 1
+                """
+            ),
+            {"tid": tenant_id, "vid": version_id.value},
+        ).scalar_one_or_none()
+    assert bound == assignment_id.value
+
+
+def assert_decision_bound_assignment(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    version_id: ContentVersionId,
+    assignment_id: ReviewAssignmentId,
+) -> None:
+    with runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        bound = conn.execute(
+            text(
+                """
+                SELECT review_assignment_id
+                FROM content.review_decisions
+                WHERE tenant_id = :tid AND version_id = :vid
+                ORDER BY decided_at DESC
+                LIMIT 1
+                """
+            ),
+            {"tid": tenant_id, "vid": version_id.value},
+        ).scalar_one_or_none()
+    assert bound == assignment_id.value
+
+
+def assert_receipt_fingerprint_for_key(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    effect: str,
+    idempotency_key: str,
+) -> str:
+    spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
+    receipt = load_idempotency_receipt(
+        runtime_engine,
+        tenant_id,
+        principal_id,
+        operation=spec.operation,
+        idempotency_key=idempotency_key,
+    )
+    assert receipt is not None
+    assert len(receipt.request_fingerprint_sha256) == 64
+    return receipt.request_fingerprint_sha256
+
+
 @dataclass(frozen=True, slots=True)
 class MigrationSchemaFingerprint:
     alembic_head: str
@@ -756,6 +880,10 @@ class MigrationSchemaFingerprint:
     uq_issuance_resource_reviewer: int
     attest_rls_forced: bool | None
     decision_rls_forced: bool | None
+    attest_fk_def: str | None
+    decision_fk_def: str | None
+    attest_table_owner: str | None
+    decision_table_owner: str | None
 
 
 def schema_fingerprint_ci03g020002(
@@ -857,6 +985,54 @@ def schema_fingerprint_ci03g020002(
                 """
             )
         ).scalar_one_or_none()
+        attest_fk_def = (
+            conn.execute(
+                text(
+                    """
+                    SELECT pg_get_constraintdef(oid)
+                    FROM pg_constraint
+                    WHERE conname = 'fk_worksheet_hint_attestations_assignment'
+                    """
+                )
+            ).scalar_one_or_none()
+            if fk_attest
+            else None
+        )
+        decision_fk_def = (
+            conn.execute(
+                text(
+                    """
+                    SELECT pg_get_constraintdef(oid)
+                    FROM pg_constraint
+                    WHERE conname = 'fk_review_decisions_assignment'
+                    """
+                )
+            ).scalar_one_or_none()
+            if fk_decision
+            else None
+        )
+        attest_owner = conn.execute(
+            text(
+                """
+                SELECT pg_get_userbyid(c.relowner)
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'content'
+                  AND c.relname = 'worksheet_learner_hint_version_attestations'
+                """
+            )
+        ).scalar_one_or_none()
+        decision_owner = conn.execute(
+            text(
+                """
+                SELECT pg_get_userbyid(c.relowner)
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'content'
+                  AND c.relname = 'review_decisions'
+                """
+            )
+        ).scalar_one_or_none()
     return MigrationSchemaFingerprint(
         alembic_head=head,
         attest_bound_column=bound_attest,
@@ -867,4 +1043,8 @@ def schema_fingerprint_ci03g020002(
         uq_issuance_resource_reviewer=uq_issue,
         attest_rls_forced=bool(rls_attest) if rls_attest is not None else None,
         decision_rls_forced=bool(rls_decision) if rls_decision is not None else None,
+        attest_fk_def=str(attest_fk_def) if attest_fk_def else None,
+        decision_fk_def=str(decision_fk_def) if decision_fk_def else None,
+        attest_table_owner=str(attest_owner) if attest_owner else None,
+        decision_table_owner=str(decision_owner) if decision_owner else None,
     )

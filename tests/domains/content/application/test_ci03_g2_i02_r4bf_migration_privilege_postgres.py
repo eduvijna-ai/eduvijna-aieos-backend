@@ -73,10 +73,8 @@ def test_downgrade_refuses_when_hint_attestation_receipt_ids_exist(
                     """
                     SELECT count(*) FROM api.idempotency_records
                     WHERE result_worksheet_hint_attestation_id IS NOT NULL
-                      AND tenant_id = :tid
                     """
                 ),
-                {"tid": tenant_id},
             ).scalar_one()
         )
     assert receipt_rows >= 1

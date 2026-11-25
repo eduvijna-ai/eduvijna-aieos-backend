@@ -16,7 +16,6 @@ from aieos.domains.content.application.audit import api_mutation_audit_provenanc
 from aieos.domains.content.application.errors import (
     ReviewForbidden,
     WorksheetLearnerHintAttestationInvalid,
-)
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
 from aieos.domains.content.application.http_append import HttpAppendContentVersionService
 from aieos.domains.content.application.publish import PublishContentService
@@ -70,10 +69,14 @@ from tests.domains.education.test_aieos_v1_hint_t2 import (
     _hinted_ids_from_version,
     _positive_outcomes,
 )
+from tests.conftest import provision_runtime_grants
 from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _append_v1,
     _event_context,
     _seed_worksheet_content,
+)
+from aieos.domains.content.infrastructure.persistence.repositories import (
+    SqlAlchemyWorksheetHintAttestationRepository,
 )
 from tests.fakes import (
     AllowAssetCurrentGovernance,
@@ -178,7 +181,195 @@ def test_integrated_approve_denied_when_read_boundary_returns_wrong_assignment(
         reviewer_principal_id=reviewer_id,
     )
     assert after.decisions == before.decisions
+    assert after.attestations == before.attestations
+    assert after.assignment_issuance_rows == before.assignment_issuance_rows
     _ = wrong, original_get
+
+
+def test_integrated_approve_denied_when_read_boundary_returns_null_assignment_binding(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC03R2-02: null attestation assignment binding at APPROVE interlock."""
+    (
+        tenant_id,
+        _owner,
+        reviewer_id,
+        provider,
+        _revoke,
+        assignment_id,
+        content_id,
+        version_id,
+        revision,
+    ) = _bound_hint_scenario(
+        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
+    )
+    integrated_attest_service(
+        ci03_g2_runtime_engine,
+        tenant_id,
+        clock=lambda: _NOW,
+        school_context_provider=provider,
+    ).record(
+        tenant_id,
+        reviewer_id,
+        content_id=content_id,
+        version_id=version_id,
+        expected_aggregate_revision=revision,
+        per_question_outcomes=_positive_outcomes(
+            _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+        ),
+        idempotency_key=f"tc03r2-attest-null-{uuid.uuid7()}",
+        event_context=_event(reviewer_id),
+        audit_provenance=api_mutation_audit_provenance(reviewer_id),
+        now=_NOW,
+    )
+    original_get = attestation_gate.load_valid_attestation
+
+    def _patched_load_valid(repo, version):  # noqa: ANN001
+        attestation = original_get(repo, version)
+        return dataclasses.replace(attestation, review_assignment_id=None)
+
+    monkeypatch.setattr(
+        attestation_gate, "load_valid_attestation", _patched_load_valid
+    )
+    before = capture_durable_snapshot(
+        bootstrap_engine=ci03_g2_bootstrap_engine,
+        runtime_engine=ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+        assignment_id=assignment_id,
+        reviewer_principal_id=reviewer_id,
+    )
+    with pytest.raises(
+        WorksheetLearnerHintAttestationInvalid,
+        match="approve requires assignment-bound attestation",
+    ):
+        integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        ).approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"tc03r2-apr-null-{uuid.uuid7()}",
+            event_context=_event(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
+        )
+    after = capture_durable_snapshot(
+        bootstrap_engine=ci03_g2_bootstrap_engine,
+        runtime_engine=ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+        assignment_id=assignment_id,
+        reviewer_principal_id=reviewer_id,
+    )
+    assert after.decisions == before.decisions
+    assert after.attestations == before.attestations
+
+
+def test_integrated_approve_denied_when_repository_digest_mismatch_before_gate(
+    ci03_g2_bootstrap_engine: Engine,
+    ci03_g2_runtime_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC03R2-02: digest mismatch at get_for_version seam (pre load_valid_attestation QA)."""
+    (
+        tenant_id,
+        _owner,
+        reviewer_id,
+        provider,
+        _revoke,
+        assignment_id,
+        content_id,
+        version_id,
+        revision,
+    ) = _bound_hint_scenario(
+        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
+    )
+    integrated_attest_service(
+        ci03_g2_runtime_engine,
+        tenant_id,
+        clock=lambda: _NOW,
+        school_context_provider=provider,
+    ).record(
+        tenant_id,
+        reviewer_id,
+        content_id=content_id,
+        version_id=version_id,
+        expected_aggregate_revision=revision,
+        per_question_outcomes=_positive_outcomes(
+            _hinted_ids_from_version(ci03_g2_runtime_engine, tenant_id, version_id)
+        ),
+        idempotency_key=f"tc03r2-attest-digest-{uuid.uuid7()}",
+        event_context=_event(reviewer_id),
+        audit_provenance=api_mutation_audit_provenance(reviewer_id),
+        now=_NOW,
+    )
+    original_get = SqlAlchemyWorksheetHintAttestationRepository.get_for_version
+
+    def _wrong_digest(self, cid, vid):  # noqa: ANN001
+        row = original_get(self, cid, vid)
+        if row is None:
+            return None
+        return dataclasses.replace(row, payload_digest="f" * 64)
+
+    monkeypatch.setattr(
+        SqlAlchemyWorksheetHintAttestationRepository,
+        "get_for_version",
+        _wrong_digest,
+    )
+    before = capture_durable_snapshot(
+        bootstrap_engine=ci03_g2_bootstrap_engine,
+        runtime_engine=ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+        assignment_id=assignment_id,
+        reviewer_principal_id=reviewer_id,
+    )
+    with pytest.raises(
+        WorksheetLearnerHintAttestationInvalid,
+        match="payload_digest mismatch",
+    ):
+        integrated_review_service(
+            ci03_g2_runtime_engine,
+            tenant_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        ).approve(
+            tenant_id,
+            reviewer_id,
+            content_id=content_id,
+            version_id=version_id,
+            expected_aggregate_revision=revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"tc03r2-apr-digest-{uuid.uuid7()}",
+            event_context=_event(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
+        )
+    after = capture_durable_snapshot(
+        bootstrap_engine=ci03_g2_bootstrap_engine,
+        runtime_engine=ci03_g2_runtime_engine,
+        tenant_id=tenant_id,
+        content_id=content_id,
+        version_id=version_id,
+        assignment_id=assignment_id,
+        reviewer_principal_id=reviewer_id,
+    )
+    assert after.decisions == before.decisions
+    assert after.attestations == before.attestations
 
 
 def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
@@ -286,11 +477,11 @@ def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
     )
 
 
-def test_issuer_submit_revoked_blocks_reissue_after_bound_attest(
+def test_issuer_submit_revoked_denies_assigned_reviewer_approve(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-03: submit loss on protected issuer mutation after attest exists."""
+    """TC03R2-02: submit loss blocks assigned reviewer APPROVE (reissue covered elsewhere)."""
     (
         tenant_id,
         owner_id,
@@ -329,7 +520,6 @@ def test_issuer_submit_revoked_blocks_reissue_after_bound_attest(
         principal_id=owner_id,
         capability=CONTENT_REVIEW_SUBMIT,
     )
-    issue, *_ = _services(ci03_g2_runtime_engine, tenant_id, clock=lambda: _NOW)
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -340,15 +530,23 @@ def test_issuer_submit_revoked_blocks_reissue_after_bound_attest(
         reviewer_principal_id=reviewer_id,
     )
     with pytest.raises(ReviewForbidden):
-        issue.issue(
+        integrated_review_service(
+            ci03_g2_runtime_engine,
             tenant_id,
-            owner_id,
+            clock=lambda: _NOW,
+            school_context_provider=provider,
+        ).approve(
+            tenant_id,
+            reviewer_id,
             content_id=content_id,
             version_id=version_id,
-            reviewer_principal_id=reviewer_id,
-            idempotency_key=f"tc03r1-reissue-{uuid.uuid7()}",
-            event_context=_event(owner_id),
-            audit_provenance=api_mutation_audit_provenance(owner_id),
+            expected_aggregate_revision=revision,
+            reason_code=None,
+            comment=None,
+            idempotency_key=f"tc03r2-appr-submit-rev-{uuid.uuid7()}",
+            event_context=_event(reviewer_id),
+            audit_provenance=api_mutation_audit_provenance(reviewer_id),
+            now=_NOW,
         )
     after = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
@@ -359,8 +557,10 @@ def test_issuer_submit_revoked_blocks_reissue_after_bound_attest(
         assignment_id=assignment_id,
         reviewer_principal_id=reviewer_id,
     )
+    assert after.decisions == before.decisions
     assert after.attestations == before.attestations
     assert after.assignment_issuance_rows == before.assignment_issuance_rows
+    assert after.reviewer_idempotency_success == before.reviewer_idempotency_success
 
 
 @pytest.mark.parametrize(
@@ -368,6 +568,8 @@ def test_issuer_submit_revoked_blocks_reissue_after_bound_attest(
     (
         pytest.param(lambda _tid, _pid: (123,), id="tuple_non_string"),
         pytest.param(lambda _tid, _pid: [CLASS_REF], id="list_not_tuple"),
+        pytest.param(lambda _tid, _pid: {"class": CLASS_REF}, id="dict_not_tuple"),
+        pytest.param(lambda _tid, _pid: ("",), id="blank_string_ref"),
     ),
 )
 def test_malformed_reviewer_eligibility_shapes_denied(
@@ -395,7 +597,7 @@ def test_malformed_reviewer_eligibility_shapes_denied(
         "list_reviewer_eligible_class_refs",
         malformed,
     )
-    with pytest.raises((SchoolContextUnavailable, WorksheetLearnerHintAttestationInvalid)):
+    with pytest.raises(SchoolContextUnavailable, match="malformed"):
         integrated_attest_service(
             ci03_g2_runtime_engine,
             tenant_id,
@@ -424,6 +626,9 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
 ) -> None:
     """TC03R1-03: hint-free IN_REVIEW approve does not require assignment-bound attestation."""
     from tests.conftest import provision_runtime_grants
+from aieos.domains.content.infrastructure.persistence.repositories import (
+    SqlAlchemyWorksheetHintAttestationRepository,
+)
     from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
         _seed_reviewers,
     )
@@ -510,14 +715,74 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     assert attest_count == 0
 
 
-def test_historical_publish_allowed_with_terminal_approve_binding(
+def test_historical_publish_allowed_with_null_legacy_assignment_binding(
     ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-03: lawful historical publication after terminal approve (O64-05)."""
+    """TC03R2-03: pre-binding-era null assignment_id on approve/attest; publish still lawful."""
     scenario = build_terminal_approved_scenario(
         ci03_g2_bootstrap_engine, ci03_g2_runtime_engine
     )
+    with ci03_g2_bootstrap_engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE content.review_decisions DISABLE TRIGGER "
+                "review_decisions_immutable_update"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                "DISABLE TRIGGER worksheet_hint_attestations_immutable_update"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE content.review_decisions
+                SET review_assignment_id = NULL
+                WHERE tenant_id = :tid AND version_id = :vid
+                """
+            ),
+            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE content.worksheet_learner_hint_version_attestations
+                SET review_assignment_id = NULL
+                WHERE tenant_id = :tid AND version_id = :vid
+                """
+            ),
+            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE content.review_decisions ENABLE TRIGGER "
+                "review_decisions_immutable_update"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE content.worksheet_learner_hint_version_attestations "
+                "ENABLE TRIGGER worksheet_hint_attestations_immutable_update"
+            )
+        )
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        decision_bind, attest_bind = conn.execute(
+            text(
+                """
+                SELECT
+                    (SELECT review_assignment_id FROM content.review_decisions
+                     WHERE tenant_id = :tid AND version_id = :vid),
+                    (SELECT review_assignment_id FROM content.worksheet_learner_hint_version_attestations
+                     WHERE tenant_id = :tid AND version_id = :vid)
+                """
+            ),
+            {"tid": scenario.tenant_id, "vid": scenario.version_id.value},
+        ).one()
+    assert decision_bind is None
+    assert attest_bind is None
     publisher = uuid.uuid7()
     seed_active_authority(
         ci03_g2_bootstrap_engine,
@@ -623,16 +888,30 @@ def test_passive_blocker_fault_releases_locks_for_reacquisition(
 
 
 def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
+    ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-01: runtime tenant A context cannot insert tenant B issuance row."""
-    tenant_a = uuid.uuid7()
+    """TC03R2-04: tenant-A session, otherwise-valid row targeting tenant B → SQLSTATE 42501."""
+    from tests.platform.security.authorization.helpers import seed_tenant
+
+    provision_runtime_grants(ci03_g2_bootstrap_engine)
     tenant_b = uuid.uuid7()
+    (
+        tenant_a,
+        owner_id,
+        reviewer_id,
+        _provider,
+        _revoke,
+        assignment_id,
+        content_id,
+        version_id,
+        _revision,
+    ) = _bound_hint_scenario(
+        ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, clock=lambda: _NOW
+    )
+    seed_tenant(ci03_g2_bootstrap_engine, tenant_b)
     fresh_aid = uuid.uuid7()
-    with pytest.raises(
-        (OperationalError, DBAPIError),
-        match=r"42501|row-level security|violates row-level security",
-    ):
+    with pytest.raises(DBAPIError) as exc_info:
         with ci03_g2_runtime_engine.begin() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
@@ -654,18 +933,23 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
                 {
                     "aid": fresh_aid,
                     "tid_row": tenant_b,
-                    "cid": uuid.uuid7(),
-                    "vid": uuid.uuid7(),
-                    "rev": uuid.uuid7(),
-                    "iss": uuid.uuid7(),
+                    "cid": content_id.value,
+                    "vid": version_id.value,
+                    "rev": reviewer_id,
+                    "iss": owner_id,
                     "cref": CLASS_REF,
                     "issued": _NOW,
                     "until": _NOW + timedelta(days=1),
                     "corr": uuid.uuid7(),
                 },
             )
-    with ci03_g2_runtime_engine.connect() as conn:
-        visible = int(
+    assert getattr(exc_info.value.orig, "sqlstate", None) == "42501"
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(tenant_a)},
+        )
+        visible_a = int(
             conn.execute(
                 text(
                     """
@@ -676,4 +960,17 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
                 {"aid": fresh_aid},
             ).scalar_one()
         )
-    assert visible == 0
+    assert visible_a == 0
+    with ci03_g2_bootstrap_engine.connect() as conn:
+        bound_visible = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM content.review_assignment_issuances
+                    WHERE assignment_id = :aid
+                    """
+                ),
+                {"aid": assignment_id.value},
+            ).scalar_one()
+        )
+    assert bound_visible == 1

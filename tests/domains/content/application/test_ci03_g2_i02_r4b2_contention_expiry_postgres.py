@@ -32,9 +32,11 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     DurableEffectSnapshot,
-    assert_denial_command_no_receipt,
-    assert_latest_denial_matches,
+    assert_attestation_bound_assignment,
+    assert_decision_bound_assignment,
+    assert_denied_protected_command_evidence,
     assert_protected_effect_denied_after_revoke,
+    assert_receipt_fingerprint_for_key,
     assert_review_assignment_conflict_denied,
     assert_review_assignment_expiry_exception,
     assert_snapshot_unchanged_except_denial,
@@ -321,6 +323,11 @@ class TestCi03G2I02R4B2Concurrency:
             waiter_pid=waiter_pid,
         )
 
+        revoke_event = _correlated_event(scenario.owner_id)
+        revoke_idem = f"b2-revoke-first-{effect}-{uuid.uuid7()}"
+        waiter_event = _correlated_event(scenario.reviewer_id)
+        waiter_idem = f"b2-wait-{effect}-{uuid.uuid7()}"
+
         def holder() -> None:
             try:
                 _invoke_revoke(
@@ -328,13 +335,12 @@ class TestCi03G2I02R4B2Concurrency:
                     scenario,
                     clock=clock,
                     uow_factory=hold_factory,
-                    idem_key=f"b2-revoke-first-{effect}-{uuid.uuid7()}",
+                    idem_key=revoke_idem,
+                    event_context=revoke_event,
                 )
                 holder_result["ok"] = True
             except BaseException as exc:  # noqa: BLE001
                 holder_result["error"] = exc
-
-        waiter_event = _correlated_event(scenario.reviewer_id)
 
         def waiter() -> None:
             try:
@@ -344,7 +350,7 @@ class TestCi03G2I02R4B2Concurrency:
                         scenario,
                         clock=clock,
                         uow_factory=contend_factory,
-                        idem_key=f"b2-wait-attest-{uuid.uuid7()}",
+                        idem_key=waiter_idem,
                         event_context=waiter_event,
                     )
                 else:
@@ -354,7 +360,7 @@ class TestCi03G2I02R4B2Concurrency:
                         effect=effect,
                         clock=clock,
                         uow_factory=contend_factory,
-                        idem_key=f"b2-wait-{effect}-{uuid.uuid7()}",
+                        idem_key=waiter_idem,
                         event_context=waiter_event,
                     )
                 waiter_result["ok"] = True
@@ -379,12 +385,27 @@ class TestCi03G2I02R4B2Concurrency:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_protected_effect_denied_after_revoke(snap_before, snap_after)
-        assert_latest_denial_matches(
-            ci03_g2_runtime_engine,
+        assert_success_mutation_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.owner_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            effect="revoke",
+            idempotency_key=revoke_idem,
+            correlation_id=revoke_event.correlation_id,
+            assignment_id=scenario.assignment_id,
+        )
+        assert_denied_protected_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
             tenant_id=scenario.tenant_id,
             principal_id=scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
+            effect=effect,
+            idempotency_key=waiter_idem,
             correlation_id=waiter_event.correlation_id,
         )
 
@@ -525,6 +546,19 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
             )
+            assert_receipt_fingerprint_for_key(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                effect="attest",
+                idempotency_key=holder_idem,
+            )
+            assert_attestation_bound_assignment(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                version_id=scenario.version_id,
+                assignment_id=scenario.assignment_id,
+            )
         elif effect == "approve":
             assert snap_after.decisions == snap_before.decisions + 1
             assert snap_after.review_decision_audits == snap_before.review_decision_audits + 1
@@ -542,6 +576,19 @@ class TestCi03G2I02R4B2Concurrency:
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
             )
+            assert_receipt_fingerprint_for_key(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                effect="approve",
+                idempotency_key=holder_idem,
+            )
+            assert_decision_bound_assignment(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                version_id=scenario.version_id,
+                assignment_id=scenario.assignment_id,
+            )
         elif effect in ("reject", "request_changes"):
             assert snap_after.decisions == snap_before.decisions + 1
             assert snap_after.review_decision_audits == snap_before.review_decision_audits + 1
@@ -558,6 +605,19 @@ class TestCi03G2I02R4B2Concurrency:
                 effect=effect,
                 idempotency_key=holder_idem,
                 correlation_id=holder_event.correlation_id,
+            )
+            assert_receipt_fingerprint_for_key(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                effect=effect,
+                idempotency_key=holder_idem,
+            )
+            assert_decision_bound_assignment(
+                ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                version_id=scenario.version_id,
+                assignment_id=scenario.assignment_id,
             )
         assert_success_mutation_command_evidence(
             bootstrap_engine=ci03_g2_bootstrap_engine,
@@ -622,6 +682,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
 
         worker_errors: list[BaseException] = []
         worker_event = _correlated_event(scenario.reviewer_id)
+        worker_idem = f"b2-intra-hold-{effect}-{uuid.uuid7()}"
 
         def worker() -> None:
             try:
@@ -631,7 +692,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         scenario,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
+                        idem_key=worker_idem,
                         event_context=worker_event,
                     )
                 else:
@@ -641,7 +702,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         effect=effect,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-intra-hold-{effect}-{uuid.uuid7()}",
+                        idem_key=worker_idem,
                         event_context=worker_event,
                     )
             except BaseException as exc:  # noqa: BLE001
@@ -663,12 +724,15 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
-        assert_latest_denial_matches(
-            ci03_g2_runtime_engine,
+        assert_denied_protected_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
             tenant_id=scenario.tenant_id,
             principal_id=scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
+            effect=effect,
+            idempotency_key=worker_idem,
             correlation_id=worker_event.correlation_id,
         )
 
@@ -795,20 +859,16 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
-        assert_latest_denial_matches(
-            ci03_g2_runtime_engine,
+        assert_denied_protected_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
             tenant_id=scenario.tenant_id,
             principal_id=scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
-            correlation_id=worker_event.correlation_id,
-        )
-        assert_denial_command_no_receipt(
-            ci03_g2_runtime_engine,
-            tenant_id=scenario.tenant_id,
-            principal_id=scenario.reviewer_id,
             effect=effect,
             idempotency_key=worker_idem,
+            correlation_id=worker_event.correlation_id,
         )
 
     @pytest.mark.parametrize(
@@ -843,6 +903,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         )
 
         worker_event = _correlated_event(scenario.reviewer_id)
+        worker_idem = f"b2-slow-{effect}-{uuid.uuid7()}"
         if effect == "attest":
             service = integrated_attest_service(
                 ci03_g2_runtime_engine,
@@ -863,7 +924,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                             ci03_g2_runtime_engine, scenario.tenant_id, scenario.version_id
                         )
                     ),
-                    idempotency_key=f"b2-slow-{effect}-{uuid.uuid7()}",
+                    idempotency_key=worker_idem,
                     event_context=worker_event,
                     audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
                     now=clock(),
@@ -882,7 +943,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                 content_id=scenario.content_id,
                 version_id=scenario.version_id,
                 expected_aggregate_revision=scenario.revision,
-                idempotency_key=f"b2-slow-{effect}-{uuid.uuid7()}",
+                idempotency_key=worker_idem,
                 event_context=worker_event,
                 audit_provenance=api_mutation_audit_provenance(scenario.reviewer_id),
                 now=clock(),
@@ -900,11 +961,14 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             ci03_g2_bootstrap_engine, ci03_g2_runtime_engine, scenario
         )
         assert_snapshot_unchanged_except_denial(snap_before, snap_after)
-        assert_latest_denial_matches(
-            ci03_g2_runtime_engine,
+        assert_denied_protected_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
             tenant_id=scenario.tenant_id,
             principal_id=scenario.reviewer_id,
             content_id=scenario.content_id,
             version_id=scenario.version_id,
+            effect=effect,
+            idempotency_key=worker_idem,
             correlation_id=worker_event.correlation_id,
         )

@@ -651,10 +651,9 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
     {
         "id": "R1-04",
         "item": "durable proof/cleanup",
-        "status": "PARTIAL",
+        "status": "EXECUTED",
         "tests": (
-            "r4b2 command evidence + tc03 passive reacquire; "
-            "PARTIAL full 24-case identity grid (Chief residual)"
+            "TC03R2 R2-01 completed r4b2 grid; tc03r1 passive reacquire retained"
         ),
     },
     {
@@ -662,6 +661,54 @@ I02_TC03R1_CASE_MAP: tuple[dict[str, str], ...] = (
         "item": "traceability",
         "status": "EXECUTED",
         "tests": "I02_TC03R1_CASE_MAP",
+    },
+)
+
+I02_TC03R2_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "id": "R2-01",
+        "item": "r4b2 durable command evidence",
+        "status": "EXECUTED",
+        "tests": (
+            "r4b2: 5×(4+4+4+8+4) via assert_denied_protected_command_evidence + "
+            "success receipt/fingerprint/assignment linkage on effect-first"
+        ),
+    },
+    {
+        "id": "R2-02",
+        "item": "authority/interlock",
+        "status": "EXECUTED",
+        "tests": (
+            "r4tc03r1: submit-revoked APPROVE, malformed×4 SchoolContextUnavailable, "
+            "approve null binding + digest get_for_version seam"
+        ),
+    },
+    {
+        "id": "R2-03",
+        "item": "historical null binding publish",
+        "status": "EXECUTED",
+        "tests": "test_historical_publish_allowed_with_null_legacy_assignment_binding",
+    },
+    {
+        "id": "R2-04",
+        "item": "cross-tenant RLS",
+        "status": "EXECUTED",
+        "tests": "test_cross_tenant_insert_into_assignment_issuance_rls_denied (42501)",
+    },
+    {
+        "id": "R2-05",
+        "item": "migration fingerprint",
+        "status": "EXECUTED",
+        "tests": (
+            "schema_fingerprint + FK defs/owners; g2_i01 clean roundtrip; "
+            "r4bf global receipt guard refusal"
+        ),
+    },
+    {
+        "id": "R2-06",
+        "item": "traceability",
+        "status": "EXECUTED",
+        "tests": "I02_TC03R2_CASE_MAP",
     },
 )
 
