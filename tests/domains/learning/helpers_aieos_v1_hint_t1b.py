@@ -36,7 +36,6 @@ from tests.domains.education.test_aieos_v1_hint_t1_persistence import (
     _guarded_service,
     _seed_worksheet_content,
 )
-from tests.dbutil import clear_ci03_assignment_bound_mutation_evidence_for_schema_downgrade
 from tests.fakes import AllowAssetReferenceValidation
 from tests.domains.learning.helpers_aieos360_s01_i03 import (
     PreparedAssignment,
@@ -656,4 +655,3 @@ def assert_v1_publication_evidence(
 def clear_t1b_side_effects(bootstrap_engine: Engine) -> None:
     """Learning-side cleanup only; immutable Content publication rows are left intact."""
     clear_i03_side_effects(bootstrap_engine)
-    clear_ci03_assignment_bound_mutation_evidence_for_schema_downgrade(bootstrap_engine)

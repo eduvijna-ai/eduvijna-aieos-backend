@@ -1142,4 +1142,7 @@ def event_dispatcher_engine(postgres18: dict[str, str]) -> Iterator[Engine]:
         engine.dispose()
 
 
-pytest_plugins = ("tests.conftest_ci03_g2_i01",)
+pytest_plugins = (
+    "tests.conftest_ci03_g2_i01",
+    "tests.conftest_ci03_hint_governed",
+)

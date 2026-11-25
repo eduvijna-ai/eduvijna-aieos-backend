@@ -101,7 +101,10 @@ from tests.domains.learning.helpers_aieos_v1_hint_b_r2 import (
     snapshot_assignment_content_version_fk,
 )
 from aieos.domains.learning.application.start_attempt import StartAttemptService
-pytestmark = pytest.mark.aieos_v1_hint_b
+pytestmark = [
+    pytest.mark.aieos_v1_hint_b,
+    pytest.mark.usefixtures("ci03_hint_governed_substrate"),
+]
 
 HINTS_PATH = "/api/v1/learning/attempts/{attempt_id}/learner-hints"
 _NO_STORE = "private, no-store"
@@ -121,9 +124,9 @@ _FORBIDDEN = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _hint_b_cleanup(bootstrap_engine: Engine) -> Iterator[None]:
+def _hint_b_cleanup(ci03_g2_bootstrap_engine: Engine) -> Iterator[None]:
     yield
-    clear_t1b_side_effects(bootstrap_engine)
+    clear_t1b_side_effects(ci03_g2_bootstrap_engine)
 
 
 def _hinted_payload() -> dict[str, Any]:
@@ -172,13 +175,13 @@ def _start_and_hints(client, prepared) -> tuple[UUID, dict]:
 
 class TestLearnerHintsPositive:
     def test_hint_b_200_governed_three_human_path(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         assert postgres18["server_version"].startswith("18.")
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         assert started.status_code == 201
         attempt_id = uuid.UUID(started.json()["attempt_id"])
@@ -197,22 +200,22 @@ class TestLearnerHintsPositive:
         _assert_no_leak(body, allowed_hints=allowed)
 
     def test_hint_b_empty_hints_v1_pin_and_hint_free_v2(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared_v2 = prepare_governed_worksheet_v2_assignment(
-            runtime_engine,
-            bootstrap_engine,
+            ci03_g2_runtime_engine,
+            ci03_g2_bootstrap_engine,
             payload=_hint_free_v2_payload(),
         )
-        client = student_client(runtime_engine, prepared_v2)
+        client = student_client(ci03_g2_runtime_engine, prepared_v2)
         started = start_attempt(client, prepared_v2)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         response = _get_hints(client, prepared_v2, attempt_id)
         assert response.status_code == 200
         assert response.json()["hints"] == []
 
-        pins = prepare_exact_pin_v1_then_v2_assignments(runtime_engine, bootstrap_engine)
-        client_v1 = student_client(runtime_engine, pins.v1_assignment)
+        pins = prepare_exact_pin_v1_then_v2_assignments(ci03_g2_runtime_engine, ci03_g2_bootstrap_engine)
+        client_v1 = student_client(ci03_g2_runtime_engine, pins.v1_assignment)
         started_v1 = start_attempt(client_v1, pins.v1_assignment)
         attempt_v1 = uuid.UUID(started_v1.json()["attempt_id"])
         res_v1 = _get_hints(client_v1, pins.v1_assignment, attempt_v1)
@@ -223,12 +226,12 @@ class TestLearnerHintsPositive:
 
 class TestLearnerHintsAuthorization:
     def test_hint_b_submitted_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         match = started.headers["ETag"]
@@ -241,16 +244,16 @@ class TestLearnerHintsAuthorization:
         assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_wrong_student_and_foreign_attempt(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client_a = student_client(runtime_engine, prepared)
+        client_a = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client_a, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         client_b = build_student_client(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared.tenant_id,
             STUDENT_B_PRINCIPAL_ID,
             learner_membership_reader=prepared.membership,
@@ -260,12 +263,12 @@ class TestLearnerHintsAuthorization:
         assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_membership_revoked_between_requests(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         first = _get_hints(client, prepared, attempt_id)
@@ -278,16 +281,16 @@ class TestLearnerHintsAuthorization:
         assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_assignment_cancelled_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         cancel_assignment(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             tenant_id=prepared.tenant_id,
             teacher_id=prepared.teacher_id,
             assignment=prepared.assignment,
@@ -334,10 +337,10 @@ class _LockOrderFactory:
 
 class TestLearnerHintsLockOrder:
     def test_hint_b_assignment_before_attempt_and_commit_before_response(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
         events: list[str] = []
         from aieos.domains.learning.application.get_learner_hints import (
@@ -345,11 +348,11 @@ class TestLearnerHintsLockOrder:
         )
 
         service = GetLearnerHintsService(
-            _LockOrderFactory(runtime_engine, events),
+            _LockOrderFactory(ci03_g2_runtime_engine, events),
             SchoolContextLearnerMembershipAuthorityService(prepared.membership),
-            CurrentPrincipalClassificationAuthority(runtime_engine),
+            CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         service.get(prepared.tenant_id, prepared.student_id, attempt_id)
@@ -496,7 +499,7 @@ def _learning_event(principal_id: UUID) -> MutationEventContext:
 
 
 def _hints_service(
-    runtime_engine: Engine, prepared, factory
+    ci03_g2_runtime_engine: Engine, prepared, factory
 ) -> "GetLearnerHintsService":
     from aieos.domains.learning.application.get_learner_hints import (
         GetLearnerHintsService,
@@ -505,24 +508,24 @@ def _hints_service(
     return GetLearnerHintsService(
         factory,
         SchoolContextLearnerMembershipAuthorityService(prepared.membership),
-        CurrentPrincipalClassificationAuthority(runtime_engine),
+        CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
     )
 
 
-def _submit_service(runtime_engine: Engine, prepared, factory) -> SubmitAttemptService:
+def _submit_service(ci03_g2_runtime_engine: Engine, prepared, factory) -> SubmitAttemptService:
     return SubmitAttemptService(
         factory,
         SchoolContextLearnerMembershipAuthorityService(prepared.membership),
-        CurrentPrincipalClassificationAuthority(runtime_engine),
+        CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
         idempotency_retention=IDEMPOTENCY_RETENTION,
     )
 
 
-def _start_governed_v2(runtime_engine, bootstrap_engine):
+def _start_governed_v2(ci03_g2_runtime_engine, ci03_g2_bootstrap_engine):
     prepared = prepare_governed_worksheet_v2_assignment(
-        runtime_engine, bootstrap_engine, payload=_hinted_payload()
+        ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
     )
-    client = student_client(runtime_engine, prepared)
+    client = student_client(ci03_g2_runtime_engine, prepared)
     started = start_attempt(client, prepared)
     assert started.status_code == 201, started.text
     attempt_id = uuid.UUID(started.json()["attempt_id"])
@@ -532,27 +535,27 @@ def _start_governed_v2(runtime_engine, bootstrap_engine):
 
 class TestLearnerHintsB5B8:
     def test_hint_b_post_lock_preview_drift_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, _client, attempt_id, _revision, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
-        factory = lambda tid: _DriftLockedAttemptUow(runtime_engine, tid)  # noqa: E731
-        service = _hints_service(runtime_engine, prepared, factory)
+        factory = lambda tid: _DriftLockedAttemptUow(ci03_g2_runtime_engine, tid)  # noqa: E731
+        service = _hints_service(ci03_g2_runtime_engine, prepared, factory)
         with pytest.raises(AttemptNotFound):
             service.get(prepared.tenant_id, prepared.student_id, attempt_id)
 
     def test_hint_b_b8_event_order_after_hint_extraction_before_commit(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, _client, attempt_id, _revision, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         events: list[str] = []
         service = _hints_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
-            EventOrderStudentUowFactory(runtime_engine, events),
+            EventOrderStudentUowFactory(ci03_g2_runtime_engine, events),
         )
         model = service.get(prepared.tenant_id, prepared.student_id, attempt_id)
         events.append("HTTP-body-after-commit")
@@ -565,10 +568,10 @@ class TestLearnerHintsB5B8:
 
 class TestLearnerHintsConcurrency:
     def test_hint_b_get_then_submit_second_get_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _revision, etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         first = _get_hints(client, prepared, attempt_id)
         assert first.status_code == 200
@@ -581,10 +584,10 @@ class TestLearnerHintsConcurrency:
         assert FIXED_T1B_HINT not in second.text
 
     def test_hint_b_submit_wins_assignment_lock_hint_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, revision, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         both_locks_held = threading.Event()
         holder_pid: list[int | None] = [None]
@@ -593,10 +596,10 @@ class TestLearnerHintsConcurrency:
         release = threading.Event()
         results: dict[str, object] = {}
         submit_service = _submit_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
             SubmitHoldingStudentUowFactory(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 assignment_locked=threading.Event(),
                 both_locks_held=both_locks_held,
                 holder_pid=holder_pid,
@@ -604,10 +607,10 @@ class TestLearnerHintsConcurrency:
             ),
         )
         hint_service = _hints_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
             ContentionHintUowFactory(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 contending_on_assignment=hint_contending,
                 waiter_pid=waiter_pid,
             ),
@@ -645,7 +648,7 @@ class TestLearnerHintsConcurrency:
             assert hint_contending.wait(timeout=25)
             assert holder_pid[0] is not None and waiter_pid[0] is not None
             assert_genuine_lock_contention(
-                bootstrap_engine,
+                ci03_g2_bootstrap_engine,
                 waiter_thread=hint_thread,
                 waiter_pid=waiter_pid[0],
                 holder_pid=holder_pid[0],
@@ -674,10 +677,10 @@ class TestLearnerHintsConcurrency:
         )
 
     def test_hint_b_hint_wins_lock_commits_before_submit(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, revision, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         both_locks_held = threading.Event()
         holder_pid: list[int | None] = [None]
@@ -686,20 +689,20 @@ class TestLearnerHintsConcurrency:
         release = threading.Event()
         results: dict[str, object] = {}
         hint_service = _hints_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
             HintHoldingStudentUowFactory(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 both_locks_held=both_locks_held,
                 holder_pid=holder_pid,
                 release=release,
             ),
         )
         submit_service = _submit_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
             ContentionSubmitUowFactory(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 contending_on_assignment=submit_contending,
                 waiter_pid=submit_waiter_pid,
             ),
@@ -737,7 +740,7 @@ class TestLearnerHintsConcurrency:
             assert submit_contending.wait(timeout=25)
             assert holder_pid[0] is not None and submit_waiter_pid[0] is not None
             assert_genuine_lock_contention(
-                bootstrap_engine,
+                ci03_g2_bootstrap_engine,
                 waiter_thread=submit_thread,
                 waiter_pid=submit_waiter_pid[0],
                 holder_pid=holder_pid[0],
@@ -767,10 +770,10 @@ class TestLearnerHintsConcurrency:
         )
 
     def test_hint_b_close_wins_assignment_lock_hint_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _revision, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         locked = threading.Event()
         release = threading.Event()
@@ -780,15 +783,15 @@ class TestLearnerHintsConcurrency:
         results: dict[str, object] = {}
         close_service = CloseTeachingAssignmentService(
             HoldingTeachingUowFactory(
-                runtime_engine, locked, release, holder_pid=holder_pid
+                ci03_g2_runtime_engine, locked, release, holder_pid=holder_pid
             ),
             idempotency_retention=IDEMPOTENCY_RETENTION,
         )
         hint_service = _hints_service(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared,
             ContentionHintUowFactory(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 contending_on_assignment=hint_contending,
                 waiter_pid=waiter_pid,
             ),
@@ -824,7 +827,7 @@ class TestLearnerHintsConcurrency:
             hint_thread.start()
             assert hint_contending.wait(timeout=25)
             assert_genuine_lock_contention(
-                bootstrap_engine,
+                ci03_g2_bootstrap_engine,
                 waiter_thread=hint_thread,
                 waiter_pid=waiter_pid[0],
                 holder_pid=holder_pid[0],
@@ -851,17 +854,17 @@ class TestLearnerHintsConcurrency:
         )
 
     @pytest.fixture(autouse=True)
-    def _i03_cleanup(self, bootstrap_engine: Engine) -> Iterator[None]:
+    def _i03_cleanup(self, ci03_g2_bootstrap_engine: Engine) -> Iterator[None]:
         yield
-        clear_i03_side_effects(bootstrap_engine)
+        clear_i03_side_effects(ci03_g2_bootstrap_engine)
 
 
 class TestLearnerHintsSecurityNegatives:
     def test_hint_b_wrong_tenant_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         wrong_tenant = uuid.uuid7()
         response = client.get(
@@ -871,18 +874,18 @@ class TestLearnerHintsSecurityNegatives:
         assert_problem(response, status=403, code="forbidden")
 
     def test_hint_b_workload_and_disabled_human_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        started_client = student_client(runtime_engine, prepared)
+        started_client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(started_client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         workload = uuid.uuid7()
-        seed_principal(bootstrap_engine, workload, principal_kind=PrincipalKind.WORKLOAD)
+        seed_principal(ci03_g2_bootstrap_engine, workload, principal_kind=PrincipalKind.WORKLOAD)
         workload_client = build_student_client(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared.tenant_id,
             workload,
             learner_membership_reader=prepared.membership,
@@ -893,13 +896,13 @@ class TestLearnerHintsSecurityNegatives:
 
         inactive = uuid.uuid7()
         seed_principal(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             inactive,
             principal_kind=PrincipalKind.HUMAN,
             status=PrincipalStatus.DISABLED,
         )
         inactive_client = build_student_client(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             prepared.tenant_id,
             inactive,
             learner_membership_reader=prepared.membership,
@@ -909,19 +912,19 @@ class TestLearnerHintsSecurityNegatives:
         assert FIXED_T1B_HINT not in denied_inactive.text
 
     def test_hint_b_teacher_parent_principal_cannot_read_hints(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, _client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         for principal_id in (
             prepared.teacher_id,
             PARENT_OS_HUMAN_ADULT_A_ID,
             PRINCIPAL_OS_HUMAN_PRINCIPAL_ID,
         ):
-            seed_principal(bootstrap_engine, principal_id, principal_kind=PrincipalKind.HUMAN)
+            seed_principal(ci03_g2_bootstrap_engine, principal_id, principal_kind=PrincipalKind.HUMAN)
             alt = build_student_client(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 prepared.tenant_id,
                 principal_id,
                 learner_membership_reader=prepared.membership,
@@ -933,12 +936,12 @@ class TestLearnerHintsSecurityNegatives:
             assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_school_context_unavailable_and_contract_errors(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
-        client = student_client(runtime_engine, prepared)
+        client = student_client(ci03_g2_runtime_engine, prepared)
         started = start_attempt(client, prepared)
         attempt_id = uuid.UUID(started.json()["attempt_id"])
         for exc in (
@@ -946,7 +949,7 @@ class TestLearnerHintsSecurityNegatives:
             SchoolContextContractError("invalid contract"),
         ):
             broken = build_student_client(
-                runtime_engine,
+                ci03_g2_runtime_engine,
                 prepared.tenant_id,
                 prepared.student_id,
                 learner_membership_reader=RaisingMembershipReader(exc),
@@ -957,13 +960,13 @@ class TestLearnerHintsSecurityNegatives:
             assert FIXED_T1B_HINT not in denied.text
 
     def test_hint_b_closed_not_yet_available_and_past_due_active(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         close_assignment(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             tenant_id=prepared.tenant_id,
             teacher_id=prepared.teacher_id,
             assignment=prepared.assignment,
@@ -974,18 +977,18 @@ class TestLearnerHintsSecurityNegatives:
         assert denied_closed.headers.get("Cache-Control") == _NO_STORE
 
         future_prep = prepare_class_5a_assignment(
-            runtime_engine,
-            bootstrap_engine,
+            ci03_g2_runtime_engine,
+            ci03_g2_bootstrap_engine,
             available_from=FUTURE_AVAILABLE,
         )
-        future_client = student_client(runtime_engine, future_prep)
+        future_client = student_client(ci03_g2_runtime_engine, future_prep)
         future_started = start_attempt(future_client, future_prep)
         assert future_started.status_code == 409
         assert future_started.json()["code"] == "assignment_not_yet_available"
         start_service = StartAttemptService(
-            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(runtime_engine),
+            SqlAlchemyStudentLearningCommandUnitOfWorkFactory(ci03_g2_runtime_engine),
             SchoolContextLearnerMembershipAuthorityService(future_prep.membership),
-            CurrentPrincipalClassificationAuthority(runtime_engine),
+            CurrentPrincipalClassificationAuthority(ci03_g2_runtime_engine),
             idempotency_retention=IDEMPOTENCY_RETENTION,
         )
         with pytest.raises(AssignmentNotYetAvailable):
@@ -999,21 +1002,21 @@ class TestLearnerHintsSecurityNegatives:
             )
 
         past_due_prepared = prepare_governed_worksheet_v2_assignment(
-            runtime_engine,
-            bootstrap_engine,
+            ci03_g2_runtime_engine,
+            ci03_g2_bootstrap_engine,
             payload=_hinted_payload(),
         )
         from tests.domains.learning.helpers_aieos360_s01_i03 import update_assignment_due
 
         update_assignment_due(
-            runtime_engine,
+            ci03_g2_runtime_engine,
             tenant_id=past_due_prepared.tenant_id,
             teacher_id=past_due_prepared.teacher_id,
             assignment=past_due_prepared.assignment,
             due_at=PAST_DUE,
             idempotency_key=f"due-{uuid.uuid7()}",
         )
-        past_client = student_client(runtime_engine, past_due_prepared)
+        past_client = student_client(ci03_g2_runtime_engine, past_due_prepared)
         past_started = start_attempt(past_client, past_due_prepared)
         assert past_started.status_code == 201
         past_attempt = uuid.UUID(past_started.json()["attempt_id"])
@@ -1021,21 +1024,21 @@ class TestLearnerHintsSecurityNegatives:
         assert still_ok.status_code == 200
 
     def test_hint_b_pinned_v2_does_not_float_to_newer_publication(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         pins = prepare_exact_pin_v1_then_v2_assignments(
-            runtime_engine,
-            bootstrap_engine,
+            ci03_g2_runtime_engine,
+            ci03_g2_bootstrap_engine,
             v2_payload=_hinted_payload(),
         )
-        client_v1 = student_client(runtime_engine, pins.v1_assignment)
+        client_v1 = student_client(ci03_g2_runtime_engine, pins.v1_assignment)
         started_v1 = start_attempt(client_v1, pins.v1_assignment)
         attempt_v1 = uuid.UUID(started_v1.json()["attempt_id"])
         res_v1 = _get_hints(client_v1, pins.v1_assignment, attempt_v1)
         assert res_v1.status_code == 200
         assert res_v1.json()["hints"] == []
 
-        client_v2 = student_client(runtime_engine, pins.v2_assignment)
+        client_v2 = student_client(ci03_g2_runtime_engine, pins.v2_assignment)
         started_v2 = start_attempt(client_v2, pins.v2_assignment)
         attempt_v2 = uuid.UUID(started_v2.json()["attempt_id"])
         res_v2 = _get_hints(client_v2, pins.v2_assignment, attempt_v2)
@@ -1044,10 +1047,10 @@ class TestLearnerHintsSecurityNegatives:
         assert any(FIXED_T1B_HINT in item["hint_text"] for item in res_v2.json()["hints"])
 
     def test_hint_b_successive_published_v2_pins_keep_exact_hints(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
-        ctx = begin_successive_v2_same_content(runtime_engine, bootstrap_engine)
-        client_old = student_client(runtime_engine, ctx.first_assignment)
+        ctx = begin_successive_v2_same_content(ci03_g2_runtime_engine, ci03_g2_bootstrap_engine)
+        client_old = student_client(ci03_g2_runtime_engine, ctx.first_assignment)
         started_old = start_attempt(client_old, ctx.first_assignment)
         assert started_old.status_code == 201
         attempt_old = uuid.UUID(started_old.json()["attempt_id"])
@@ -1064,7 +1067,7 @@ class TestLearnerHintsSecurityNegatives:
         assert ctx.second_hint_text not in before_pub.text
 
         pins = complete_successive_v2_second_publication(
-            ctx, runtime_engine, bootstrap_engine
+            ctx, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         old_hints = _get_hints(client_old, pins.first_assignment, attempt_old)
         assert old_hints.status_code == 200
@@ -1076,7 +1079,7 @@ class TestLearnerHintsSecurityNegatives:
         )
         assert pins.second_hint_text not in old_hints.text
 
-        client_new = student_client(runtime_engine, pins.second_assignment)
+        client_new = student_client(ci03_g2_runtime_engine, pins.second_assignment)
         started_new = start_attempt(client_new, pins.second_assignment)
         attempt_new = uuid.UUID(started_new.json()["attempt_id"])
         new_hints = _get_hints(client_new, pins.second_assignment, attempt_new)
@@ -1090,12 +1093,12 @@ class TestLearnerHintsSecurityNegatives:
         assert pins.first_content_version_id != pins.second_content_version_id
 
     def test_hint_b_tampered_hint_attestation_digest_fails_closed(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
-        with bootstrap_engine.begin() as conn:
+        with ci03_g2_bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
                     "ALTER TABLE content.worksheet_learner_hint_version_attestations "
@@ -1130,10 +1133,10 @@ class TestLearnerHintsSecurityNegatives:
         )
 
     def test_hint_b_submitted_still_allows_historical_attempt_get(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         submit = submit_attempt(client, prepared, attempt_id, if_match=etag)
         assert submit.status_code == 200
@@ -1149,13 +1152,13 @@ class TestLearnerHintsSecurityNegatives:
 
 class TestLearnerHintsR2ContentNegatives:
     def test_hint_b_missing_attestation_row(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         delete_hint_attestation(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=prepared.tenant_id,
             version_id=prepared.content_version_id,
         )
@@ -1168,14 +1171,14 @@ class TestLearnerHintsR2ContentNegatives:
         )
 
     def test_hint_b_binding_drift_attempt_version_only_denies(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """Attempt pin drift without assignment alignment → B5/consumable, not B7 loader."""
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         ghost_version = uuid.uuid7()
-        with bootstrap_engine.begin() as conn:
+        with ci03_g2_bootstrap_engine.begin() as conn:
             conn.execute(
                 text(
                     """
@@ -1199,36 +1202,36 @@ class TestLearnerHintsR2ContentNegatives:
         )
 
     def test_hint_b_frozen_fk_blocks_missing_version_coherent_pin(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """Coherent missing ContentVersion pin is unreachable: FK rejects before B7 HTTP."""
         require_disposable_hint_b_postgres(postgres18)
-        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        baseline = assert_assignment_content_version_fk(ci03_g2_bootstrap_engine)
         prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         ghost_version = uuid.uuid7()
         assert_fk_rejects_coherent_assignment_version_pin(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=prepared.tenant_id,
             assignment_id=prepared.assignment_id,
             content_id=prepared.content_id,
             content_version_id=ghost_version,
         )
-        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_assignment_content_version_fk(ci03_g2_bootstrap_engine, baseline=baseline)
 
     def test_hint_b_b7_loader_missing_exact_content_version_fail_closed(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """B7 governed loader fail-closed for missing exact version (HTTP 404 contract)."""
         require_disposable_hint_b_postgres(postgres18)
-        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        baseline = assert_assignment_content_version_fk(ci03_g2_bootstrap_engine)
         prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         ghost_version = uuid.uuid7()
         with SqlAlchemyStudentLearningCommandUnitOfWork(
-            runtime_engine, prepared.tenant_id
+            ci03_g2_runtime_engine, prepared.tenant_id
         ) as uow:
             with pytest.raises(ExactContentVersionNotFound, match="not visible"):
                 load_governed_worksheet_learner_hints(
@@ -1240,43 +1243,43 @@ class TestLearnerHintsR2ContentNegatives:
         status, code, _, _ = _LEARNING_PROBLEMS[ExactContentVersionNotFound]
         assert status == 404
         assert code == "content_version_not_found"
-        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_assignment_content_version_fk(ci03_g2_bootstrap_engine, baseline=baseline)
 
     def test_hint_b_frozen_fk_blocks_foreign_content_version_coherent_pin(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """Foreign aggregate version pin is unreachable under frozen tenant/content/version FK."""
         require_disposable_hint_b_postgres(postgres18)
-        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        baseline = assert_assignment_content_version_fk(ci03_g2_bootstrap_engine)
         first, _client_a, _attempt_a, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         second = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
         assert_fk_rejects_coherent_assignment_version_pin(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=first.tenant_id,
             assignment_id=first.assignment_id,
             content_id=first.content_id,
             content_version_id=second.content_version_id,
         )
-        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_assignment_content_version_fk(ci03_g2_bootstrap_engine, baseline=baseline)
 
     def test_hint_b_b7_loader_foreign_content_version_fail_closed(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """B7 loader denies version from a different Content aggregate (mismatched binding)."""
         require_disposable_hint_b_postgres(postgres18)
-        baseline = assert_assignment_content_version_fk(bootstrap_engine)
+        baseline = assert_assignment_content_version_fk(ci03_g2_bootstrap_engine)
         first, _client_a, _attempt_a, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         second = prepare_governed_worksheet_v2_assignment(
-            runtime_engine, bootstrap_engine, payload=_hinted_payload()
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, payload=_hinted_payload()
         )
         with SqlAlchemyStudentLearningCommandUnitOfWork(
-            runtime_engine, first.tenant_id
+            ci03_g2_runtime_engine, first.tenant_id
         ) as uow:
             with pytest.raises(ExactContentVersionNotFound, match="not visible"):
                 load_governed_worksheet_learner_hints(
@@ -1285,22 +1288,22 @@ class TestLearnerHintsR2ContentNegatives:
                     content_id=first.content_id,
                     content_version_id=second.content_version_id,
                 )
-        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_assignment_content_version_fk(ci03_g2_bootstrap_engine, baseline=baseline)
 
     def test_hint_b_assignment_fk_survives_failure_path_probe(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         """Schema integrity restoration runs even when the negative-case body fails."""
         require_disposable_hint_b_postgres(postgres18)
-        baseline = snapshot_assignment_content_version_fk(bootstrap_engine)
+        baseline = snapshot_assignment_content_version_fk(ci03_g2_bootstrap_engine)
         prepared, _client, _attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         ghost_version = uuid.uuid7()
         try:
-            with guarded_hint_b_schema_integrity(bootstrap_engine, baseline=baseline):
+            with guarded_hint_b_schema_integrity(ci03_g2_bootstrap_engine, baseline=baseline):
                 assert_fk_rejects_coherent_assignment_version_pin(
-                    bootstrap_engine,
+                    ci03_g2_bootstrap_engine,
                     tenant_id=prepared.tenant_id,
                     assignment_id=prepared.assignment_id,
                     content_id=prepared.content_id,
@@ -1311,9 +1314,9 @@ class TestLearnerHintsR2ContentNegatives:
             assert "deliberate failure-path probe" in str(exc)
         else:
             pytest.fail("expected deliberate failure-path probe")
-        assert_assignment_content_version_fk(bootstrap_engine, baseline=baseline)
+        assert_assignment_content_version_fk(ci03_g2_bootstrap_engine, baseline=baseline)
         assert_fk_rejects_coherent_assignment_version_pin(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=prepared.tenant_id,
             assignment_id=prepared.assignment_id,
             content_id=prepared.content_id,
@@ -1321,15 +1324,15 @@ class TestLearnerHintsR2ContentNegatives:
         )
 
     def test_hint_b_malformed_v2_payload_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         payload = _hinted_payload()
         payload["questions"][0]["learner_hint"] = 42
         corrupt_version_payload(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             version_id=prepared.content_version_id,
             payload=payload,
         )
@@ -1342,13 +1345,13 @@ class TestLearnerHintsR2ContentNegatives:
         )
 
     def test_hint_b_worksheet_schema_v3_unsupported(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         corrupt_version_schema(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             version_id=prepared.content_version_id,
             schema_version=3,
         )
@@ -1361,13 +1364,13 @@ class TestLearnerHintsR2ContentNegatives:
         )
 
     def test_hint_b_non_worksheet_content_type_denied(
-        self, runtime_engine, bootstrap_engine, postgres18
+        self, ci03_g2_runtime_engine, ci03_g2_bootstrap_engine, postgres18
     ) -> None:
         prepared, client, attempt_id, _rev, _etag = _start_governed_v2(
-            runtime_engine, bootstrap_engine
+            ci03_g2_runtime_engine, ci03_g2_bootstrap_engine
         )
         corrupt_content_type(
-            bootstrap_engine,
+            ci03_g2_bootstrap_engine,
             tenant_id=prepared.tenant_id,
             content_id=prepared.content_id,
             content_type="quiz",
