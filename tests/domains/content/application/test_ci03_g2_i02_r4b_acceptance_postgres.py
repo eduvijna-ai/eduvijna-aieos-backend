@@ -467,6 +467,82 @@ I02_TC01_CASE_MAP: tuple[dict[str, str], ...] = (
     },
 )
 
+# TC02 — transactional / database integrity (Chief TC02 scope).
+I02_TC02_CASE_MAP: tuple[dict[str, str], ...] = (
+    {
+        "group": "TC02-A",
+        "case": "denial_sink_fail_closed",
+        "test": "r4bf_sink + r4tc02::test_denial_sink_unavailable_fail_closed_with_full_snapshot",
+        "evidence": "PRIOR attest/reject; NEW approve/request_changes + snapshot",
+    },
+    {
+        "group": "TC02-A",
+        "case": "success_audit_rollback",
+        "test": "r4tc02::test_success_audit_failure_rolls_back[attest,decision]",
+        "evidence": "NEW SqlAlchemySecurityMutationAuditRepository.insert fault",
+    },
+    {
+        "group": "TC02-A",
+        "case": "success_outbox_rollback",
+        "test": "r4bf approve outbox + r4tc02 reject/request_changes outbox",
+        "evidence": "PRIOR/NEW shared review decide path",
+    },
+    {
+        "group": "TC02-A",
+        "case": "attest_zero_outbox",
+        "test": "r4tc02::test_attest_emits_zero_outbox_by_design",
+        "evidence": "NEW contract vocabulary",
+    },
+    {
+        "group": "TC02-B",
+        "case": "command_identity_representative",
+        "test": "r4tc02::test_success_mutation_command_identity_representative",
+        "evidence": "NEW helper assert_success_mutation_command_evidence",
+    },
+    {
+        "group": "TC02-B",
+        "case": "contention_expiry_identity",
+        "test": "r4b2 effect-first + lock-wait denial receipt guard",
+        "evidence": "EXTENDED existing 24-case helpers",
+    },
+    {
+        "group": "TC02-C",
+        "case": "contention_cleanup",
+        "test": "contention_cleanup_postgres passive/waiter/holder paths",
+        "evidence": "PRIOR holder early-fail; NEW passive+waiter",
+    },
+    {
+        "group": "TC02-D",
+        "case": "migration_roundtrip",
+        "test": "g2_i01::test_ci03g020002_single_step_downgrade_upgrade",
+        "evidence": "PRIOR BF-10",
+    },
+    {
+        "group": "TC02-D",
+        "case": "downgrade_refusal",
+        "test": "r4bf receipt refusal + r4tc02 mutation-denial-only refusal",
+        "evidence": "NEW schema_fingerprint_ci03g020002",
+    },
+    {
+        "group": "TC02-D",
+        "case": "catalog_fk_binding",
+        "test": "r4tc02::test_ci03g020002_fk_and_assignment_binding_catalog",
+        "evidence": "NEW",
+    },
+    {
+        "group": "TC02-E",
+        "case": "runtime_immutable_update",
+        "test": "r4bf::test_runtime_role_cannot_update_immutable_attestation_row",
+        "evidence": "PRIOR BF-11",
+    },
+    {
+        "group": "TC02-E",
+        "case": "runtime_delete_ddl_cross_tenant",
+        "test": "r4tc02 delete + CREATE denied + cross-tenant slot hidden",
+        "evidence": "NEW",
+    },
+)
+
 
 def _idem_attest_result_id(
     runtime_engine: Engine,

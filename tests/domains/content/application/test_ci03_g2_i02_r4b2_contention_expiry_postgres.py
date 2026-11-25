@@ -32,11 +32,13 @@ from tests.domains.content.application.helpers_ci03_g2_i02_contention import (
 )
 from tests.domains.content.application.helpers_ci03_g2_i02_snapshot import (
     DurableEffectSnapshot,
+    assert_denial_command_no_receipt,
     assert_latest_denial_matches,
     assert_protected_effect_denied_after_revoke,
     assert_review_assignment_conflict_denied,
     assert_review_assignment_expiry_exception,
     assert_snapshot_unchanged_except_denial,
+    assert_success_mutation_command_evidence,
     assignment_valid_until,
     capture_durable_snapshot,
 )
@@ -253,6 +255,7 @@ def _invoke_revoke(
     clock,
     uow_factory: Any,
     idem_key: str,
+    event_context: MutationEventContext | None = None,
 ) -> None:
     revoke = revoke_service_with_factory(
         runtime,
@@ -261,6 +264,7 @@ def _invoke_revoke(
         clock=clock,
         provider=scenario.provider,
     )
+    owner_event = event_context or _event(scenario.owner_id)
     revoke.revoke(
         scenario.tenant_id,
         scenario.owner_id,
@@ -268,7 +272,7 @@ def _invoke_revoke(
         version_id=scenario.version_id,
         assignment_id=scenario.assignment_id,
         idempotency_key=idem_key,
-        event_context=_event(scenario.owner_id),
+        event_context=owner_event,
         audit_provenance=api_mutation_audit_provenance(scenario.owner_id),
     )
 
@@ -427,6 +431,10 @@ class TestCi03G2I02R4B2Concurrency:
             contending=contending,
             waiter_pid=waiter_pid,
         )
+        holder_event = _correlated_event(scenario.reviewer_id)
+        holder_idem = f"b2-eff-first-{effect}-{uuid.uuid7()}"
+        revoke_event = _correlated_event(scenario.owner_id)
+        revoke_idem = f"b2-rev-after-{effect}-{uuid.uuid7()}"
 
         def holder() -> None:
             try:
@@ -436,7 +444,8 @@ class TestCi03G2I02R4B2Concurrency:
                         scenario,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-eff-first-attest-{uuid.uuid7()}",
+                        idem_key=holder_idem,
+                        event_context=holder_event,
                     )
                 elif effect == "approve":
                     _invoke_decision(
@@ -445,7 +454,8 @@ class TestCi03G2I02R4B2Concurrency:
                         effect=effect,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-eff-first-{effect}-{uuid.uuid7()}",
+                        idem_key=holder_idem,
+                        event_context=holder_event,
                     )
                 else:
                     _invoke_decision(
@@ -454,7 +464,8 @@ class TestCi03G2I02R4B2Concurrency:
                         effect=effect,
                         clock=clock,
                         uow_factory=hold_factory,
-                        idem_key=f"b2-eff-first-{effect}-{uuid.uuid7()}",
+                        idem_key=holder_idem,
+                        event_context=holder_event,
                     )
                 holder_result["ok"] = True
             except BaseException as exc:  # noqa: BLE001
@@ -467,7 +478,8 @@ class TestCi03G2I02R4B2Concurrency:
                     scenario,
                     clock=clock,
                     uow_factory=contend_factory,
-                    idem_key=f"b2-rev-after-{effect}-{uuid.uuid7()}",
+                    idem_key=revoke_idem,
+                    event_context=revoke_event,
                 )
                 waiter_result["ok"] = True
             except BaseException as exc:  # noqa: BLE001
@@ -498,9 +510,20 @@ class TestCi03G2I02R4B2Concurrency:
             assert snap_after.worksheet_hint_attest_audits == (
                 snap_before.worksheet_hint_attest_audits + 1
             )
-            assert snap_after.outbox_messages >= snap_before.outbox_messages
+            assert snap_after.outbox_messages == snap_before.outbox_messages
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
+            )
+            assert_success_mutation_command_evidence(
+                bootstrap_engine=ci03_g2_bootstrap_engine,
+                runtime_engine=ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                content_id=scenario.content_id,
+                version_id=scenario.version_id,
+                effect="attest",
+                idempotency_key=holder_idem,
+                correlation_id=holder_event.correlation_id,
             )
         elif effect == "approve":
             assert snap_after.decisions == snap_before.decisions + 1
@@ -508,12 +531,45 @@ class TestCi03G2I02R4B2Concurrency:
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
+            assert_success_mutation_command_evidence(
+                bootstrap_engine=ci03_g2_bootstrap_engine,
+                runtime_engine=ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                content_id=scenario.content_id,
+                version_id=scenario.version_id,
+                effect="approve",
+                idempotency_key=holder_idem,
+                correlation_id=holder_event.correlation_id,
+            )
         elif effect in ("reject", "request_changes"):
             assert snap_after.decisions == snap_before.decisions + 1
             assert snap_after.review_decision_audits == snap_before.review_decision_audits + 1
             assert snap_after.reviewer_idempotency_success == (
                 snap_before.reviewer_idempotency_success + 1
             )
+            assert_success_mutation_command_evidence(
+                bootstrap_engine=ci03_g2_bootstrap_engine,
+                runtime_engine=ci03_g2_runtime_engine,
+                tenant_id=scenario.tenant_id,
+                principal_id=scenario.reviewer_id,
+                content_id=scenario.content_id,
+                version_id=scenario.version_id,
+                effect=effect,
+                idempotency_key=holder_idem,
+                correlation_id=holder_event.correlation_id,
+            )
+        assert_success_mutation_command_evidence(
+            bootstrap_engine=ci03_g2_bootstrap_engine,
+            runtime_engine=ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.owner_id,
+            content_id=scenario.content_id,
+            version_id=scenario.version_id,
+            effect="revoke",
+            idempotency_key=revoke_idem,
+            correlation_id=revoke_event.correlation_id,
+        )
 
 
 class TestCi03G2I02R4B2IntegratedExpiry:
@@ -654,6 +710,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
         worker_errors: list[BaseException] = []
         blocker_errors: list[BaseException] = []
         worker_event = _correlated_event(scenario.reviewer_id)
+        worker_idem = f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}"
 
         contend_factory = ContendingContentUowFactory(
             ci03_g2_runtime_engine,
@@ -684,7 +741,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         scenario,
                         clock=clock,
                         uow_factory=contend_factory,
-                        idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                        idem_key=worker_idem,
                         event_context=worker_event,
                     )
                 else:
@@ -694,7 +751,7 @@ class TestCi03G2I02R4B2IntegratedExpiry:
                         effect=effect,
                         clock=clock,
                         uow_factory=contend_factory,
-                        idem_key=f"b2-lockwait-{boundary}-{effect}-{uuid.uuid7()}",
+                        idem_key=worker_idem,
                         event_context=worker_event,
                     )
             except BaseException as exc:  # noqa: BLE001
@@ -744,6 +801,13 @@ class TestCi03G2I02R4B2IntegratedExpiry:
             content_id=scenario.content_id,
             version_id=scenario.version_id,
             correlation_id=worker_event.correlation_id,
+        )
+        assert_denial_command_no_receipt(
+            ci03_g2_runtime_engine,
+            tenant_id=scenario.tenant_id,
+            principal_id=scenario.reviewer_id,
+            effect=effect,
+            idempotency_key=worker_idem,
         )
 
     @pytest.mark.parametrize(

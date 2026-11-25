@@ -17,7 +17,19 @@ from aieos.domains.content.application.review_assignment_denial_audit import (
     REASON_ASSIGNMENT_CONFLICT,
 )
 from aieos.domains.content.domain.identities import ContentId, ContentVersionId, ReviewAssignmentId
+from aieos.platform.events.constants import (
+    EVENT_CONTENT_REVIEW_APPROVED_V1,
+    EVENT_CONTENT_REVIEW_CHANGES_REQUESTED_V1,
+    EVENT_CONTENT_REVIEW_REJECTED_V1,
+)
 from aieos.platform.idempotency.hashing import hash_idempotency_key
+from aieos.platform.idempotency.models import (
+    CONTENT_REVIEW_APPROVE_V1,
+    CONTENT_REVIEW_REJECT_V1,
+    CONTENT_REVIEW_REQUEST_CHANGES_V1,
+    CONTENT_REVIEW_REVOKE_V1,
+    CONTENT_WORKSHEET_HINT_ATTEST_V1,
+)
 from tests.domains.content.application.test_ci03_g2_i01_assignment_postgres import _denial_count
 
 _WORKSHEET_HINT_ATTEST_AUDIT = "content.worksheet_hint.attest"
@@ -493,3 +505,242 @@ def audit_count_for_correlation(
                 {"tid": tenant_id, "cid": correlation_id},
             ).scalar_one()
         )
+
+
+@dataclass(frozen=True, slots=True)
+class MutationCommandSpec:
+    effect: str
+    operation: str
+    audit_action: str
+    outbox_event_type: str | None
+
+
+SUCCESS_MUTATION_COMMAND_SPECS: dict[str, MutationCommandSpec] = {
+    "attest": MutationCommandSpec(
+        "attest",
+        CONTENT_WORKSHEET_HINT_ATTEST_V1,
+        _WORKSHEET_HINT_ATTEST_AUDIT,
+        None,
+    ),
+    "approve": MutationCommandSpec(
+        "approve",
+        CONTENT_REVIEW_APPROVE_V1,
+        "content.review.approve",
+        EVENT_CONTENT_REVIEW_APPROVED_V1,
+    ),
+    "reject": MutationCommandSpec(
+        "reject",
+        CONTENT_REVIEW_REJECT_V1,
+        "content.review.reject",
+        EVENT_CONTENT_REVIEW_REJECTED_V1,
+    ),
+    "request_changes": MutationCommandSpec(
+        "request_changes",
+        CONTENT_REVIEW_REQUEST_CHANGES_V1,
+        "content.review.request_changes",
+        EVENT_CONTENT_REVIEW_CHANGES_REQUESTED_V1,
+    ),
+    "revoke": MutationCommandSpec(
+        "revoke",
+        CONTENT_REVIEW_REVOKE_V1,
+        _REVIEW_REVOKE_AUDIT,
+        None,
+    ),
+}
+
+
+def load_success_mutation_audit(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    correlation_id: uuid.UUID,
+    audit_action: str,
+) -> tuple[str, uuid.UUID, uuid.UUID, int] | None:
+    with bootstrap_engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT action, primary_resource_id, executing_principal_id,
+                       resource_revision_after
+                FROM security.audit_records
+                WHERE tenant_id = :tid
+                  AND correlation_id = :cid
+                  AND action = :action
+                ORDER BY occurred_at DESC
+                LIMIT 1
+                """
+            ),
+            {"tid": tenant_id, "cid": correlation_id, "action": audit_action},
+        ).first()
+    if row is None:
+        return None
+    return str(row[0]), row[1], row[2], int(row[3])
+
+
+def load_outbox_for_correlation(
+    bootstrap_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    event_type: str,
+    content_id: uuid.UUID,
+    aggregate_revision: int,
+    correlation_id: uuid.UUID,
+) -> bool:
+    with bootstrap_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT envelope
+                FROM integration.outbox_messages
+                WHERE tenant_id = :tid
+                  AND event_type = :etype
+                  AND aggregate_id = :cid
+                  AND aggregate_revision = :rev
+                """
+            ),
+            {
+                "tid": tenant_id,
+                "etype": event_type,
+                "cid": content_id,
+                "rev": aggregate_revision,
+            },
+        ).fetchall()
+    for (envelope,) in rows:
+        ext = envelope.get("correlationid") or envelope.get("correlationId")
+        if ext is not None and uuid.UUID(str(ext)) == correlation_id:
+            return True
+    return False
+
+
+def assert_success_mutation_command_evidence(
+    *,
+    bootstrap_engine: Engine,
+    runtime_engine: Engine,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    content_id: ContentId,
+    version_id: ContentVersionId,
+    effect: str,
+    idempotency_key: str,
+    correlation_id: uuid.UUID,
+    expected_aggregate_revision: int | None = None,
+) -> None:
+    spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
+    receipt = load_idempotency_receipt(
+        runtime_engine,
+        tenant_id,
+        principal_id,
+        operation=spec.operation,
+        idempotency_key=idempotency_key,
+    )
+    assert receipt is not None, f"missing idempotency receipt for {effect}"
+    assert receipt.result_content_id == content_id.value
+    assert receipt.result_version_id == version_id.value
+    if expected_aggregate_revision is not None:
+        assert receipt.result_aggregate_revision == expected_aggregate_revision
+
+    audit = load_success_mutation_audit(
+        bootstrap_engine,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        audit_action=spec.audit_action,
+    )
+    assert audit is not None, f"missing audit for {effect}"
+    audit_action, primary_resource_id, executing_principal_id, revision_after = audit
+    assert audit_action == spec.audit_action
+    assert primary_resource_id == content_id.value
+    assert executing_principal_id == principal_id
+    if expected_aggregate_revision is not None:
+        assert revision_after == expected_aggregate_revision
+
+    assert audit_count_for_correlation(bootstrap_engine, tenant_id, correlation_id) == 1
+
+    if spec.outbox_event_type is None:
+        with bootstrap_engine.connect() as conn:
+            stray = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM integration.outbox_messages
+                    WHERE tenant_id = :tid
+                      AND envelope->>'correlationid' = :cid
+                    """
+                ),
+                {"tid": tenant_id, "cid": str(correlation_id)},
+            ).scalar_one()
+        assert int(stray) == 0
+    else:
+        assert receipt.result_aggregate_revision is not None
+        assert load_outbox_for_correlation(
+            bootstrap_engine,
+            tenant_id=tenant_id,
+            event_type=spec.outbox_event_type,
+            content_id=content_id.value,
+            aggregate_revision=receipt.result_aggregate_revision,
+            correlation_id=correlation_id,
+        )
+
+
+def assert_denial_command_no_receipt(
+    runtime_engine: Engine,
+    *,
+    tenant_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    effect: str,
+    idempotency_key: str,
+) -> None:
+    spec = SUCCESS_MUTATION_COMMAND_SPECS[effect]
+    assert (
+        idempotency_success_count_for_key(
+            runtime_engine,
+            tenant_id,
+            principal_id,
+            operation=spec.operation,
+            idempotency_key=idempotency_key,
+        )
+        == 0
+    )
+
+
+def schema_fingerprint_ci03g020002(bootstrap_engine: Engine) -> tuple[str, int, int, int]:
+    """Alembic head plus bound-column and evidence anchors for migration refusal proofs."""
+    with bootstrap_engine.connect() as conn:
+        head = str(
+            conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        )
+        bound_attest = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_schema = 'content'
+                      AND table_name = 'worksheet_learner_hint_version_attestations'
+                      AND column_name = 'review_assignment_id'
+                    """
+                )
+            ).scalar_one()
+        )
+        bound_decision = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_schema = 'content'
+                      AND table_name = 'review_decisions'
+                      AND column_name = 'review_assignment_id'
+                    """
+                )
+            ).scalar_one()
+        )
+        receipt_col = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_schema = 'api'
+                      AND table_name = 'idempotency_records'
+                      AND column_name = 'result_worksheet_hint_attestation_id'
+                    """
+                )
+            ).scalar_one()
+        )
+    return head, bound_attest, bound_decision, receipt_col
