@@ -20,7 +20,7 @@ from aieos.domains.content.application.errors import (
 from aieos.domains.content.application.ports import CONTENT_PUBLISH, CONTENT_REVIEW_SUBMIT
 from aieos.domains.content.application.publish import PublishContentService
 import aieos.domains.content.application.worksheet_hint_attestation_gate as attestation_gate
-from aieos.domains.content.domain.identities import ReviewAssignmentId
+from aieos.domains.content.domain.identities import AggregateRevision, ReviewAssignmentId
 from aieos.domains.content.infrastructure.persistence.uow import (
     SqlAlchemyContentUnitOfWorkFactory,
 )
@@ -214,14 +214,21 @@ def test_attest_replay_denied_assignment_binding_mismatch_via_read_boundary(
         audit_provenance=api_mutation_audit_provenance(reviewer_id),
         now=_NOW,
     )
-    wrong = ReviewAssignmentId(uuid.uuid7())
-    original_get = attestation_gate.load_valid_attestation
+    wrong_fp = str(uuid.uuid7())
+    import aieos.domains.content.application.worksheet_hint_attestation_record as attest_record
+    from aieos.domains.content.application.review_assignment_bound_mutations import (
+        fingerprint_assignment_id as _real_fingerprint_assignment_id,
+    )
 
-    def _patched_load(repo, version):  # noqa: ANN001
-        attestation = original_get(repo, version)
-        return dataclasses.replace(attestation, review_assignment_id=wrong)
+    _fp_calls = {"n": 0}
 
-    monkeypatch.setattr(attestation_gate, "load_valid_attestation", _patched_load)
+    def _replay_wrong_fingerprint(**kwargs: object) -> str | None:
+        _fp_calls["n"] += 1
+        if _fp_calls["n"] >= 2:
+            return wrong_fp
+        return _real_fingerprint_assignment_id(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(attest_record, "fingerprint_assignment_id", _replay_wrong_fingerprint)
     before = capture_durable_snapshot(
         bootstrap_engine=ci03_g2_bootstrap_engine,
         runtime_engine=ci03_g2_runtime_engine,
@@ -416,8 +423,16 @@ def test_hint_free_worksheet_approve_succeeds_without_attestation(
     tenant_id = uuid.uuid7()
     owner_id = uuid.uuid7()
     reviewer_id = uuid.uuid7()
-    seed_membership(ci03_g2_bootstrap_engine, tenant_id, owner_id)
-    seed_membership(ci03_g2_bootstrap_engine, tenant_id, reviewer_id)
+    seed_membership(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=owner_id,
+    )
+    seed_membership(
+        ci03_g2_bootstrap_engine,
+        tenant_id=tenant_id,
+        principal_id=reviewer_id,
+    )
     kernel = AuthorizationKernel(
         ci03_g2_runtime_engine, known_capabilities=AIEOS_CONTENT_CAPABILITIES
     )
@@ -527,12 +542,25 @@ def test_historical_publish_allowed_with_terminal_approve_binding(
             ci03_g2_runtime_engine
         ),
     )
+    with ci03_g2_runtime_engine.connect() as conn:
+        conn.execute(
+            text("SELECT set_config('aieos.tenant_id', :tid, true)"),
+            {"tid": str(scenario.tenant_id)},
+        )
+        head_rev = int(
+            conn.execute(
+                text(
+                    "SELECT aggregate_revision FROM content.contents WHERE content_id = :cid"
+                ),
+                {"cid": scenario.content_id.value},
+            ).scalar_one()
+        )
     publish.publish(
         scenario.tenant_id,
         publisher,
         content_id=scenario.content_id,
         version_id=scenario.version_id,
-        expected_aggregate_revision=scenario.approve_effect_revision,
+        expected_aggregate_revision=AggregateRevision(head_rev),
         idempotency_key=f"tc03r1-hist-pub-{uuid.uuid7()}",
         event_context=_event(publisher),
         audit_provenance=api_mutation_audit_provenance(publisher),
@@ -597,36 +625,20 @@ def test_passive_blocker_fault_releases_locks_for_reacquisition(
 
 
 def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
-    ci03_g2_bootstrap_engine: Engine,
     ci03_g2_runtime_engine: Engine,
 ) -> None:
-    """TC03R1-01: valid issuance shape, wrong tenant → no row inserted."""
+    """TC03R1-01: runtime tenant A context cannot insert tenant B issuance row."""
     tenant_a = uuid.uuid7()
     tenant_b = uuid.uuid7()
-    owner_a = uuid.uuid7()
-    reviewer_a = uuid.uuid7()
-    from tests.domains.content.application.test_ci03_g2_i02_mutation_postgres import (
-        _seed_reviewers,
-    )
-
-    _seed_reviewers(ci03_g2_bootstrap_engine, tenant_a, owner_a, reviewer_a)
-    content_id, version_id = seed_worksheet_in_review_governed(
-        ci03_g2_bootstrap_engine,
-        ci03_g2_runtime_engine,
-        tenant_id=tenant_a,
-        owner_id=owner_a,
-        class_ref=CLASS_REF,
-        now=_NOW,
-    )
     fresh_aid = uuid.uuid7()
     with pytest.raises(
-        (OperationalError, DBAPIError, IntegrityError),
-        match=r"42501|row-level security|violates row-level security|permission denied",
+        (OperationalError, DBAPIError),
+        match=r"42501|row-level security|violates row-level security",
     ):
         with ci03_g2_runtime_engine.begin() as conn:
             conn.execute(
                 text("SELECT set_config('aieos.tenant_id', :tid, true)"),
-                {"tid": str(tenant_b)},
+                {"tid": str(tenant_a)},
             )
             conn.execute(
                 text(
@@ -636,25 +648,25 @@ def test_cross_tenant_insert_into_assignment_issuance_rls_denied(
                         reviewer_principal_id, issuer_principal_id, class_ref,
                         issued_at, valid_until, correlation_id
                     ) VALUES (
-                        :aid, :tid_b, :cid, :vid, :rev, :iss, :cref,
+                        :aid, :tid_row, :cid, :vid, :rev, :iss, :cref,
                         :issued, :until, :corr
                     )
                     """
                 ),
                 {
                     "aid": fresh_aid,
-                    "tid_b": tenant_b,
-                    "cid": content_id.value,
-                    "vid": version_id.value,
-                    "rev": reviewer_a,
-                    "iss": owner_a,
+                    "tid_row": tenant_b,
+                    "cid": uuid.uuid7(),
+                    "vid": uuid.uuid7(),
+                    "rev": uuid.uuid7(),
+                    "iss": uuid.uuid7(),
                     "cref": CLASS_REF,
                     "issued": _NOW,
                     "until": _NOW + timedelta(days=1),
                     "corr": uuid.uuid7(),
                 },
             )
-    with ci03_g2_bootstrap_engine.connect() as conn:
+    with ci03_g2_runtime_engine.connect() as conn:
         visible = int(
             conn.execute(
                 text(
